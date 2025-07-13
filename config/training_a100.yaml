@@ -1,0 +1,19 @@
+# config/training_a100.yaml
+training:
+  batch_size: 64
+  gradient_accumulation: 2
+  effective_batch_size: 128
+  mixed_precision: true
+  
+distributed:
+  backend: nccl
+  gradient_as_bucket_view: true
+  
+optimization:
+  learning_rate: 5e-4
+  warmup_steps: 4000
+  weight_decay: 0.01
+  
+memory:
+  gradient_checkpointing: false  # Not needed with 40GB
+  cpu_offload: false

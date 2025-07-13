@@ -1,0 +1,10 @@
+# config/training_v100.yaml
+training:
+  batch_size: 32
+  gradient_accumulation: 4
+  effective_batch_size: 128
+  mixed_precision: true
+  
+memory:
+  gradient_checkpointing: true  # Save memory
+  max_seq_length: 128  # Shorter sequences

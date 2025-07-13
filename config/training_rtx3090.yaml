@@ -1,0 +1,11 @@
+# config/training_rtx3090.yaml
+training:
+  batch_size: 16
+  gradient_accumulation: 8
+  effective_batch_size: 128
+  mixed_precision: true
+  
+memory:
+  gradient_checkpointing: true
+  cpu_offload: true  # Offload optimizer
+  max_seq_length: 96
