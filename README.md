@@ -65,7 +65,7 @@ const result = await translator.translate({
 - **Vocabulary Packs**: Downloadable language-specific token mappings
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
-See docs/Architecture.md for details.
+See [docs/Architecture.md] for details.
 
 ## 📚 Documentation
 - **API Documentation**
@@ -74,16 +74,16 @@ See docs/Architecture.md for details.
 - **Deployment Guide**
 - **Contributing Guidelines**
 - **License**
-- **Acknowledgments**
+- **Community Acknowledgments (soon)**
 
 ## 🤝 Contributing
-See CONTRIBUTING.md for guidelines and more details on how to contribute.
+See [CONTRIBUTING.md] for guidelines and more details on how to contribute.
 
 ## ⚠️ Current Status
 This is a research project in active development. Core components are implemented but not production-tested.
 
 ## 📄 License
-[LICENSE TYPE] - See LICENSE file
+[LICENSE](Apache License 2.0) - See LICENSE file
 
 ## 🙏 Acknowledgments
 
@@ -109,4 +109,4 @@ This project builds upon amazing work from the ML community:
 Special thanks to the open-source community for making projects like this possible.
 
 ## 📜 Changelog
-See CHANGELOG.md for the latest updates.
+See [CHANGELOG.md] for the latest updates.

@@ -113,15 +113,15 @@ We believe communication is a human right, not a luxury
 ## 📊 Project Health
 
 ![Downloads](https://img.shields.io/npm/dt/universal-translation-sdk)
-![Contributors](https://img.shields.io/github/contributors/yourusername/universal-translation-system)
+![Contributors](https://img.shields.io/github/contributors/code-with-zeeshan/universal-translation-system)
 ![Languages Supported](https://img.shields.io/badge/languages-20-brightgreen)
 ![Model Size](https://img.shields.io/badge/encoder%20size-35MB-blue)
 ![Decoder Size](https://img.shields.io/badge/decoder%20size-350MB-blue)
 
 ## Community & Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/universal-translation-system/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/universal-translation-system/discussions)
+- **Issues**: [GitHub Issues](https://github.com/code-with-zeeshan/universal-translation-system/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/code-with-zeeshan/universal-translation-system/discussions)
 - **Email**: opensource@yourdomain.com (checked weekly)
 
 > **Note**: This is a solo developer project. Response times may vary. For urgent issues, please use GitHub Issues.

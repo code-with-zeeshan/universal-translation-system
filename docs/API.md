@@ -36,39 +36,42 @@ Decode encoder output to target language.
 **Body**: Binary compressed encoder output
 
 **Response**: `application/json`
-
+```bash
 {
     "translation": "Hola mundo",
     "target_lang": "es",
     "confidence": 0.95
 }
+```
 
 ### Language Codes
-**Language**	**Code**
-English	          en
-Spanish	          es
-French	          fr
-German	          de
-Chinese	          zh
-Japanese	      ja
-Korean	          ko
-Arabic	          ar
-Hindi	          hi
-Russian	          ru
-Portuguese	      pt
-Italian	          it
-Turkish	          tr
-Thai	          th
-Vietnamese	      vi
-Polish	          pl
-Ukrainian	      uk
-Dutch	          nl
-Indonesian	      id
-Swedish	          sv
+|**Language** |	**Code** |
+|-------------|----------|
+|English	   |       en|
+|Spanish	   |       es|
+|French	       |  fr|
+|German	       | de|
+|Chinese	   |    zh|
+|Japanese	   | ja|
+|Korean	      |    ko|
+|Arabic	      |    ar|
+|Hindi	      |    hi|
+|Russian	  |         ru|
+|Portuguese	  |    pt|
+|Italian	   |       it|
+|Turkish	  |        tr|
+|Thai	      |    th|
+|Vietnamese	  |    vi|
+|Polish	      |    pl|
+|Ukrainian	  |    uk|
+|Dutch	      |    nl|
+|Indonesian	 |     id|
+|Swedish	  |        sv|
 
 ## SDK Methods
 
 ### Android/Kotlin
+```java
 class TranslationClient(context: Context) {
     suspend fun translate(
         text: String,
@@ -85,8 +88,10 @@ class TranslationClient(context: Context) {
     
     fun getDownloadedVocabularies(): List<VocabularyInfo>
 }
+```
 
 ### iOS/Swift
+```swift
 class TranslationClient {
     func translate(
         text: String,
@@ -101,8 +106,10 @@ class TranslationClient {
     
     func supportedLanguages() -> [String]
 }
+```
 
 ### JavaScript/TypeScript
+```javascript
 interface TranslationOptions {
     text: string;
     sourceLang: string;
@@ -114,13 +121,16 @@ class TranslationClient {
     async prepareTranslation(source: string, target: string): Promise<void>
     getSupportedLanguages(): string[]
 }
+```
 
-**Error Codes**
-Code	          Description
-400	              Invalid language code
-401	              Authentication required
-413	              Text too long (>1000 chars)
-422	              Unsupported language pair
-429	              Rate limit exceeded
-500	              Server error
-503	              Service unavailable
+**Error Codes** 
+
+|Code	   |      Description |
+|----------|-----------|
+|400	   |           Invalid language code |
+|401	   |           Authentication required |
+|413	   |           Text too long (>1000 chars) |
+|422	   |           Unsupported language pair |
+|429	   |           Rate limit exceeded |
+|500	   |           Server error |
+|503	   |           Service unavailable |

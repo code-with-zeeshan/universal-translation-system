@@ -1,0 +1,12 @@
+Universal Translation System
+Copyright 2025 Universal Translation System
+
+This product includes software developed by the Universal Translation System project.
+
+This project builds upon and acknowledges the following open source projects:
+- PyTorch (https://pytorch.org/)
+- Hugging Face Transformers (https://huggingface.co/transformers)
+- ONNX Runtime (https://onnxruntime.ai/)
+- SentencePiece (https://github.com/google/sentencepiece)
+
+See the [README.md] for full acknowledgments.

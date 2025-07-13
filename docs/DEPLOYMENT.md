@@ -5,8 +5,13 @@
 ### Android
 
 1. Add encoder to your app:
-app/src/main/assets/ ├── models/ │ └── universal_encoder.onnx └── vocabularies/ └── latin_v1.msgpack
-
+```bash
+app/src/main/assets/ 
+├── models/ 
+│ └── universal_encoder.onnx 
+└── vocabularies/ 
+    └── latin_v1.msgpack
+```
 
 2. Add dependency:
 ```gradle
