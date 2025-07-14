@@ -32,4 +32,4 @@
 - [ ] Real-time conversation mode
 - [ ] Support for more languages (goal: 50+)
 
-Want to contribute to the roadmap? [Open a discussion!](link)
+Want to contribute to the roadmap? [Open a discussion!](https://github.com/code-with-zeeshan/universal-translation-system/discussions)
