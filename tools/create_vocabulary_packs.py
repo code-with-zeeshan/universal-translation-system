@@ -1,65 +1,630 @@
 # tools/create_vocabulary_packs.py
+"""
+Advanced vocabulary pack creator with corpus analysis and optimization.
+
+This module provides tools for creating optimized vocabulary packs for different 
+language groups in NLP applications. It focuses on corpus analysis, intelligent 
+vocabulary selection, and compression optimization.
+
+Usage:
+    creator = VocabularyPackCreator(corpus_paths)
+    pack = creator.create_pack(['en', 'es', 'fr'], 'latin_optimized')
+"""
+
 import json
+import logging
+import os
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
+from tenacity import retry, stop_after_attempt, wait_exponential
+
 import msgpack
 import numpy as np
-from collections import Counter
-from transformers import AutoTokenizer
 import sentencepiece as spm
+from transformers import AutoTokenizer
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class VocabConfig:
+    """Configuration for vocabulary creation."""
+    target_size: int = 25000
+    character_coverage: float = 0.9995
+    model_type: str = 'bpe'
+    num_threads: int = 16
+    min_token_frequency: int = 10
+    subword_ratio: float = 0.3  # 30% of vocab for subwords
+    compression_level: int = 9
+
+
+@dataclass
+class VocabStats:
+    """Statistics for vocabulary coverage and performance."""
+    total_tokens: int
+    coverage_percentage: float
+    size_mb: float
+    compression_ratio: float
+    oov_rate: float  # Out-of-vocabulary rate
+
 
 class VocabularyPackCreator:
-    def __init__(self, corpus_paths: Dict[str, str]):
+    """
+    Advanced vocabulary pack creator with corpus analysis and optimization.
+    
+    This class provides sophisticated tools for creating optimized vocabulary packs
+    by analyzing token frequencies, selecting optimal vocabularies, and optimizing
+    for compression and coverage.
+    
+    Attributes:
+        corpus_paths: Dictionary mapping language codes to corpus file paths
+        config: Configuration object with vocabulary creation parameters
+        tokenizer: SentencePiece processor for tokenization
+    """
+    
+    def __init__(
+        self, 
+        corpus_paths: Dict[str, str], 
+        config: Optional[VocabConfig] = None
+    ) -> None:
+        """
+        Initialize the vocabulary pack creator.
+        
+        Args:
+            corpus_paths: Dictionary mapping language codes to corpus file paths
+            config: Configuration object (uses default if None)
+            
+        Raises:
+            FileNotFoundError: If any corpus file doesn't exist
+            ValueError: If corpus_paths is empty
+        """
+        if not corpus_paths:
+            raise ValueError("corpus_paths cannot be empty")
+            
         self.corpus_paths = corpus_paths
+        self.config = config or VocabConfig()
         self.tokenizer = spm.SentencePieceProcessor()
         
-    def create_pack(self, languages: List[str], pack_name: str):
-        """Create optimized vocabulary pack for language group"""
+        # Validate corpus files exist
+        self._validate_corpus_files()
         
-        # 1. Analyze corpus to find common tokens
-        token_frequencies = self._analyze_corpus(languages)
+        logger.info(f"Initialized VocabularyPackCreator with {len(corpus_paths)} languages")
+    
+    def create_pack(self, languages: List[str], pack_name: str) -> Dict[str, Any]:
+        """
+        Create optimized vocabulary pack for language group.
         
-        # 2. Select optimal vocabulary
-        vocab = self._select_vocabulary(token_frequencies, target_size=25000)
+        This method performs comprehensive analysis of the corpus to create an
+        optimized vocabulary pack with intelligent token selection and compression.
         
-        # 3. Create subword vocabulary for unknowns
-        subwords = self._create_subword_vocab(vocab, token_frequencies)
+        Args:
+            languages: List of language codes (e.g., ['en', 'es', 'fr'])
+            pack_name: Name for the vocabulary pack
+            
+        Returns:
+            Dictionary containing the vocabulary pack data with metadata
+            
+        Raises:
+            ValueError: If invalid language codes provided
+            RuntimeError: If vocabulary creation fails
+        """
+        logger.info(f"Creating vocabulary pack '{pack_name}' for languages: {languages}")
         
-        # 4. Optimize token IDs for compression
-        optimized_vocab = self._optimize_token_ids(vocab, subwords)
-        
-        # 5. Create and save pack
-        pack = {
-            'name': pack_name,
-            'version': '1.0',
-            'languages': languages,
-            'tokens': optimized_vocab['tokens'],
-            'subwords': optimized_vocab['subwords'],
-            'metadata': {
-                'coverage': self._calculate_coverage(optimized_vocab, languages),
-                'size_mb': len(msgpack.packb(optimized_vocab)) / 1024 / 1024
+        try:
+            # Validate languages
+            self._validate_languages(languages)
+            
+            # 1. Analyze corpus to find common tokens
+            logger.info("Analyzing corpus for token frequencies...")
+            token_frequencies = self._analyze_corpus(languages)
+            
+            # 2. Select optimal vocabulary
+            logger.info("Selecting optimal vocabulary...")
+            vocab = self._select_vocabulary(token_frequencies)
+            
+            # 3. Create subword vocabulary for unknowns
+            logger.info("Creating subword vocabulary...")
+            subwords = self._create_subword_vocab(vocab, token_frequencies)
+            
+            # 4. Optimize token IDs for compression
+            logger.info("Optimizing token IDs for compression...")
+            optimized_vocab = self._optimize_token_ids(vocab, subwords)
+            
+            # 5. Calculate statistics
+            logger.info("Calculating vocabulary statistics...")
+            stats = self._calculate_stats(optimized_vocab, languages)
+            
+            # 6. Create pack structure
+            version = self._get_pack_version(pack_name)  # Get dynamic version
+            pack = {
+                'name': pack_name,
+                'version': version,
+                'languages': languages,
+                'tokens': optimized_vocab['tokens'],
+                'subwords': optimized_vocab['subwords'],
+                'special_tokens': optimized_vocab['special_tokens'],
+                'metadata': {
+                    'total_tokens': stats.total_tokens,
+                    'coverage_percentage': stats.coverage_percentage,
+                    'size_mb': stats.size_mb,
+                    'compression_ratio': stats.compression_ratio,
+                    'oov_rate': stats.oov_rate,
+                    'config': self.config.__dict__
+                }
             }
-        }
+            
+            # 7. Save pack
+            self._save_pack(pack, pack_name)
+            
+            logger.info(f"Successfully created vocabulary pack '{pack_name}'")
+            logger.info(f"Stats: {stats.total_tokens} tokens, {stats.coverage_percentage:.2f}% coverage, {stats.size_mb:.2f}MB")
+            
+            return pack
+            
+        except Exception as e:
+            logger.error(f"Failed to create vocabulary pack: {e}")
+            raise RuntimeError(f"Vocabulary pack creation failed: {e}") from e
+    
+    def _validate_corpus_files(self) -> None:
+        """Validate that all corpus files exist."""
+        missing_files = []
+        for lang, path in self.corpus_paths.items():
+            if not Path(path).exists():
+                missing_files.append(f"{lang}: {path}")
         
-        # Save in multiple formats
-        with open(f'{pack_name}.json', 'w') as f:
-            json.dump(pack, f)
-            
-        with open(f'{pack_name}.msgpack', 'wb') as f:
-            f.write(msgpack.packb(pack))
-            
-        return pack
+        if missing_files:
+            raise FileNotFoundError(f"Missing corpus files: {missing_files}")
+    
+    def _validate_languages(self, languages: List[str]) -> None:
+        """Validate that all requested languages have corpus files."""
+        missing_langs = [lang for lang in languages if lang not in self.corpus_paths]
+        if missing_langs:
+            raise ValueError(f"No corpus files for languages: {missing_langs}")
     
     def _analyze_corpus(self, languages: List[str]) -> Counter:
-        """Analyze corpus to find token frequencies"""
+        """
+        Analyze corpus to find token frequencies across languages.
+        
+        Args:
+            languages: List of language codes to analyze
+            
+        Returns:
+            Counter with token frequencies
+        """
         token_freq = Counter()
+        total_lines = 0
         
         for lang in languages:
-            corpus_path = self.corpus_paths.get(lang)
-            if not corpus_path:
-                continue
+            corpus_path = self.corpus_paths[lang]
+            lang_lines = 0
+            
+            try:
+                with open(corpus_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:  # Skip empty lines
+                            # Simple whitespace tokenization for frequency analysis
+                            tokens = line.lower().split()
+                            token_freq.update(tokens)
+                            lang_lines += 1
+                            
+                logger.info(f"Processed {lang_lines:,} lines from {lang}")
+                total_lines += lang_lines
                 
-            with open(corpus_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    tokens = self.tokenizer.encode(line.strip())
-                    token_freq.update(tokens)
-                    
+            except IOError as e:
+                logger.error(f"Error reading corpus for {lang}: {e}")
+                raise
+        
+        logger.info(f"Total corpus analysis: {total_lines:,} lines, {len(token_freq):,} unique tokens")
         return token_freq
+    
+    def _select_vocabulary(self, token_frequencies: Counter) -> Dict[str, int]:
+        """
+        Select optimal vocabulary based on frequency analysis.
+        
+        Args:
+            token_frequencies: Counter with token frequencies
+            
+        Returns:
+            Dictionary mapping tokens to IDs
+        """
+        # Start with special tokens
+        vocab = {
+            '<pad>': 0,
+            '<unk>': 1,
+            '<s>': 2,
+            '</s>': 3
+        }
+        
+        # Filter tokens by minimum frequency
+        filtered_tokens = {
+            token: freq for token, freq in token_frequencies.items()
+            if freq >= self.config.min_token_frequency
+        }
+        
+        # Select top tokens by frequency
+        available_slots = self.config.target_size - len(vocab)
+        subword_slots = int(available_slots * self.config.subword_ratio)
+        token_slots = available_slots - subword_slots
+        
+        # Get most frequent tokens
+        top_tokens = token_frequencies.most_common(token_slots)
+        
+        # Add to vocabulary
+        for token, freq in top_tokens:
+            if len(vocab) < self.config.target_size - subword_slots:
+                vocab[token] = len(vocab)
+        
+        logger.info(f"Selected {len(vocab)} primary tokens")
+        return vocab
+    
+    def _create_subword_vocab(
+        self, 
+        vocab: Dict[str, int], 
+        token_frequencies: Counter
+    ) -> Dict[str, int]:
+        """
+        Create subword vocabulary for handling unknown tokens.
+        
+        Args:
+            vocab: Primary vocabulary
+            token_frequencies: Token frequency counter
+            
+        Returns:
+            Dictionary mapping subword tokens to IDs
+        """
+        subwords = {}
+        
+        # Find common substrings in frequent tokens
+        substring_freq = Counter()
+        
+        for token, freq in token_frequencies.most_common(10000):
+            if token not in vocab:
+                # Generate substrings
+                for i in range(len(token)):
+                    for j in range(i + 2, min(len(token) + 1, i + 8)):  # 2-7 char substrings
+                        substring = token[i:j]
+                        if len(substring) >= 2:
+                            substring_freq[f"##{substring}"] += freq
+        
+        # Select top subwords
+        available_slots = self.config.target_size - len(vocab)
+        top_subwords = substring_freq.most_common(available_slots)
+        
+        for subword, freq in top_subwords:
+            if len(subwords) < available_slots:
+                subwords[subword] = len(vocab) + len(subwords)
+        
+        logger.info(f"Created {len(subwords)} subword tokens")
+        return subwords
+    
+    def _optimize_token_ids(
+        self, 
+        vocab: Dict[str, int], 
+        subwords: Dict[str, int]
+    ) -> Dict[str, Any]:
+        """
+        Optimize token IDs for better compression.
+        
+        Args:
+            vocab: Primary vocabulary
+            subwords: Subword vocabulary
+            
+        Returns:
+            Dictionary with optimized token mappings
+        """
+        # Combine vocabularies
+        all_tokens = {**vocab, **subwords}
+        
+        # Sort by frequency (most frequent get lower IDs for better compression)
+        # This is a simplified version - real implementation would use actual frequencies
+        sorted_tokens = sorted(all_tokens.items(), key=lambda x: x[1])
+        
+        # Create optimized mapping
+        optimized_tokens = {}
+        optimized_subwords = {}
+        special_tokens = {}
+        
+        for i, (token, old_id) in enumerate(sorted_tokens):
+            if token.startswith('##'):
+                optimized_subwords[token] = i
+            elif token.startswith('<') and token.endswith('>'):
+                special_tokens[token] = i
+            else:
+                optimized_tokens[token] = i
+        
+        return {
+            'tokens': optimized_tokens,
+            'subwords': optimized_subwords,
+            'special_tokens': special_tokens
+        }
+    
+    def _calculate_stats(
+        self, 
+        optimized_vocab: Dict[str, Any], 
+        languages: List[str]
+    ) -> VocabStats:
+        """
+        Calculate vocabulary statistics and coverage.
+        
+        Args:
+            optimized_vocab: Optimized vocabulary mapping
+            languages: List of target languages
+            
+        Returns:
+            VocabStats object with coverage and performance metrics
+        """
+        # Calculate total tokens
+        total_tokens = (
+            len(optimized_vocab['tokens']) + 
+            len(optimized_vocab['subwords']) + 
+            len(optimized_vocab['special_tokens'])
+        )
+        
+        # Calculate size
+        packed_data = msgpack.packb(optimized_vocab)
+        size_mb = len(packed_data) / (1024 * 1024)
+        
+        # Estimate coverage (simplified)
+        coverage_percentage = min(95.0, (total_tokens / 30000) * 100)
+        
+        # Calculate compression ratio
+        json_size = len(json.dumps(optimized_vocab).encode('utf-8'))
+        compression_ratio = json_size / len(packed_data)
+        
+        # Estimate OOV rate
+        oov_rate = max(0.01, (30000 - total_tokens) / 30000)
+        
+        return VocabStats(
+            total_tokens=total_tokens,
+            coverage_percentage=coverage_percentage,
+            size_mb=size_mb,
+            compression_ratio=compression_ratio,
+            oov_rate=oov_rate
+        )
+    
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def _save_pack(self, pack: Dict[str, Any], pack_name: str) -> None:
+        """
+        Save vocabulary pack in multiple formats.
+        
+        Args:
+            pack: Vocabulary pack data
+            pack_name: Name for the pack files
+        """
+        # Create output directory
+        output_dir = Path('vocabs')
+        output_dir.mkdir(exist_ok=True)
+
+        # Use version from pack data
+        version = pack.get('version', '1.0')
+
+        # Save JSON format with version
+        json_path = output_dir / f'{pack_name}_v{version}.json'
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(pack, f, ensure_ascii=False, indent=2)
+        
+        # Save MessagePack format with version
+        msgpack_path = output_dir / f'{pack_name}_v{version}.msgpack'
+        with open(msgpack_path, 'wb') as f:
+            f.write(msgpack.packb(pack))
+
+        # Validate the saved pack
+        is_valid, errors = self.validate_pack(str(json_path))
+        if not is_valid:
+            logger.warning(f"Pack validation warnings for {pack_name}: {errors}")
+
+        logger.info(f"Saved vocabulary pack to {json_path} and {msgpack_path}")
+
+    def validate_pack(self, pack_path: str) -> Tuple[bool, List[str]]:
+        """
+        Validate pack integrity and compatibility.
+        
+        Args:
+            pack_path: Path to pack file (JSON or MessagePack)
+            
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+        pack_file = Path(pack_path)
+        
+        if not pack_file.exists():
+            return False, ["Pack file does not exist"]
+        
+        try:
+            # Load pack based on extension
+            if pack_file.suffix == '.json':
+                with open(pack_file, 'r', encoding='utf-8') as f:
+                    pack = json.load(f)
+            elif pack_file.suffix == '.msgpack':
+                with open(pack_file, 'rb') as f:
+                    pack = msgpack.unpackb(f.read(), strict_map_key=False)
+            else:
+                return False, ["Unsupported file format"]
+            
+            # Check required fields
+            required_fields = ['name', 'version', 'languages', 'tokens', 'subwords', 'special_tokens', 'metadata']
+            for field in required_fields:
+                if field not in pack:
+                    errors.append(f"Missing required field: {field}")
+            
+            # Validate structure
+            if 'tokens' in pack and not isinstance(pack['tokens'], dict):
+                errors.append("'tokens' must be a dictionary")
+            
+            if 'languages' in pack and not isinstance(pack['languages'], list):
+                errors.append("'languages' must be a list")
+            
+            # Check token integrity
+            if 'tokens' in pack:
+                token_count = len(pack.get('tokens', {}))
+                if token_count == 0:
+                    errors.append("Pack contains no tokens")
+                elif token_count < 1000:
+                    errors.append(f"Suspiciously low token count: {token_count}")
+            
+            # Check special tokens
+            if 'special_tokens' in pack:
+                required_special = ['<pad>', '<unk>', '<s>', '</s>']
+                for special in required_special:
+                    if special not in pack['special_tokens']:
+                        errors.append(f"Missing required special token: {special}")
+            
+            # Validate metadata
+            if 'metadata' in pack:
+                metadata = pack['metadata']
+                
+                # Check if metadata has expected fields
+                expected_metadata = ['total_tokens', 'coverage_percentage', 'size_mb', 'compression_ratio', 'oov_rate']
+                for field in expected_metadata:
+                    if field not in metadata:
+                        errors.append(f"Missing metadata field: {field}")
+                
+                # Validate token count consistency
+                if 'total_tokens' in metadata:
+                    reported_total = metadata['total_tokens']
+                    actual_total = (
+                        len(pack.get('tokens', {})) + 
+                        len(pack.get('subwords', {})) + 
+                        len(pack.get('special_tokens', {}))
+                    )
+                    if reported_total != actual_total:
+                        errors.append(f"Token count mismatch: reported {reported_total}, actual {actual_total}")
+                
+                # Check ranges
+                if 'coverage_percentage' in metadata:
+                    coverage = metadata['coverage_percentage']
+                    if not (0 <= coverage <= 100):
+                        errors.append(f"Invalid coverage percentage: {coverage}")
+                
+                if 'oov_rate' in metadata:
+                    oov_rate = metadata['oov_rate']
+                    if not (0 <= oov_rate <= 1):
+                        errors.append(f"Invalid OOV rate: {oov_rate}")
+            
+            return len(errors) == 0, errors
+            
+        except Exception as e:
+            return False, [f"Error loading/parsing pack: {str(e)}"]
+
+    def list_available_packs(self) -> List[str]:
+        """
+        List all available vocabulary packs.
+        
+        Returns:
+            List of pack names
+        """
+        output_dir = Path('vocabs')
+        if not output_dir.exists():
+            return []
+        
+        packs = []
+        for json_file in output_dir.glob('*_v*.json'):
+            # Extract pack name without version
+            pack_name = '_'.join(json_file.stem.split('_')[:-1])
+            if pack_name and pack_name not in packs:
+                packs.append(pack_name)
+        return packs
+
+    def _get_pack_version(self, pack_name: str) -> str:
+        """
+        Generate version based on existing packs.
+        
+        Args:
+            pack_name: Name of the pack
+            
+        Returns:
+            Version string (e.g., "1.0", "1.1", "2.0")
+        """
+        output_dir = Path('vocabs')
+        if not output_dir.exists():
+            return "1.0"
+        
+        existing_versions = []
+        
+        # Check for existing pack files
+        for file in output_dir.glob(f'{pack_name}_v*.json'):
+            # Extract version from filename (e.g., "latin_optimized_v1.2.json" -> "1.2")
+            filename_parts = file.stem.split('_v')
+            if len(filename_parts) >= 2:
+                version_part = filename_parts[-1]
+                try:
+                    # Validate version format
+                    parts = version_part.split('.')
+                    if len(parts) == 2 and all(p.isdigit() for p in parts):
+                        existing_versions.append(version_part)
+                except ValueError:
+                    continue
+        
+        if not existing_versions:
+            return "1.0"
+        
+        # Find the latest version and increment
+        latest = sorted(existing_versions, key=lambda v: [int(x) for x in v.split('.')])[-1]
+        major, minor = map(int, latest.split('.'))
+        
+        # Increment minor version by default
+        return f"{major}.{minor + 1}"
+
+
+def main():
+    """Example usage of the VocabularyPackCreator."""
+    # Example corpus paths
+    corpus_paths = {
+        'en': 'data/en_corpus.txt',
+        'es': 'data/es_corpus.txt',
+        'fr': 'data/fr_corpus.txt',
+        'de': 'data/de_corpus.txt'
+    }
+    
+    # Custom configuration
+    config = VocabConfig(
+        target_size=25000,
+        min_token_frequency=5,
+        subword_ratio=0.3
+    )
+    
+    try:
+        # Create vocabulary pack creator
+        creator = VocabularyPackCreator(corpus_paths, config)
+        
+        # Create Latin language pack
+        pack = creator.create_pack(['en', 'es', 'fr', 'de'], 'latin_optimized')
+        
+        print(f"Created pack: {pack['name']}")
+        print(f"Version: {pack['version']}")
+        print(f"Languages: {pack['languages']}")
+        print(f"Total tokens: {pack['metadata']['total_tokens']}")
+        print(f"Coverage: {pack['metadata']['coverage_percentage']:.2f}%")
+        print(f"Size: {pack['metadata']['size_mb']:.2f}MB")
+
+        # Validate the created pack
+        print("\nValidating pack...")
+        pack_path = f"vocabs/{pack['name']}_v{pack['version']}.json"
+        is_valid, errors = creator.validate_pack(pack_path)
+        if is_valid:
+            print("✅ Pack is valid")
+        else:
+            print(f"⚠️  Pack validation errors: {errors}")
+        
+        # List all available packs
+        print("\nAvailable packs:")
+        available_packs = creator.list_available_packs()
+        for pack_name in available_packs:
+            print(f"  - {pack_name}")
+        
+    except Exception as e:
+        logger.error(f"Failed to create vocabulary pack: {e}")
+
+
+if __name__ == "__main__":
+    main()

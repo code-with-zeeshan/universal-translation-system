@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Pipeline Flow - Universal Translation System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Professional color scheme */
+            --color-primary: #2563eb;
+            --color-secondary: #7c3aed;
+            --color-success: #16a34a;
+            --color-warning: #ea580c;
+            --color-danger: #dc2626;
+            --color-info: #0891b2;
+            
+            /* Neutral colors */
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            
+            /* Semantic colors */
+            --bg-primary: #ffffff;
+            --bg-secondary: #f9fafb;
+            --bg-tertiary: #f3f4f6;
+            --text-primary: #111827;
+            --text-secondary: #6b7280;
+            --text-tertiary: #9ca3af;
+            --border-color: #e5e7eb;
+            
+            /* Stage colors */
+            --stage-1-color: #2563eb;
+            --stage-2-color: #7c3aed;
+            --stage-3-color: #ea580c;
+            --stage-4-color: #16a34a;
+            --stage-5-color: #ec4899;
+            --stage-6-color: #0891b2;
+            
+            /* Typography */
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Menlo', monospace;
+            
+            /* Spacing */
+            --space-1: 0.25rem;
+            --space-2: 0.5rem;
+            --space-3: 0.75rem;
+            --space-4: 1rem;
+            --space-5: 1.25rem;
+            --space-6: 1.5rem;
+            --space-8: 2rem;
+            --space-10: 2.5rem;
+            --space-12: 3rem;
+            --space-16: 4rem;
+            
+            /* Border radius */
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            
+            /* Shadows */
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        
+        /* Dark mode */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #111827;
+                --bg-secondary: #1f2937;
+                --bg-tertiary: #374151;
+                --text-primary: #f9fafb;
+                --text-secondary: #d1d5db;
+                --text-tertiary: #9ca3af;
+                --border-color: #374151;
+            }
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: var(--font-sans);
+            font-size: 16px;
+            line-height: 1.5;
+            color: var(--text-primary);
+            background-color: var(--bg-secondary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        
+        /* Container */
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: var(--space-8) var(--space-6);
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: var(--space-16);
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: var(--space-3);
+            letter-spacing: -0.025em;
+        }
+        
+        .header .subtitle {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        /* Badge */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            background: var(--bg-tertiary);
+            color: var(--color-primary);
+            padding: var(--space-1) var(--space-3);
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: var(--space-6);
+            border: 1px solid var(--border-color);
+        }
+        
+        /* Pipeline container */
+        .pipeline {
+            position: relative;
+            padding-left: var(--space-12);
+        }
+        
+        /* Connection line */
+        .pipeline::before {
+            content: '';
+            position: absolute;
+            left: 19px;
+            top: 30px;
+            bottom: 30px;
+            width: 2px;
+            background: var(--border-color);
+        }
+        
+        /* Stage */
+        .stage {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-8);
+            margin-bottom: var(--space-8);
+            position: relative;
+            transition: all 0.2s ease;
+        }
+        
+        .stage:hover {
+            border-color: var(--gray-300);
+            box-shadow: var(--shadow-md);
+        }
+        
+        /* Stage number */
+        .stage-number {
+            position: absolute;
+            left: -48px;
+            top: 32px;
+            width: 40px;
+            height: 40px;
+            background: var(--bg-primary);
+            border: 2px solid var(--border-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 1.125rem;
+            transition: all 0.2s ease;
+        }
+        
+        .stage-1 .stage-number { color: var(--stage-1-color); border-color: var(--stage-1-color); }
+        .stage-2 .stage-number { color: var(--stage-2-color); border-color: var(--stage-2-color); }
+        .stage-3 .stage-number { color: var(--stage-3-color); border-color: var(--stage-3-color); }
+        .stage-4 .stage-number { color: var(--stage-4-color); border-color: var(--stage-4-color); }
+        .stage-5 .stage-number { color: var(--stage-5-color); border-color: var(--stage-5-color); }
+        .stage-6 .stage-number { color: var(--stage-6-color); border-color: var(--stage-6-color); }
+        
+        .stage:hover .stage-number {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+        }
+        
+        /* Stage header */
+        .stage-header {
+            margin-bottom: var(--space-6);
+        }
+        
+        .stage-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-2);
+        }
+        
+        .stage-description {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+        
+        /* Stage content grid */
+        .stage-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-6);
+        }
+        
+        /* Section */
+        .section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--space-6);
+        }
+        
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            margin-bottom: var(--space-4);
+        }
+        
+        .section-icon {
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        
+        .section-title {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .section-subtitle {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+        }
+        
+        /* Data items */
+        .data-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-2);
+        }
+        
+        .data-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            padding: var(--space-3) var(--space-4);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            transition: all 0.15s ease;
+        }
+        
+        .data-item:hover {
+            border-color: var(--gray-300);
+            transform: translateX(2px);
+        }
+        
+        .data-item::before {
+            content: '•';
+            color: var(--text-tertiary);
+        }
+        
+        .data-item.highlight {
+            background: var(--bg-tertiary);
+            font-weight: 500;
+        }
+        
+        .output .data-item::before {
+            color: var(--stage-4-color);
+        }
+        
+        /* Code blocks */
+        .code {
+            font-family: var(--font-mono);
+            font-size: 0.8125rem;
+            background: var(--gray-900);
+            color: var(--gray-100);
+            padding: var(--space-1) var(--space-2);
+            border-radius: var(--radius-sm);
+        }
+        
+        /* Summary */
+        .summary {
+            background: var(--bg-primary);
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--space-10);
+            margin-top: var(--space-12);
+        }
+        
+        .summary h2 {
+            font-size: 1.875rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--space-6);
+            text-align: center;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-6);
+            margin-bottom: var(--space-8);
+        }
+        
+        .summary-item {
+            text-align: center;
+        }
+        
+        .summary-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-tertiary);
+            margin-bottom: var(--space-1);
+        }
+        
+        .summary-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-primary);
+        }
+        
+        .summary-description {
+            color: var(--text-secondary);
+            line-height: 1.625;
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .pipeline {
+                padding-left: var(--space-8);
+            }
+            
+            .stage-number {
+                left: -32px;
+                width: 32px;
+                height: 32px;
+                font-size: 1rem;
+            }
+            
+            .stage-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .stage {
+                padding: var(--space-6);
+            }
+            
+            .summary {
+                padding: var(--space-6);
+            }
+            
+            .summary-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        /* Utility classes */
+        .text-muted {
+            color: var(--text-secondary);
+        }
+        
+        .font-mono {
+            font-family: var(--font-mono);
+        }
+        
+        /* Smooth scroll */
+        html {
+            scroll-behavior: smooth;
+        }
+        
+        /* Focus styles */
+        *:focus {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+        
+        /* Skip to content */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: var(--color-primary);
+            color: white;
+            padding: var(--space-2) var(--space-4);
+            text-decoration: none;
+            border-radius: var(--radius-sm);
+        }
+        
+        .skip-link:focus {
+            top: var(--space-2);
+        }
+    </style>
+</head>
+<body>
+    <a href="#main" class="skip-link">Skip to content</a>
+    
+    <div class="container">
+        <header class="header">
+            <div class="badge">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z"></path>
+                    <path d="M2 17L12 22L22 17"></path>
+                    <path d="M2 12L12 17L22 12"></path>
+                </svg>
+                Data Pipeline Documentation
+            </div>
+            <h1>Multilingual Translation Data Pipeline</h1>
+            <p class="subtitle">
+                A comprehensive guide to the Universal Translation System's data processing workflow, 
+                from strategic planning to production-ready datasets.
+            </p>
+        </header>
+        
+        <main id="main" class="pipeline">
+            <!-- Stage 1 -->
+            <div class="stage stage-1">
+                <div class="stage-number">1</div>
+                <div class="stage-header">
+                    <h2 class="stage-title">Strategy Planning</h2>
+                    <p class="stage-description">Define language pairs and optimize resource allocation</p>
+                </div>
+                <div class="stage-content">
+                    <div class="section">
+                        <div class="section-header">
+                            <span class="section-icon">📥</span>
+                            <div>
+                                <div class="section-title">Input Requirements</div>
+                                <div class="section-subtitle">smart_data_downloader.py</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item">20 target languages</div>
+                            <div class="data-item">190 potential language pairs</div>
+                            <div class="data-item">Limited computational resources</div>
+                            <div class="data-item">Storage constraints (10GB limit)</div>
+                        </div>
+                    </div>
+                    <div class="section output">
+                        <div class="section-header">
+                            <span class="section-icon">📤</span>
+                            <div>
+                                <div class="section-title">Strategic Output</div>
+                                <div class="section-subtitle">Optimized pair selection</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item highlight">19 English-centric pairs (en-X)</div>
+                            <div class="data-item highlight">10-20 high-traffic direct pairs</div>
+                            <div class="data-item">~30-40 total pairs (80% reduction)</div>
+                            <div class="data-item">Pivot translation strategy</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stage 2 -->
+            <div class="stage stage-2">
+                <div class="stage-number">2</div>
+                <div class="stage-header">
+                    <h2 class="stage-title">Essential Data Collection</h2>
+                    <p class="stage-description">Download high-quality evaluation and seed datasets</p>
+                </div>
+                <div class="stage-content">
+                    <div class="section">
+                        <div class="section-header">
+                            <span class="section-icon">⚙️</span>
+                            <div>
+                                <div class="section-title">Configuration</div>
+                                <div class="section-subtitle">download_curated_data.py</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item">Selected language pairs</div>
+                            <div class="data-item">100MB size limit</div>
+                            <div class="data-item">Quality-first approach</div>
+                            <div class="data-item">Evaluation datasets priority</div>
+                        </div>
+                    </div>
+                    <div class="section output">
+                        <div class="section-header">
+                            <span class="section-icon">💾</span>
+                            <div>
+                                <div class="section-title">Essential Datasets</div>
+                                <div class="section-subtitle">data/essential/</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item"><code class="code">flores200/</code> - Evaluation data</div>
+                            <div class="data-item"><code class="code">tatoeba_en_*/</code> - Community translations</div>
+                            <div class="data-item"><code class="code">OpenSubtitles_*.txt</code> - Conversational</div>
+                            <div class="data-item"><code class="code">MultiUN_*.txt</code> - Formal text</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stage 3 -->
+            <div class="stage stage-3">
+                <div class="stage-number">3</div>
+                <div class="stage-header">
+                    <h2 class="stage-title">Comprehensive Data Download</h2>
+                    <p class="stage-description">Gather large-scale training data from multiple sources</p>
+                </div>
+                <div class="stage-content">
+                    <div class="section">
+                        <div class="section-header">
+                            <span class="section-icon">🌐</span>
+                            <div>
+                                <div class="section-title">Data Sources</div>
+                                <div class="section-subtitle">download_training_data.py</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item">HuggingFace datasets</div>
+                            <div class="data-item">OPUS parallel corpora</div>
+                            <div class="data-item">WMT competition data</div>
+                            <div class="data-item">Facebook NLLB data</div>
+                        </div>
+                    </div>
+                    <div class="section output">
+                        <div class="section-header">
+                            <span class="section-icon">📦</span>
+                            <div>
+                                <div class="section-title">Raw Training Data</div>
+                                <div class="section-subtitle">data/raw/</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item"><code class="code">flores200/</code> - Benchmark data</div>
+                            <div class="data-item"><code class="code">nllb_*/</code> - NLLB datasets</div>
+                            <div class="data-item"><code class="code">ccmatrix/</code> - Web crawl data</div>
+                            <div class="data-item"><code class="code">opus/</code> - OPUS corpora</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stage 4 -->
+            <div class="stage stage-4">
+                <div class="stage-number">4</div>
+                <div class="stage-header">
+                    <h2 class="stage-title">Smart Data Sampling</h2>
+                    <p class="stage-description">Filter and sample high-quality sentence pairs</p>
+                </div>
+                <div class="stage-content">
+                    <div class="section">
+                        <div class="section-header">
+                            <span class="section-icon">🔍</span>
+                            <div>
+                                <div class="section-title">Quality Filters</div>
+                                <div class="section-subtitle">smart_sampler.py</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item">Length ratio filtering</div>
+                            <div class="data-item">Language detection</div>
+                            <div class="data-item">Duplicate removal</div>
+                            <div class="data-item">Quality scoring</div>
+                        </div>
+                    </div>
+                    <div class="section output">
+                        <div class="section-header">
+                            <span class="section-icon">✨</span>
+                            <div>
+                                <div class="section-title">Filtered Samples</div>
+                                <div class="section-subtitle">data/sampled/</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item highlight"><code class="code">en-es/</code> - 2M sentences</div>
+                            <div class="data-item highlight"><code class="code">en-fr/</code> - 2M sentences</div>
+                            <div class="data-item"><code class="code">en-hi/</code> - 500k sentences</div>
+                            <div class="data-item">Balanced domain distribution</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stage 5 -->
+            <div class="stage stage-5">
+                <div class="stage-number">5</div>
+                <div class="stage-header">
+                    <h2 class="stage-title">Resource Optimization</h2>
+                    <p class="stage-description">Balance data distribution based on language resources</p>
+                </div>
+                <div class="stage-content">
+                    <div class="section">
+                        <div class="section-header">
+                            <span class="section-icon">⚖️</span>
+                            <div>
+                                <div class="section-title">Distribution Strategy</div>
+                                <div class="section-subtitle">practical_data_pipeline.py</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item">Resource-based allocation</div>
+                            <div class="data-item">5-10GB total constraint</div>
+                            <div class="data-item">Quality over quantity</div>
+                            <div class="data-item">Domain diversity</div>
+                        </div>
+                    </div>
+                    <div class="section output">
+                        <div class="section-header">
+                            <span class="section-icon">📊</span>
+                            <div>
+                                <div class="section-title">Optimized Distribution</div>
+                                <div class="section-subtitle">Per language pair</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item highlight">High-resource: 2M sentences</div>
+                            <div class="data-item highlight">Medium-resource: 1M sentences</div>
+                            <div class="data-item">Low-resource: 300-500k sentences</div>
+                            <div class="data-item">Total: ~8GB optimized data</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Stage 6 -->
+            <div class="stage stage-6">
+                <div class="stage-number">6</div>
+                <div class="stage-header">
+                    <h2 class="stage-title">Synthetic Data Augmentation</h2>
+                    <p class="stage-description">Generate additional training data using advanced techniques</p>
+                </div>
+                <div class="stage-content">
+                    <div class="section">
+                        <div class="section-header">
+                            <span class="section-icon">🤖</span>
+                            <div>
+                                <div class="section-title">Augmentation Methods</div>
+                                <div class="section-subtitle">synthetic_augmentation.py</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item">Back-translation</div>
+                            <div class="data-item">Pivot translation</div>
+                            <div class="data-item">Monolingual data usage</div>
+                            <div class="data-item">NLLB model generation</div>
+                        </div>
+                    </div>
+                    <div class="section output">
+                        <div class="section-header">
+                            <span class="section-icon">🎯</span>
+                            <div>
+                                <div class="section-title">Final Training Data</div>
+                                <div class="section-subtitle">data/final/</div>
+                            </div>
+                        </div>
+                        <div class="data-list">
+                            <div class="data-item highlight"><code class="code">backtranslated/</code> - Synthetic pairs</div>
+                            <div class="data-item highlight"><code class="code">pivot_pairs/</code> - Pivot translations</div>
+                            <div class="data-item highlight"><code class="code">augmented_training/</code> - Final dataset</div>
+                            <div class="data-item">✅ Ready for model training</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <section class="summary">
+            <h2>Pipeline Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-label">Languages</div>
+                    <div class="summary-value">20</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Language Pairs</div>
+                    <div class="summary-value">30-40</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Total Data</div>
+                    <div class="summary-value">~8GB</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Efficiency Gain</div>
+                    <div class="summary-value">80%</div>
+                </div>
+            </div>
+            <p class="summary-description">
+                The Universal Translation System's data pipeline implements a strategic approach to multilingual data processing. 
+                By focusing on English-centric pairs with selective direct routes, we achieve 80% efficiency gains while maintaining 
+                translation quality across all 20 supported languages. The pipeline ensures balanced representation, quality filtering, 
+                and intelligent augmentation to create production-ready training datasets.
+            </p>
+        </section>
+    </div>
+</body>
+</html>

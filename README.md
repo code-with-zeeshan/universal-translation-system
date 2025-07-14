@@ -67,7 +67,7 @@ const result = await translator.translate({
 - **Vocabulary Packs**: Downloadable language-specific token mappings
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
-See [docs/Architecture.md] (docs/Architecture.md) for details.
+See [docs/Architecture.md](docs/Architecture.md) for details.
 
 ## 📚 Documentation
 - **API Documentation**
@@ -79,7 +79,7 @@ See [docs/Architecture.md] (docs/Architecture.md) for details.
 - **Community Acknowledgments (soon)**
 
 ## 🤝 Contributing
-See [CONTRIBUTING.md] (CONTRIBUTING.md) for guidelines and more details on how to contribute.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and more details on how to contribute.
 
 ## ⚠️ Current Status
 This is a research project in active development. Core components are implemented but not production-tested.
