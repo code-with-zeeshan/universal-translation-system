@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A revolutionary mobile translation system that separates encoding and decoding, enabling high-quality translation for 20 languages with minimal app size.
+A revolutionary universal translation system that separates encoding and decoding, enabling high-quality translation for 20 languages with minimal app size.
 
 ## 🌟 Key Innovation
 
