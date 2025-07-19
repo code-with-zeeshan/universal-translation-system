@@ -6,10 +6,22 @@
 #include <string>
 #include <memory>
 #include <unordered_map>
+#include <cstdint>  // Add for int32_t
+
+// Forward declaration to avoid including heavy header if possible
+namespace Ort {
+    class Session;
+    class MemoryInfo;
+    class AllocatorWithDefaultOptions;
+}
+
 #include "onnxruntime_cxx_api.h"
 
 namespace UniversalTranslation {
 
+/**
+ * @brief Vocabulary pack containing tokens and subwords for specific languages
+ */
 class VocabularyPack {
 public:
     std::unordered_map<std::string, int32_t> tokens;
@@ -18,11 +30,24 @@ public:
     std::string name;
     float size_mb;
     
+    // Constructor/Destructor
+    VocabularyPack() = default;
+    ~VocabularyPack() = default;
+    
+    // Disable copy, enable move
+    VocabularyPack(const VocabularyPack&) = delete;
+    VocabularyPack& operator=(const VocabularyPack&) = delete;
+    VocabularyPack(VocabularyPack&&) = default;
+    VocabularyPack& operator=(VocabularyPack&&) = default;
+    
     int32_t getTokenId(const std::string& token) const;
     std::vector<int32_t> tokenizeUnknown(const std::string& word) const;
     static std::unique_ptr<VocabularyPack> loadFromFile(const std::string& path);
 };
 
+/**
+ * @brief Universal encoder for multilingual text encoding
+ */
 class UniversalEncoder {
 private:
     std::unique_ptr<Ort::Session> session;
@@ -34,8 +59,14 @@ private:
     std::vector<float> runInference(const std::vector<int32_t>& tokens);
     
 public:
-    UniversalEncoder(const std::string& model_path);
+    explicit UniversalEncoder(const std::string& model_path);
     ~UniversalEncoder();
+    
+    // Disable copy, enable move
+    UniversalEncoder(const UniversalEncoder&) = delete;
+    UniversalEncoder& operator=(const UniversalEncoder&) = delete;
+    UniversalEncoder(UniversalEncoder&&) = default;
+    UniversalEncoder& operator=(UniversalEncoder&&) = default;
     
     // Load vocabulary pack for language pair
     bool loadVocabulary(const std::string& vocab_path);
@@ -56,4 +87,4 @@ public:
 
 } // namespace UniversalTranslation
 
-#endif
+#endif // UNIVERSAL_ENCODER_H

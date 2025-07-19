@@ -1,0 +1,92 @@
+# cloud_decoder/docker-compose.yml
+version: '3.8'
+
+services:
+  decoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: universal-decoder:latest
+    container_name: universal_decoder
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - OMP_NUM_THREADS=4
+      - MODEL_PATH=/app/models/decoder_model.pt
+      - VOCAB_DIR=/app/vocabs
+      - LOG_LEVEL=info
+      - MAX_BATCH_SIZE=64
+      - BATCH_TIMEOUT_MS=10
+    volumes:
+      # Mount model files
+      - ./models:/app/models:ro
+      - ./vocabs:/app/vocabs:ro
+      # Logs
+      - ./logs:/app/logs
+      # Cache
+      - decoder_cache:/app/.cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 16G
+          cpus: '8'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - translation_network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: decoder_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - translation_network
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+
+  # Optional: Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: decoder_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - translation_network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+
+networks:
+  translation_network:
+    driver: bridge
+
+volumes:
+  decoder_cache:
+  redis_data:
+  prometheus_data:

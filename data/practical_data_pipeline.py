@@ -1,146 +1,260 @@
 # data/practical_data_pipeline.py
-from dataclasses import dataclass
-from typing import Dict
-import yaml
+"""
+Main pipeline orchestrator - Refactored to integrate all modules
+"""
+
 from pathlib import Path
+from typing import Dict, List, Optional
 import logging
-from datasets import load_dataset
+
+# Import standalone modules
+from download_curated_data import CuratedDataDownloader
+from download_training_data import MultilingualDataCollector
+from smart_data_downloader import SmartDataStrategy
 from smart_sampler import SmartDataSampler
 from synthetic_augmentation import SyntheticDataAugmenter
-from tqdm import tqdm
+from pipeline_connector import PipelineConnector
+from data.vocabulary_connector import VocabularyConnector
 
-@dataclass
-class PipelineConfig:
-    """Configuration for data pipeline"""
-    training_distribution: Dict[str, int]
-    total_size_gb: int
-    output_dir: str
-    
-    @classmethod
-    def from_yaml(cls, config_path: str):
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config_data = yaml.safe_load(f)
-        return cls(
-            training_distribution=config_data['training_distribution'],
-            total_size_gb=config_data['total_size_gb'],
-            output_dir=config_data['output_dir']
-        )
+# Import shared utilities
+from data_utils import ConfigManager, DataProcessor, DatasetLoader
+from utils.common_utils import StandardLogger, DirectoryManager
+
 
 class PracticalDataPipeline:
-    """Realistic data pipeline for 20 languages with modern configuration"""
+    """Main orchestrator for the multilingual data pipeline"""
     
-    def __init__(self, config_path: str = 'config.yaml'):
-        log_dir = Path('log')
-        log_dir.mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[logging.FileHandler(log_dir /'data_pipeline.log'), logging.StreamHandler()]
+    def __init__(self, config_path: str = 'data/config.yaml'):
+        # Initialize logging
+        self.logger = StandardLogger.get_logger(__name__)
+        StandardLogger.log_system_info(self.logger)
+        
+        # Load configuration
+        self.config = ConfigManager.load_config(config_path)
+        self.data_processor = DataProcessor(self.logger)
+        
+        # Initialize strategy
+        self.strategy = SmartDataStrategy()
+        self.required_pairs = self.strategy.get_required_pairs()
+        
+        # Initialize components
+        self.curated_downloader = CuratedDataDownloader()
+        self.training_downloader = MultilingualDataCollector(
+            ConfigManager.get_languages()
         )
-        self.logger = logging.getLogger(__name__)
-        self.config = PipelineConfig.from_yaml(config_path)
         self.sampler = SmartDataSampler()
         self.augmenter = SyntheticDataAugmenter()
+        
+        # Create directory structure
+        self.dirs = DirectoryManager.create_data_structure(
+            ConfigManager.get_output_dir()
+        )
+        
+        self.logger.info("✅ Pipeline initialized with all components")
     
     def prepare_all_data(self) -> None:
-        """Execute complete data pipeline"""
-        output_dir = Path(self.config.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        """Execute complete data pipeline with integrated modules"""
+        self.logger.info("🚀 Starting integrated data pipeline")
         
-        self.download_eval_sets()
-        self.download_english_pairs()
-        self.download_direct_pairs()
-        self.sample_large_corpora()
-        self.augment_synthetic()
+        # Step 1: Download evaluation data using curated downloader
+        self._download_evaluation_data()
         
-        self.logger.info("✅ Total data: ~8GB of high-quality parallel text")
-    
-    def get_training_distribution(self) -> Dict[str, int]:
-        """Return smart data distribution for training"""
-        return self.config.training_distribution
-    
-    def download_eval_sets(self) -> None:
-        """Download high-quality evaluation sets"""
-        self.logger.info("📥 Downloading evaluation sets...")
-        try:
-            flores = load_dataset(
-                'facebook/flores',
-                name='flores200_sacrebleu_tokenized_xlm_roberta_base',
-                split='dev',
-                trust_remote_code=True
-            )
-            flores.save_to_disk(Path(self.config.output_dir) / 'flores200')
-        except Exception as e:
-            self.logger.error(f"✗ Failed to download evaluation sets: {e}")
-    
-    def download_english_pairs(self) -> None:
-        """Download English-centric pairs"""
-        self.logger.info("📥 Downloading English-centric pairs...")
-        for pair in self.get_training_distribution():
-            if pair.startswith('en-'):
-                try:
-                    dataset = load_dataset('Helsinki-NLP/opus-100', language_pair=pair, streaming=True, trust_remote_code=True)
-                    self._process_streaming_dataset(dataset, Path(self.config.output_dir) / f'opus_{pair}')
-                except Exception as e:
-                    self.logger.error(f"✗ Failed to download {pair}: {e}")
-    
-    def download_direct_pairs(self) -> None:
-        """Download key direct pairs"""
-        self.logger.info("📥 Downloading direct pairs...")
-        for pair in self.get_training_distribution():
-            if not pair.startswith('en-'):
-                try:
-                    dataset = load_dataset('Helsinki-NLP/opus-100', language_pair=pair, streaming=True, trust_remote_code=True)
-                    self._process_streaming_dataset(dataset, Path(self.config.output_dir) / f'opus_{pair}')
-                except Exception as e:
-                    self.logger.error(f"✗ Failed to download {pair}: {e}")
-    
-    def sample_large_corpora(self) -> None:
-        """Sample and filter large corpora using SmartDataSampler"""
-        self.logger.info("🔍 Sampling large corpora...")
-        output_dir = Path(self.config.output_dir) / 'sampled'
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Step 2: Download training data based on strategy
+        self._download_training_data()
         
-        for pair, target_size in tqdm(self.get_training_distribution().items(), desc="Sampling corpora"):
-            input_file = Path(self.config.output_dir) / 'raw' / f'opus_{pair}.txt'
-            output_file = output_dir / f'{pair}.txt'
-            if input_file.exists():
-                try:
-                    self.sampler.sample_high_quality_pairs(
-                        input_file=str(input_file),
-                        output_file=str(output_file),
-                        target_size=target_size
-                    )
-                    self.logger.info(f"✓ Sampled {pair}: {target_size:,} sentences")
-                except Exception as e:
-                    self.logger.error(f"✗ Failed to sample {pair}: {e}")
-    
-    def augment_synthetic(self) -> None:
-        """Augment with synthetic data using SyntheticDataAugmenter"""
-        self.logger.info("🤖 Augmenting synthetic data...")
-        output_dir = Path(self.config.output_dir) / 'final'
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Step 3: Sample and filter data
+        self._sample_and_filter_data()
         
-        for pair in tqdm(self.get_training_distribution(), desc="Augmenting data"):
-            source_lang, target_lang = pair.split('-')
-            monolingual_file = Path(self.config.output_dir) / 'raw' / f'mono_{source_lang}.txt'
-            output_file = output_dir / f'backtranslated_{pair}.txt'
-            
-            if monolingual_file.exists():
-                try:
-                    self.augmenter.augment_with_backtranslation(
-                        monolingual_file=str(monolingual_file),
-                        source_lang=source_lang,
-                        target_lang=target_lang,
-                        output_file=str(output_file)
-                    )
-                    self.logger.info(f"✓ Augmented {pair} with backtranslation")
-                except Exception as e:
-                    self.logger.error(f"✗ Failed to augment {pair}: {e}")
+        # Step 4: Augment with synthetic data
+        self._augment_synthetic_data()
 
-    def _process_streaming_dataset(self, dataset, output_path: Path) -> None:
-        """Process streaming dataset with memory efficiency"""
-        output_path.mkdir(parents=True, exist_ok=True)
-        for batch in dataset.iter(batch_size=1000):
-            datasets.Dataset.from_dict(batch).save_to_disk(output_path)
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None                
+        # Step 5: Create training-ready data
+        self._create_training_ready_data()
+        
+        # Step 6: Validate final dataset
+        self._validate_final_dataset()
+        
+        self.logger.info("✅ Pipeline completed successfully!")
+    
+    def _download_evaluation_data(self) -> None:
+        """Download evaluation data using CuratedDataDownloader"""
+        self.logger.info("📥 Step 1: Downloading evaluation data")
+        
+        try:
+            # Use the curated downloader
+            self.curated_downloader.download_essential_data(
+                output_dir=str(self.dirs['essential'])
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Failed to download evaluation data: {e}")
+            raise
+    
+    def _download_training_data(self) -> None:
+        """Download training data based on strategy"""
+        self.logger.info("📥 Step 2: Downloading training data based on strategy")
+        
+        # Group pairs by priority
+        high_priority = [p for p in self.required_pairs if p.priority == 'high']
+        medium_priority = [p for p in self.required_pairs if p.priority == 'medium']
+        low_priority = [p for p in self.required_pairs if p.priority == 'low']
+        
+        # Download in priority order
+        for priority_group, pairs in [
+            ("HIGH", high_priority),
+            ("MEDIUM", medium_priority),
+            ("LOW", low_priority)
+        ]:
+            self.logger.info(f"📊 Downloading {priority_group} priority pairs ({len(pairs)} pairs)")
+            
+            for pair in pairs:
+                try:
+                    self._download_language_pair(pair)
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to download {pair.source}-{pair.target}: {e}")
+                    continue
+    
+    def _download_language_pair(self, pair) -> None:
+        """Download a specific language pair"""
+        output_file = self.dirs['raw'] / f"{pair.source}-{pair.target}.txt"
+        
+        # Skip if already exists and is reasonable size
+        if output_file.exists():
+            size_mb = output_file.stat().st_size / (1024 * 1024)
+            if size_mb > 10:  # Skip if > 10MB
+                self.logger.info(f"⏩ Skipping {pair.source}-{pair.target} (already exists: {size_mb:.1f}MB)")
+                return
+        
+        # Use training downloader's methods
+        self.logger.info(f"📥 Downloading {pair.source}-{pair.target} (priority: {pair.priority})")
+        
+        # Call the training downloader's specific pair method
+        success = self.training_downloader.download_specific_pair(
+            source=pair.source,
+            target=pair.target,
+            output_dir=str(self.dirs['raw'])
+        )
+    
+        if not success:
+            self.logger.warning(f"⚠️  Failed to download {pair.source}-{pair.target}")
+       
+    
+    def _sample_and_filter_data(self) -> None:
+        """Sample and filter downloaded data"""
+        self.logger.info("🔍 Step 3: Sampling and filtering data")
+        
+        distribution = ConfigManager.get_training_distribution()
+        
+        for pair_str, target_size in distribution.items():
+            source, target = pair_str.split('-')
+            input_file = self.dirs['raw'] / f"{pair_str}.txt"
+            output_file = self.dirs['sampled'] / f"{pair_str}_sampled.txt"
+            
+            if input_file.exists():
+                self.logger.info(f"📊 Sampling {pair_str}: target {target_size:,} sentences")
+                sampler = SmartDataSampler()
+                stats = sampler.sample_high_quality_pairs(
+                    input_file=str(input_file),
+                    output_file=str(output_file),
+                    target_size=target_size,
+                    source_lang=source,  
+                    target_lang=target
+                )
+                
+                self.logger.info(f"✅ Sampled {pair_str}: {stats['written_count']:,} sentences")
+            else:
+                self.logger.warning(f"⚠️  Input file not found for {pair_str}")
+    
+    def _augment_synthetic_data(self) -> None:
+        """Augment with synthetic data"""
+        self.logger.info("🤖 Step 4: Augmenting with synthetic data")
+        
+        # Augment major language pairs
+        major_pairs = ['en-es', 'en-fr', 'en-de', 'en-zh', 'en-ru']
+        
+        for pair_str in major_pairs:
+            source, target = pair_str.split('-')
+            
+            # Check if we have monolingual data
+            mono_file = self.dirs['raw'] / f"mono_{source}.txt"
+            output_file = self.dirs['final'] / f"augmented_{pair_str}.txt"
+            
+            if mono_file.exists():
+                self.logger.info(f"🔄 Augmenting {pair_str} with backtranslation")
+                
+                self.augmenter.augment_with_backtranslation(
+                    monolingual_file=str(mono_file),
+                    source_lang=source,
+                    target_lang=target,
+                    output_file=str(output_file)
+                )
+        
+        # Generate pivot translations
+        self.logger.info("🔄 Generating pivot translations")
+        self.augmenter.generate_pivot_translations(
+            english_pairs_dir=str(self.dirs['sampled'])
+        )
+
+    def _create_training_ready_data(self) -> None:
+        """Create data ready for training"""
+        self.logger.info("📝 Step 5: Creating training-ready data")
+    
+        #from pipeline_connector import PipelineConnector
+        connector = PipelineConnector()
+    
+        # Create monolingual corpora for vocabulary
+        self.logger.info("Creating monolingual corpora...")
+        connector.create_monolingual_corpora()
+    
+        # Create final training file
+        self.logger.info("Creating final training file...")
+        connector.create_final_training_file()
+
+    def _create_vocabulary_packs(self) -> None:
+        """Create vocabulary packs from processed data"""
+        self.logger.info("📚 Step 6: Creating vocabulary packs")
+    
+        vocab_connector = VocabularyConnector()
+        created_packs = vocab_connector.create_vocabularies_from_pipeline(
+            processed_dir=str(self.dirs['processed'])
+        )
+    
+        self.logger.info(f"✅ Created {len(created_packs)} vocabulary packs")       
+    
+    def _validate_final_dataset(self) -> None:
+        """Validate the final dataset"""
+        self.logger.info("✔️  Step 5: Validating final dataset")
+        
+        total_size_gb = 0
+        total_sentences = 0
+        
+        # Check all output directories
+        for directory in [self.dirs['sampled'], self.dirs['final']]:
+            for file_path in directory.glob("*.txt"):
+                size_gb = file_path.stat().st_size / (1024**3)
+                total_size_gb += size_gb
+                
+                # Estimate sentences
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    sentences = sum(1 for _ in f)
+                total_sentences += sentences
+                
+                self.logger.info(f"📊 {file_path.name}: {sentences:,} sentences ({size_gb:.2f}GB)")
+        
+        self.logger.info(f"📈 Total dataset: {total_sentences:,} sentences ({total_size_gb:.2f}GB)")
+        
+        # Validate against target
+        target_gb = self.config.get('total_size_gb', 8)
+        if total_size_gb < target_gb * 0.9:
+            self.logger.warning(f"⚠️  Dataset size ({total_size_gb:.2f}GB) is below target ({target_gb}GB)")
+        else:
+            self.logger.info(f"✅ Dataset size meets target!")
+
+
+def main():
+    """Main entry point"""
+    pipeline = PracticalDataPipeline()
+    pipeline.prepare_all_data()
+
+
+if __name__ == "__main__":
+    main()

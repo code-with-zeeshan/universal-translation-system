@@ -98,9 +98,12 @@ universal-translation-system/
 ├── checkpoints
 │
 ├── data/
-│   ├── essential
-│   ├── processed
-│   ├── raw
+│   ├── essential/                   # High-quality evaluation sets
+│   ├── processed/                   # Final training corpus (~8GB)
+│   ├── sampled/                     # Quality-filtered samples
+│   ├── final/                       # Augmented training data
+│   ├── Balanced/                     
+│   ├── raw/                         # Downloaded raw data
 │   ├── __init__.py
 │   ├── download_training_data.py
 │   ├── download_curated_data.py
@@ -118,7 +121,7 @@ universal-translation-system/
 │   ├── __init__.py
 │   ├── bootstrap_from_pretrained.py
 │   ├── train_universal_system.py
-│   ├── train_universal_models.py
+│   ├── train_from_scratch.py
 │   ├── distributed_train.py
 │   ├── memory_efficient_training.py
 │   └── convert_models.py
@@ -184,10 +187,6 @@ universal-translation-system/
 │   ├── training_rtx3090.yaml
 │   └── training_v100.yaml
 │
-├── vocabulary/
-│   ├── __init__.py
-│   ├── create_vocabulary_packs_from_data.py
-│   └── vocab_cache/
 │
 ├── kubernetes/
 │   ├── namespace.yaml

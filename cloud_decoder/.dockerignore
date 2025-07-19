@@ -1,0 +1,56 @@
+# cloud_decoder/.dockerignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+*.cover
+.hypothesis/
+
+# Logs
+*.log
+logs/
+
+# Models (mount instead)
+models/
+*.pt
+*.onnx
+*.bin
+
+# Development
+.git/
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+.env
+.env.*
+README.md
+tests/
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+tmp/
+temp/
+*.tmp

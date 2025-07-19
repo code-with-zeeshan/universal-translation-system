@@ -1,0 +1,85 @@
+# flutter/universal_translation_sdk/pubspec.yaml
+name: universal_translation_sdk
+description: Flutter SDK for Universal Translation System with on-device encoding and cloud decoding
+version: 1.0.0
+homepage: https://github.com/yourusername/universal-translation-system
+repository: https://github.com/yourusername/universal-translation-system/tree/main/flutter
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # FFI for native code
+  ffi: ^2.1.0
+  
+  # HTTP client
+  http: ^1.1.0
+  
+  # File system
+  path_provider: ^2.1.1
+  path: ^1.8.3
+  
+  # Async utilities
+  async: ^2.11.0
+  
+  # JSON serialization
+  json_annotation: ^4.8.1
+  
+  # Logging
+  logger: ^2.0.2
+  
+  # Platform detection
+  flutter_platform_detector: ^1.0.1
+  
+  # Permissions (for file access)
+  permission_handler: ^11.0.1
+  
+  # State management (optional)
+  provider: ^6.1.1
+  
+  # Connectivity
+  connectivity_plus: ^5.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  # Code generation
+  build_runner: ^2.4.6
+  json_serializable: ^6.7.1
+  
+  # Linting
+  flutter_lints: ^3.0.1
+  
+  # Testing
+  mockito: ^5.4.3
+  fake_async: ^1.3.1
+
+flutter:
+  # Plugin platforms
+  plugin:
+    platforms:
+      android:
+        ffiPlugin: true
+        package: com.universaltranslation.sdk
+        pluginClass: UniversalTranslationPlugin
+      ios:
+        ffiPlugin: true
+        pluginClass: UniversalTranslationPlugin
+      
+  # Assets
+  assets:
+    - assets/models/
+    - assets/models/universal_encoder_int8.onnx
+    
+  # Fonts (if needed)
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700

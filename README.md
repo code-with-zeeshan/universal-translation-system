@@ -67,7 +67,7 @@ const result = await translator.translate({
 - **Vocabulary Packs**: Downloadable language-specific token mappings
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
-See [docs/Architecture.md](docs/Architecture.md) for details.
+See [docs/Architecture.md](Architecture.md) for details.
 
 ## 📚 Documentation
 - **API Documentation**

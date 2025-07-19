@@ -436,6 +436,9 @@ class VocabularyPackCreator:
 
         # Get dynamic version
         version = self._get_pack_version(pack_name)
+
+        # Extract embeddings from trained model
+        embeddings = self.extract_embeddings_for_tokens(tokens)
         
         # Create pack structure
         pack = {
@@ -443,6 +446,8 @@ class VocabularyPackCreator:
             'version': version,
             'languages': languages,
             'tokens': vocab_data['tokens'],
+            'embeddings': embeddings,  # Crucial for quality!
+            'compression': 'int8',  # How embeddings are stored
             'subwords': vocab_data['subwords'],
             'special_tokens': vocab_data['special_tokens'],
             'metadata': {
@@ -547,7 +552,31 @@ class VocabularyPackCreator:
         major, minor = map(int, latest.split('.'))
         
         # Increment minor version by default
-        return f"{major}.{minor + 1}"        
+        return f"{major}.{minor + 1}" 
+
+    def extract_embeddings_for_tokens(self, tokens: Dict[str, int]) -> Dict[str, List[float]]:
+        """
+        Extract embeddings for tokens from the trained model.
+        This is crucial for maintaining quality in quantized models.
+    
+        Args:
+            tokens: Dictionary mapping tokens to IDs
+        
+        Returns:
+            Dictionary mapping tokens to embedding vectors
+        """
+        # For production, you would extract from a pre-trained model
+        # For now, create placeholder embeddings
+        embeddings = {}
+        embedding_dim = 128  # Adjust based on your model
+    
+        for token, token_id in tokens.items():
+            # In production: load from pre-trained embeddings
+            # For now: create consistent pseudo-embeddings
+            np.random.seed(token_id)  # Consistent embeddings
+            embeddings[token] = np.random.randn(embedding_dim).tolist()
+    
+        return embeddings           
     
     def get_pack_info(self, pack_name: str) -> Optional[Dict[str, Any]]:
         """

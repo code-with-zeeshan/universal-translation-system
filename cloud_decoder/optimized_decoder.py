@@ -5,11 +5,17 @@ import numpy as np
 from fastapi import FastAPI, Request, Header
 from fastapi.responses import JSONResponse
 import asyncio
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import time
 import triton_python_backend_utils as pb_utils
 import msgpack
 import lz4.frame
+import logging
+
+# Import vocabulary manager
+from vocabulary.vocabulary_manager import VocabularyManager
+
+logger = logging.getLogger(__name__)
 
 class OptimizedUniversalDecoder(nn.Module):
     """
@@ -25,11 +31,13 @@ class OptimizedUniversalDecoder(nn.Module):
         num_heads: int = 8,
         vocab_size: int = 50000,
         max_length: int = 256,
+        device: torch.device = None
     ):
         super().__init__()
         
         self.decoder_dim = decoder_dim
         self.vocab_size = vocab_size
+        self.device = device or torch.device('cpu')
         
         # Dynamic embeddings (loaded per request batch)
         self.embedding = nn.Embedding(vocab_size, decoder_dim)
@@ -63,6 +71,52 @@ class OptimizedUniversalDecoder(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0, std=0.02)
+
+    def decompress_embeddings(self, compressed_data: Dict[str, Any]) -> torch.Tensor:
+        """Decompress encoder embeddings"""
+        # Extract compressed embeddings
+        if isinstance(compressed_data, dict):
+            compressed_embeddings = compressed_data.get('embeddings')
+            scale = compressed_data.get('scale', 1.0)
+            original_shape = compressed_data.get('shape')
+        else:
+            # Handle raw compressed data
+            return self._decompress_raw_embeddings(compressed_data)
+        
+        # Decompress
+        if isinstance(compressed_embeddings, bytes):
+            # LZ4 decompression
+            decompressed = lz4.frame.decompress(compressed_embeddings)
+            embeddings = np.frombuffer(decompressed, dtype=np.float32)
+        else:
+            embeddings = compressed_embeddings
+        
+        # Reshape and convert to tensor
+        if original_shape:
+            embeddings = embeddings.reshape(original_shape)
+        
+        return torch.tensor(embeddings, device=self.device) * scale
+
+    def _decompress_raw_embeddings(self, compressed_data: bytes) -> torch.Tensor:
+        """Decompress raw embedding data"""
+        # Read metadata
+        metadata_size = 12
+        shape1 = int.from_bytes(compressed_data[0:4], 'little')
+        shape2 = int.from_bytes(compressed_data[4:8], 'little')
+        scale = np.frombuffer(compressed_data[8:12], dtype=np.float32)[0]
+        
+        # Decompress data
+        compressed = compressed_data[metadata_size:]
+        decompressed = lz4.frame.decompress(compressed)
+        
+        # Dequantize
+        quantized = np.frombuffer(decompressed, dtype=np.int8)
+        dequantized = quantized.astype(np.float32) / scale
+        
+        # Reshape
+        hidden_states = dequantized.reshape(1, shape1, shape2)
+        
+        return torch.tensor(hidden_states, device=self.device)   
             
     @torch.jit.script_method
     def forward(
@@ -70,11 +124,16 @@ class OptimizedUniversalDecoder(nn.Module):
         decoder_input_ids: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
         encoder_attention_mask: Optional[torch.Tensor] = None,
+        compressed_embeddings: Optional[Dict[str, Any]] = None
     ) -> torch.Tensor:
         """Optimized forward pass with torch.jit support"""
         
         batch_size, seq_len = decoder_input_ids.shape
         device = decoder_input_ids.device
+
+        # Handle compressed embeddings if provided
+        if compressed_embeddings is not None:
+            encoder_hidden_states = self.decompress_embeddings(compressed_embeddings)
         
         # Embeddings
         x = self.embedding(decoder_input_ids)
@@ -102,7 +161,7 @@ class OptimizedUniversalDecoder(nn.Module):
         return logits
     
     @torch.no_grad()
-    def generate_optimized(
+    def generate(
         self,
         encoder_hidden_states: torch.Tensor,
         encoder_attention_mask: torch.Tensor,
@@ -111,9 +170,12 @@ class OptimizedUniversalDecoder(nn.Module):
         temperature: float = 0.7,
         top_k: int = 50,
         top_p: float = 0.9,
-    ) -> torch.Tensor:
+        eos_token_id: int = 2,
+        pad_token_id: int = 0
+    ) -> Tuple[torch.Tensor, List[float]]:
         """
         Optimized generation with multiple decoding strategies
+        Returns: (generated_ids, scores)
         """
         batch_size = encoder_hidden_states.size(0)
         device = encoder_hidden_states.device
@@ -121,10 +183,11 @@ class OptimizedUniversalDecoder(nn.Module):
         # Initialize with target language token
         decoder_input_ids = torch.full((batch_size, 1), target_lang_id, device=device)
         
-        # Cache for key-value pairs (memory efficient)
-        past_key_values = None
+        # Track finished sequences
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        scores = []
         
-        for _ in range(max_length - 1):
+        for step in range(max_length - 1):
             # Forward pass
             logits = self.forward(
                 decoder_input_ids,
@@ -156,15 +219,25 @@ class OptimizedUniversalDecoder(nn.Module):
             # Sample
             probs = torch.softmax(next_token_logits, dim=-1)
             next_tokens = torch.multinomial(probs, num_samples=1)
+
+            # Update finished sequences
+            finished = finished | (next_tokens.squeeze(-1) == eos_token_id)
+            
+            # Replace tokens for finished sequences with padding
+            next_tokens[finished] = pad_token_id
             
             # Append to sequence
             decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=1)
+
+            # Track scores
+            token_scores = torch.gather(probs, 1, next_tokens).squeeze(-1)
+            scores.append(token_scores.cpu().tolist())
             
-            # Check for end token
-            if (next_tokens == 2).all():  # Assuming 2 is </s>
+            # Check if all sequences are finished
+            if finished.all():
                 break
         
-        return decoder_input_ids
+        return decoder_input_ids, scores
 
 
 class OptimizedDecoderLayer(nn.Module):
@@ -302,8 +375,9 @@ async def startup():
     # Start batch processor
     asyncio.create_task(batcher.process_batches())
     
-    print(f"✅ Decoder ready on {device}")
-    print(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
+    logger.info(f"✅ Decoder ready on {device}")
+    if torch.cuda.is_available():
+        logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
 
 
 @app.post("/decode")
@@ -318,23 +392,25 @@ async def decode(
         # Read compressed data
         compressed_data = await request.body()
         
-        # Decompress
-        encoder_output = decompress_encoder_output(compressed_data)
-        
         # Add to batch
         result = await batcher.add_request({
-            'encoder_output': encoder_output,
+            'compressed_data': compressed_data,
             'target_lang': x_target_language
         })
         
         return JSONResponse(content=result)
         
     except Exception as e:
+        logger.error(f"Decode error: {e}")
         return JSONResponse(
             status_code=500,
             content={"error": str(e)}
         )
 
+@app.get("/health")
+async def health():
+    """Health check endpoint"""
+    return {"status": "healthy", "device": str(device)}
 
 async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
     """Process batch on GPU with maximum efficiency"""
@@ -346,8 +422,11 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
         target_langs = []
         
         for item in batch:
-            encoder_outputs.append(item['encoder_output']['hidden_states'])
-            encoder_masks.append(item['encoder_output']['attention_mask'])
+            # Decompress encoder output
+            decompressed = decompress_encoder_output(item['compressed_data'])
+
+            encoder_outputs.append(decompressed['hidden_states'])
+            encoder_masks.append(decompressed['attention_mask'])
             target_langs.append(item['target_lang'])
         
         # Stack tensors
@@ -355,11 +434,11 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
         encoder_mask = torch.tensor(np.stack(encoder_masks)).to(device)
         
         # Get target language IDs
-        target_lang_ids = [vocabulary_manager.get_lang_id(lang) for lang in target_langs]
+        target_lang_ids = [vocabulary_manager.language_to_pack.get(lang, 3) for lang in target_langs]
         
         # Generate translations
         with torch.no_grad():
-            output_ids = model.generate_optimized(
+            output_ids = model.generate(
                 encoder_hidden,
                 encoder_mask,
                 target_lang_ids[0],  # Assuming same target lang for batch
@@ -372,10 +451,17 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
         # Decode to text
         results = []
         for i, output in enumerate(output_ids):
-            text = vocabulary_manager.decode(output.cpu().numpy(), target_langs[i])
+            # Get vocabulary pack for target language
+            vocab_pack = vocabulary_manager.get_vocab_for_pair('en', target_langs[i])
+
+            # Decode tokens to text
+            tokens = output.cpu().numpy()
+            text = decode_tokens_to_text(tokens, vocab_pack)
+
             results.append({
                 'translation': text,
-                'target_lang': target_langs[i]
+                'target_lang': target_langs[i],
+                'scores': scores if scores else None
             })
         
         return results
@@ -383,27 +469,61 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
 
 def decompress_encoder_output(compressed_data: bytes) -> Dict:
     """Decompress encoder output"""
-    # Read metadata
-    metadata_size = 12
-    shape1 = int.from_bytes(compressed_data[0:4], 'little')
-    shape2 = int.from_bytes(compressed_data[4:8], 'little')
-    scale = np.frombuffer(compressed_data[8:12], dtype=np.float32)[0]
+    if isinstance(compressed_data, bytes):
+        # Read metadata
+        metadata_size = 12
+        if len(compressed_data) < metadata_size:
+            raise ValueError("Invalid compressed data")
+
+        shape1 = int.from_bytes(compressed_data[0:4], 'little')
+        shape2 = int.from_bytes(compressed_data[4:8], 'little')
+        scale = np.frombuffer(compressed_data[8:12], dtype=np.float32)[0]
     
-    # Decompress data
-    compressed = compressed_data[metadata_size:]
-    decompressed = lz4.frame.decompress(compressed)
+        # Decompress data
+        compressed = compressed_data[metadata_size:]
+        decompressed = lz4.frame.decompress(compressed)
     
-    # Dequantize
-    quantized = np.frombuffer(decompressed, dtype=np.int8)
-    dequantized = quantized.astype(np.float32) / scale
+        # Dequantize
+        quantized = np.frombuffer(decompressed, dtype=np.int8)
+        dequantized = quantized.astype(np.float32) / scale
     
-    # Reshape
-    hidden_states = dequantized.reshape(1, shape1, shape2)
+        # Reshape
+        hidden_states = dequantized.reshape(1, shape1, shape2)
     
-    return {
-        'hidden_states': hidden_states,
-        'attention_mask': np.ones((1, shape1), dtype=np.int32)
-    }
+        return {
+            'hidden_states': hidden_states,
+            'attention_mask': np.ones((1, shape1), dtype=np.int32)
+        }
+
+    else:
+        # Handle dict format
+        return compressed_data
+
+def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
+    """Decode token IDs to text using vocabulary pack"""
+    # Simple decoding - replace with proper implementation
+    text_tokens = []
+    
+    for token_id in tokens:
+        if token_id == 2:  # EOS token
+            break
+        elif token_id == 0:  # Padding
+            continue
+        
+        # Find token in vocabulary
+        for token, idx in vocab_pack.tokens.items():
+            if idx == token_id:
+                text_tokens.append(token)
+                break
+    
+    # Join tokens (basic - replace with proper detokenization)
+    text = ' '.join(text_tokens)
+    
+    # Clean up subword tokens
+    text = text.replace(' ##', '')
+    text = text.replace('▁', ' ')
+    
+    return text.strip()
 
 
 # Deployment configuration for Kubernetes

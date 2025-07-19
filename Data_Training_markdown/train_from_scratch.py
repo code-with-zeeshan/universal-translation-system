@@ -1,6 +1,6 @@
-# training/train_universal_models.py
+# training/train_from_scratch.py
 """
-Missing: Complete training script for encoder/decoder from scratch
+Complete training script for encoder/decoder from scratch
 """
 import torch
 import torch.nn as nn
