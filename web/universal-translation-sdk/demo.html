@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Universal Translation Demo</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            color: #2c3e50;
+        }
+        
+        .header p {
+            color: #7f8c8d;
+            font-size: 1.1rem;
+        }
+        
+        .translation-box {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 30px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        select {
+            flex: 1;
+            min-width: 150px;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+        
+        select:hover {
+            border-color: #007bff;
+        }
+        
+        select:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        .swap-btn {
+            padding: 12px 20px;
+            background: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 20px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        .swap-btn:hover {
+            background: #5a6268;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        
+        .char-count {
+            text-align: right;
+            margin-top: 5px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .translate-btn {
+            width: 100%;
+            padding: 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin: 20px 0;
+        }
+        
+        .translate-btn:hover:not(:disabled) {
+            background: #0056b3;
+        }
+        
+        .translate-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .status.loading {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .status.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            min-height: 100px;
+        }
+        
+        .result h3 {
+            margin-bottom: 10px;
+            color: #495057;
+        }
+        
+        .stats {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Universal Translation</h1>
+            <p>On-device encoding with cloud decoding for 20+ languages</p>
+        </div>
+        
+        <div class="translation-box">
+            <div id="status" class="status" style="display: none;"></div>
+            
+            <div class="controls">
+                <select id="sourceLang">
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="zh">Chinese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                    <option value="ar">Arabic</option>
+                    <option value="hi">Hindi</option>
+                    <option value="ru">Russian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="it">Italian</option>
+                    <option value="tr">Turkish</option>
+                    <option value="th">Thai</option>
+                    <option value="vi">Vietnamese</option>
+                    <option value="pl">Polish</option>
+                    <option value="uk">Ukrainian</option>
+                    <option value="nl">Dutch</option>
+                    <option value="id">Indonesian</option>
+                    <option value="sv">Swedish</option>
+                </select>
+                
+                <button class="swap-btn" id="swapLangs" title="Swap languages">⇄</button>
+                
+                <select id="targetLang">
+                    <option value="es">Spanish</option>
+                    <option value="en">English</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="zh">Chinese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                    <option value="ar">Arabic</option>
+                    <option value="hi">Hindi</option>
+                    <option value="ru">Russian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="it">Italian</option>
+                    <option value="tr">Turkish</option>
+                    <option value="th">Thai</option>
+                    <option value="vi">Vietnamese</option>
+                    <option value="pl">Polish</option>
+                    <option value="uk">Ukrainian</option>
+                    <option value="nl">Dutch</option>
+                    <option value="id">Indonesian</option>
+                    <option value="sv">Swedish</option>
+                </select>
+            </div>
+            
+            <div>
+                <textarea id="inputText" placeholder="Enter text to translate...">Hello, how are you today?</textarea>
+                <div class="char-count" id="charCount">21 characters</div>
+            </div>
+            
+            <button id="translateBtn" class="translate-btn">Translate</button>
+            
+            <div class="result" id="resultContainer" style="display: none;">
+                <h3>Translation</h3>
+                <div id="output"></div>
+            </div>
+            
+            <div class="stats" id="stats" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { TranslationClient } from './dist/index.esm.js';
+        
+        let client;
+        let isInitialized = false;
+        
+        // UI Elements
+        const elements = {
+            status: document.getElementById('status'),
+            sourceLang: document.getElementById('sourceLang'),
+            targetLang: document.getElementById('targetLang'),
+            swapBtn: document.getElementById('swapLangs'),
+            inputText: document.getElementById('inputText'),
+            charCount: document.getElementById('charCount'),
+            translateBtn: document.getElementById('translateBtn'),
+            output: document.getElementById('output'),
+            resultContainer: document.getElementById('resultContainer'),
+            stats: document.getElementById('stats')
+        };
+        
+        function showStatus(message, type = 'loading') {
+            elements.status.className = `status ${type}`;
+            elements.status.style.display = 'block';
+            
+            if (type === 'loading') {
+                elements.status.innerHTML = `<span class="loader"></span>${message}`;
+            } else {
+                elements.status.textContent = message;
+            }
+            
+            if (type !== 'loading') {
+                setTimeout(() => {
+                    elements.status.style.display = 'none';
+                }, 5000);
+            }
+        }
+        
+        async function init() {
+            try {
+                showStatus('Initializing translation engine...');
+                
+                client = new TranslationClient({
+                    modelUrl: '/models/universal_encoder.onnx',
+                    decoderUrl: 'https://api.yourdomain.com/decode'
+                });
+                
+                await client.initialize();
+                
+                isInitialized = true;
+                showStatus('Ready to translate!', 'success');
+                elements.translateBtn.disabled = false;
+                
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showStatus(`Failed to initialize: ${error.message}`, 'error');
+                elements.translateBtn.textContent = 'Retry Initialization';
+                elements.translateBtn.disabled = false;
+            }
+        }
+        
+        async function translate() {
+            if (!isInitialized) {
+                await init();
+                return;
+            }
+            
+            const text = elements.inputText.value.trim();
+            if (!text) {
+                showStatus('Please enter some text to translate', 'error');
+                return;
+            }
+            
+            const sourceLang = elements.sourceLang.value;
+            const targetLang = elements.targetLang.value;
+            
+            if (sourceLang === targetLang) {
+                showStatus('Source and target languages must be different', 'error');
+                return;
+            }
+            
+            elements.translateBtn.disabled = true;
+            elements.translateBtn.textContent = 'Translating...';
+            elements.resultContainer.style.display = 'none';
+            
+            const startTime = performance.now();
+            
+            try {
+                const result = await client.translate({
+                    text,
+                    sourceLang,
+                    targetLang
+                });
+                
+                const endTime = performance.now();
+                const duration = ((endTime - startTime) / 1000).toFixed(2);
+                
+                elements.output.textContent = result.translation;
+                elements.resultContainer.style.display = 'block';
+                
+                elements.stats.style.display = 'block';
+                elements.stats.innerHTML = `
+                    <strong>Statistics:</strong><br>
+                    Translation time: ${duration}s<br>
+                    Input: ${text.length} characters<br>
+                    Output: ${result.translation.length} characters<br>
+                    ${result.confidence ? `Confidence: ${(result.confidence * 100).toFixed(1)}%` : ''}
+                `;
+                
+                showStatus('Translation completed!', 'success');
+                
+            } catch (error) {
+                console.error('Translation error:', error);
+                showStatus(`Translation failed: ${error.message}`, 'error');
+                elements.resultContainer.style.display = 'none';
+            } finally {
+                elements.translateBtn.disabled = false;
+                elements.translateBtn.textContent = 'Translate';
+            }
+        }
+        
+        // Event listeners
+        elements.translateBtn.addEventListener('click', translate);
+        
+        elements.swapBtn.addEventListener('click', () => {
+            const temp = elements.sourceLang.value;
+            elements.sourceLang.value = elements.targetLang.value;
+            elements.targetLang.value = temp;
+            
+            // Swap text if translation exists
+            if (elements.output.textContent) {
+                elements.inputText.value = elements.output.textContent;
+                elements.resultContainer.style.display = 'none';
+            }
+        });
+        
+        elements.inputText.addEventListener('input', (e) => {
+            elements.charCount.textContent = `${e.target.value.length} characters`;
+        });
+        
+        elements.inputText.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                translate();
+            }
+        });
+        
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

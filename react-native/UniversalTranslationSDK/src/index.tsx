@@ -6,34 +6,29 @@ import {
   NativeEventEmitter,
   EmitterSubscription,
 } from 'react-native';
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 // Types
 export interface TranslationOptions {
   text: string;
   sourceLang: string;
   targetLang: string;
-  options?: {
-    formality?: 'formal' | 'informal' | 'auto';
-    domain?: 'general' | 'medical' | 'legal' | 'technical' | 'business';
-    preserveFormatting?: boolean;
-  };
 }
 
 export interface TranslationResult {
   translation: string;
+  targetLang: string;
   confidence?: number;
-  alternativeTranslations?: string[];
-  detectedSourceLang?: string;
 }
 
-export interface VocabularyInfo {
+export interface VocabularyPack {
   name: string;
   languages: string[];
-  sizeMB: number;
-  isDownloaded: boolean;
+  downloadUrl: string;
+  localPath: string;
+  sizeMb: number;
   version: string;
-  downloadProgress?: number;
+  needsDownload: boolean;
 }
 
 export interface LanguageInfo {
@@ -50,15 +45,14 @@ export interface TranslationError extends Error {
 
 // Native Module Interface
 interface IUniversalTranslationModule {
-  initialize(): Promise<void>;
+  initialize(decoderUrl: string): Promise<void>;
+  translate(text: string, sourceLang: string, targetLang: string): Promise<TranslationResult>;
   prepareTranslation(sourceLang: string, targetLang: string): Promise<void>;
-  encode(text: string, sourceLang: string, targetLang: string): Promise<string>;
-  getAvailableVocabularies(): Promise<VocabularyInfo[]>;
-  downloadVocabulary(name: string): Promise<void>;
-  deleteVocabulary(name: string): Promise<void>;
+  getVocabularyForPair(sourceLang: string, targetLang: string): Promise<VocabularyPack>;
+  downloadVocabularyPacks(languages: string[]): Promise<void>;
   getSupportedLanguages(): Promise<LanguageInfo[]>;
   getMemoryUsage(): Promise<number>;
-  clearCache(): Promise<void>;
+  clearTranslationCache(): Promise<void>;
 }
 
 const LINKING_ERROR =
@@ -78,22 +72,33 @@ const UniversalTranslationModule = NativeModules.UniversalTranslationModule
       }
     ) as IUniversalTranslationModule;
 
-// Event Emitter for download progress
+// Event Emitter
 const eventEmitter = new NativeEventEmitter(NativeModules.UniversalTranslationModule);
 
-// Translation Encoder Class
-class TranslationEncoder {
-  private initialized: boolean = false;
+// Translation Client Class
+export class TranslationClient {
+  private initialized = false;
   private initPromise: Promise<void> | null = null;
+  private decoderUrl: string;
+  private cache: Map<string, TranslationResult>;
+  private maxCacheSize: number;
+  private preparedPairs: Set<string> = new Set();
 
-  async initialize(): Promise<void> {
+  constructor(options?: {
+    decoderUrl?: string;
+    maxCacheSize?: number;
+  }) {
+    this.decoderUrl = options?.decoderUrl || 'https://api.yourdomain.com/decode';
+    this.maxCacheSize = options?.maxCacheSize || 100;
+    this.cache = new Map();
+  }
+
+  private async initialize(): Promise<void> {
     if (this.initialized) return;
     
-    if (this.initPromise) {
-      return this.initPromise;
-    }
+    if (this.initPromise) return this.initPromise;
 
-    this.initPromise = UniversalTranslationModule.initialize()
+    this.initPromise = UniversalTranslationModule.initialize(this.decoderUrl)
       .then(() => {
         this.initialized = true;
       })
@@ -105,77 +110,89 @@ class TranslationEncoder {
     return this.initPromise;
   }
 
-  async prepareTranslation(sourceLang: string, targetLang: string): Promise<void> {
+  async translate(options: TranslationOptions): Promise<TranslationResult> {
     await this.initialize();
-    
-    try {
-      return await UniversalTranslationModule.prepareTranslation(sourceLang, targetLang);
-    } catch (error) {
-      throw this.createError(error);
-    }
-  }
 
-  async encode(text: string, sourceLang: string, targetLang: string): Promise<Uint8Array> {
-    await this.initialize();
-    
+    // Validate input
+    if (!options.text?.trim()) {
+      throw this.createError({ 
+        code: 'INVALID_INPUT', 
+        message: 'Text cannot be empty' 
+      });
+    }
+
+    // Check cache
+    const cacheKey = `${options.sourceLang}-${options.targetLang}:${options.text}`;
+    const cached = this.cache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     try {
-      const base64 = await UniversalTranslationModule.encode(text, sourceLang, targetLang);
-      
-      // Convert base64 to Uint8Array
-      const binaryString = atob(base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      // Prepare translation if not already done
+      const pairKey = `${options.sourceLang}-${options.targetLang}`;
+      if (!this.preparedPairs.has(pairKey)) {
+        await this.prepareLanguagePair(options.sourceLang, options.targetLang);
+        this.preparedPairs.add(pairKey);
       }
-      return bytes;
+
+      // Translate using native module
+      const result = await UniversalTranslationModule.translate(
+        options.text,
+        options.sourceLang,
+        options.targetLang
+      );
+
+      // Add to cache
+      this.addToCache(cacheKey, result);
+
+      return result;
     } catch (error) {
       throw this.createError(error);
     }
   }
 
-  async getAvailableVocabularies(): Promise<VocabularyInfo[]> {
+  async translateBatch(
+    texts: string[],
+    sourceLang: string,
+    targetLang: string
+  ): Promise<TranslationResult[]> {
+    // Prepare language pair once
+    await this.prepareLanguagePair(sourceLang, targetLang);
+
+    // Translate all texts
+    const promises = texts.map((text) =>
+      this.translate({ text, sourceLang, targetLang })
+    );
+    
+    return Promise.all(promises);
+  }
+
+  async prepareLanguagePair(sourceLang: string, targetLang: string): Promise<void> {
     await this.initialize();
     
     try {
-      return await UniversalTranslationModule.getAvailableVocabularies();
+      await UniversalTranslationModule.prepareTranslation(sourceLang, targetLang);
     } catch (error) {
       throw this.createError(error);
     }
   }
 
-  async downloadVocabulary(
-    name: string,
-    onProgress?: (progress: number) => void
-  ): Promise<void> {
+  async getVocabularyInfo(sourceLang: string, targetLang: string): Promise<VocabularyPack> {
     await this.initialize();
     
-    let progressListener: EmitterSubscription | null = null;
-    
     try {
-      if (onProgress) {
-        progressListener = eventEmitter.addListener(
-          'vocabularyDownloadProgress',
-          (event) => {
-            if (event.name === name) {
-              onProgress(event.progress);
-            }
-          }
-        );
-      }
-      
-      await UniversalTranslationModule.downloadVocabulary(name);
+      return await UniversalTranslationModule.getVocabularyForPair(sourceLang, targetLang);
     } catch (error) {
       throw this.createError(error);
-    } finally {
-      progressListener?.remove();
     }
   }
 
-  async deleteVocabulary(name: string): Promise<void> {
+  async downloadVocabulariesForLanguages(languages: string[]): Promise<void> {
     await this.initialize();
     
     try {
-      return await UniversalTranslationModule.deleteVocabulary(name);
+      await UniversalTranslationModule.downloadVocabularyPacks(languages);
     } catch (error) {
       throw this.createError(error);
     }
@@ -192,6 +209,8 @@ class TranslationEncoder {
   }
 
   async getMemoryUsage(): Promise<number> {
+    await this.initialize();
+    
     try {
       return await UniversalTranslationModule.getMemoryUsage();
     } catch (error) {
@@ -199,149 +218,24 @@ class TranslationEncoder {
     }
   }
 
-  async clearCache(): Promise<void> {
-    try {
-      return await UniversalTranslationModule.clearCache();
-    } catch (error) {
-      throw this.createError(error);
-    }
-  }
-
-  private createError(error: any): TranslationError {
-    const translationError = new Error(error.message || 'Unknown error') as TranslationError;
-    translationError.code = error.code || 'UNKNOWN_ERROR';
-    translationError.userMessage = error.userMessage || error.message || 'An error occurred';
-    return translationError;
-  }
-}
-
-// Translation Client Class
-export class TranslationClient {
-  private encoder: TranslationEncoder;
-  private decoderUrl: string;
-  private headers: Record<string, string>;
-  private timeout: number;
-  private cache: Map<string, TranslationResult>;
-  private maxCacheSize: number;
-
-  constructor(options?: {
-    decoderUrl?: string;
-    headers?: Record<string, string>;
-    timeout?: number;
-    maxCacheSize?: number;
-  }) {
-    this.encoder = new TranslationEncoder();
-    this.decoderUrl = options?.decoderUrl || 'https://api.yourdomain.com/decode';
-    this.headers = options?.headers || {};
-    this.timeout = options?.timeout || 30000;
-    this.maxCacheSize = options?.maxCacheSize || 100;
-    this.cache = new Map();
-  }
-
-  async translate(options: TranslationOptions): Promise<TranslationResult> {
-    // Validate input
-    if (!options.text?.trim()) {
-      throw new Error('Text cannot be empty');
-    }
-
-    // Check cache
-    const cacheKey = `${options.sourceLang}-${options.targetLang}:${options.text}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    try {
-      // Encode locally
-      const encoded = await this.encoder.encode(
-        options.text,
-        options.sourceLang,
-        options.targetLang
-      );
-
-      // Create abort controller for timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-      try {
-        // Send to decoder
-        const response = await fetch(this.decoderUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/octet-stream',
-            'X-Target-Language': options.targetLang,
-            'X-Source-Language': options.sourceLang,
-            ...this.headers,
-          },
-          body: encoded,
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Translation failed (${response.status}): ${errorText}`);
-        }
-
-        const result: TranslationResult = await response.json();
-        
-        // Add to cache
-        this.addToCache(cacheKey, result);
-        
-        return result;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        throw new Error('Translation request timed out');
-      }
-      throw new Error(`Translation error: ${error.message}`);
-    }
-  }
-
-  async translateBatch(
-    texts: string[],
-    sourceLang: string,
-    targetLang: string
-  ): Promise<TranslationResult[]> {
-    const promises = texts.map((text) =>
-      this.translate({ text, sourceLang, targetLang })
-    );
-    
-    return Promise.all(promises);
-  }
-
-  async getVocabularyInfo(): Promise<VocabularyInfo[]> {
-    return this.encoder.getAvailableVocabularies();
-  }
-
-  async downloadVocabulary(
-    name: string,
-    onProgress?: (progress: number) => void
-  ): Promise<void> {
-    return this.encoder.downloadVocabulary(name, onProgress);
-  }
-
-  async deleteVocabulary(name: string): Promise<void> {
-    return this.encoder.deleteVocabulary(name);
-  }
-
-  async getSupportedLanguages(): Promise<LanguageInfo[]> {
-    return this.encoder.getSupportedLanguages();
-  }
-
-  async getMemoryUsage(): Promise<number> {
-    return this.encoder.getMemoryUsage();
-  }
-
   clearCache(): void {
     this.cache.clear();
+    this.preparedPairs.clear();
   }
 
-  async clearNativeCache(): Promise<void> {
-    return this.encoder.clearCache();
+  async clearAllCaches(): Promise<void> {
+    this.clearCache();
+    
+    try {
+      await UniversalTranslationModule.clearTranslationCache();
+    } catch (error) {
+      // Ignore cache clear errors
+      console.warn('Failed to clear native cache:', error);
+    }
+  }
+
+  subscribeToDownloadProgress(callback: (progress: { language: string; progress: number }) => void): EmitterSubscription {
+    return eventEmitter.addListener('vocabularyDownloadProgress', callback);
   }
 
   private addToCache(key: string, result: TranslationResult): void {
@@ -352,23 +246,56 @@ export class TranslationClient {
     }
     this.cache.set(key, result);
   }
+
+  private createError(error: any): TranslationError {
+    const translationError = new Error(error.message || 'Unknown error') as TranslationError;
+    translationError.code = error.code || 'UNKNOWN_ERROR';
+    translationError.userMessage = this.getUserMessage(error.code, error.message);
+    return translationError;
+  }
+
+  private getUserMessage(code: string, defaultMessage: string): string {
+    const userMessages: Record<string, string> = {
+      'INIT_ERROR': 'Failed to initialize translation service',
+      'TRANSLATION_ERROR': 'Translation failed. Please try again.',
+      'PREPARE_ERROR': 'Failed to prepare translation. Please check your internet connection.',
+      'VOCAB_ERROR': 'Failed to load vocabulary pack',
+      'DOWNLOAD_ERROR': 'Failed to download vocabulary. Please check your internet connection.',
+      'INVALID_INPUT': 'Please enter valid text to translate',
+      'NETWORK_ERROR': 'Network error. Please check your internet connection.',
+    };
+
+    return userMessages[code] || defaultMessage || 'An error occurred';
+  }
 }
 
-// React Hook for easy usage
+// React Hook
 export function useTranslation(options?: {
   decoderUrl?: string;
-  headers?: Record<string, string>;
-  timeout?: number;
 }) {
   const clientRef = useRef<TranslationClient>();
   const [isTranslating, setIsTranslating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number>(0);
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
+  const progressSubscriptionRef = useRef<EmitterSubscription>();
 
-  // Initialize client
   useEffect(() => {
+    // Initialize client
     clientRef.current = new TranslationClient(options);
-  }, [options?.decoderUrl, options?.timeout]);
+
+    // Subscribe to download progress
+    progressSubscriptionRef.current = clientRef.current.subscribeToDownloadProgress(
+      ({ language, progress }) => {
+        setDownloadProgress((prev) => ({ ...prev, [language]: progress }));
+      }
+    );
+
+    // Cleanup
+    return () => {
+      progressSubscriptionRef.current?.remove();
+      clientRef.current?.clearCache();
+    };
+  }, [options?.decoderUrl]);
 
   const translate = useCallback(async (translationOptions: TranslationOptions) => {
     if (!clientRef.current) {
@@ -390,31 +317,28 @@ export function useTranslation(options?: {
     }
   }, []);
 
-  const downloadVocabulary = useCallback(async (name: string) => {
+  const translateBatch = useCallback(async (
+    texts: string[],
+    sourceLang: string,
+    targetLang: string
+  ) => {
     if (!clientRef.current) {
       throw new Error('Translation client not initialized');
     }
 
-    setProgress(0);
-    
+    setIsTranslating(true);
+    setError(null);
+
     try {
-      await clientRef.current.downloadVocabulary(name, (p) => {
-        setProgress(p);
-      });
-      setProgress(100);
+      const results = await clientRef.current.translateBatch(texts, sourceLang, targetLang);
+      return results;
     } catch (err: any) {
-      const errorMessage = err.userMessage || err.message || 'Download failed';
+      const errorMessage = err.userMessage || err.message || 'Translation failed';
       setError(errorMessage);
       throw err;
+    } finally {
+      setIsTranslating(false);
     }
-  }, []);
-
-  const getVocabularyInfo = useCallback(async () => {
-    if (!clientRef.current) {
-      throw new Error('Translation client not initialized');
-    }
-
-    return clientRef.current.getVocabularyInfo();
   }, []);
 
   const getSupportedLanguages = useCallback(async () => {
@@ -425,22 +349,41 @@ export function useTranslation(options?: {
     return clientRef.current.getSupportedLanguages();
   }, []);
 
+  const downloadLanguages = useCallback(async (languages: string[]) => {
+    if (!clientRef.current) {
+      throw new Error('Translation client not initialized');
+    }
+
+    try {
+      await clientRef.current.downloadVocabulariesForLanguages(languages);
+    } catch (err: any) {
+      const errorMessage = err.userMessage || err.message || 'Download failed';
+      setError(errorMessage);
+      throw err;
+    }
+  }, []);
+
   const clearCache = useCallback(() => {
     clientRef.current?.clearCache();
   }, []);
 
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
   return {
     translate,
+    translateBatch,
     isTranslating,
     error,
-    progress,
-    downloadVocabulary,
-    getVocabularyInfo,
+    clearError,
+    downloadProgress,
+    downloadLanguages,
     getSupportedLanguages,
     clearCache,
   };
 }
 
 // Export everything
-export { TranslationEncoder };
 export default TranslationClient;
+export { LanguageInfo, VocabularyPack, TranslationOptions, TranslationResult };

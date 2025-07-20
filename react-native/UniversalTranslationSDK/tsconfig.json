@@ -2,10 +2,14 @@
   "compilerOptions": {
     "target": "esnext",
     "module": "commonjs",
-    "lib": ["es2017"],
+    "lib": ["es2019", "es2020.promise", "es2020.bigint", "es2020.string"],
     "declaration": true,
     "outDir": "./lib",
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -14,13 +18,21 @@
     "jsx": "react-native",
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
-    "types": ["react-native", "jest"]
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "types": ["react-native", "jest"],
+    "baseUrl": ".",
+    "paths": {
+      "@universal-translation/react-native-sdk": ["./src/index"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": [
     "node_modules",
     "lib",
     "example",
-    "**/__tests__/**/*"
+    "**/__tests__/**/*",
+    "**/__fixtures__/**/*",
+    "**/__mocks__/**/*"
   ]
 }

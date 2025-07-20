@@ -1,0 +1,35 @@
+# Source files (only ship built files)
+src/
+scripts/
+example/
+demo.html
+
+# Config files
+rollup.config.js
+tsconfig.json
+.eslintrc.json
+jest.config.js
+vite.config.ts
+*.test.ts
+*.spec.ts
+
+# Development
+coverage/
+.nyc_output/
+.github/
+.vscode/
+.idea/
+
+# Assets (users should provide their own)
+public/
+!dist/wasm/
+
+# Docs (keep README)
+docs/
+*.md
+!README.md
+
+# Misc
+.DS_Store
+*.log
+.env*

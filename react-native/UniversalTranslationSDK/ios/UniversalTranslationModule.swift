@@ -5,9 +5,9 @@ import Foundation
 @objc(UniversalTranslationModule)
 class UniversalTranslationModule: RCTEventEmitter {
     
-    private var encoder: TranslationEncoder?
+    private var translationClient: TranslationClient?
     private var hasListeners = false
-    private let encoderQueue = DispatchQueue(label: "com.universaltranslation.encoder", qos: .userInitiated)
+    private let clientQueue = DispatchQueue(label: "com.universaltranslation.client", qos: .userInitiated)
     
     override init() {
         super.init()
@@ -19,7 +19,7 @@ class UniversalTranslationModule: RCTEventEmitter {
     }
     
     override func supportedEvents() -> [String]! {
-        return ["vocabularyDownloadProgress"]
+        return ["vocabularyDownloadProgress", "translationProgress"]
     }
     
     override func startObserving() {
@@ -31,16 +31,46 @@ class UniversalTranslationModule: RCTEventEmitter {
     }
     
     @objc
-    func initialize(_ resolve: @escaping RCTPromiseResolveBlock,
+    func initialize(_ decoderURL: String,
+                   resolver resolve: @escaping RCTPromiseResolveBlock,
                    rejecter reject: @escaping RCTPromiseRejectBlock) {
-        encoderQueue.async { [weak self] in
+        Task {
             do {
-                if self?.encoder == nil {
-                    self?.encoder = try TranslationEncoder()
-                }
+                self.translationClient = try TranslationClient(decoderURL: decoderURL)
                 resolve(nil)
             } catch {
-                reject("INIT_ERROR", "Failed to initialize encoder", error)
+                reject("INIT_ERROR", "Failed to initialize: \(error.localizedDescription)", error)
+            }
+        }
+    }
+    
+    @objc
+    func translate(_ text: String,
+                  sourceLang: String,
+                  targetLang: String,
+                  resolver resolve: @escaping RCTPromiseResolveBlock,
+                  rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            do {
+                guard let client = self.translationClient else {
+                    throw TranslationError.encoderNotInitialized
+                }
+                
+                let response = try await client.translate(
+                    text: text,
+                    from: sourceLang,
+                    to: targetLang
+                )
+                
+                let result: [String: Any] = [
+                    "translation": response.translation,
+                    "targetLang": response.targetLang,
+                    "confidence": response.confidence ?? 1.0
+                ]
+                
+                resolve(result)
+            } catch {
+                reject("TRANSLATION_ERROR", error.localizedDescription, error)
             }
         }
     }
@@ -52,7 +82,7 @@ class UniversalTranslationModule: RCTEventEmitter {
                            rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
-                guard let encoder = self.encoder else {
+                guard let encoder = await self.translationClient?.encoder else {
                     throw TranslationError.encoderNotInitialized
                 }
                 
@@ -65,51 +95,29 @@ class UniversalTranslationModule: RCTEventEmitter {
     }
     
     @objc
-    func encode(_ text: String,
-                sourceLang: String,
-                targetLang: String,
-                resolver resolve: @escaping RCTPromiseResolveBlock,
-                rejecter reject: @escaping RCTPromiseRejectBlock) {
-        Task {
-            do {
-                guard let encoder = self.encoder else {
-                    throw TranslationError.encoderNotInitialized
-                }
-                
-                let encoded = try await encoder.encode(
-                    text: text,
-                    sourceLang: sourceLang,
-                    targetLang: targetLang
-                )
-                
-                // Convert to base64 for React Native bridge
-                let base64 = encoded.base64EncodedString()
-                resolve(base64)
-            } catch {
-                reject("ENCODE_ERROR", error.localizedDescription, error)
-            }
-        }
-    }
-    
-    @objc
-    func getAvailableVocabularies(_ resolve: @escaping RCTPromiseResolveBlock,
-                                 rejecter reject: @escaping RCTPromiseRejectBlock) {
+    func getVocabularyForPair(_ sourceLang: String,
+                             targetLang: String,
+                             resolver resolve: @escaping RCTPromiseResolveBlock,
+                             rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
                 let vocabManager = VocabularyManager()
-                let vocabs = try await vocabManager.getAvailableVocabularies()
+                let pack = try await vocabManager.getVocabularyForPair(
+                    source: sourceLang,
+                    target: targetLang
+                )
                 
-                let vocabArray = vocabs.map { vocab in
-                    return [
-                        "name": vocab.name,
-                        "languages": vocab.languages,
-                        "sizeMB": vocab.sizeMB,
-                        "isDownloaded": !vocab.needsDownload,
-                        "version": vocab.version
-                    ]
-                }
+                let result: [String: Any] = [
+                    "name": pack.name,
+                    "languages": pack.languages,
+                    "downloadUrl": pack.downloadURL,
+                    "localPath": pack.localPath,
+                    "sizeMb": pack.sizeMB,
+                    "version": pack.version,
+                    "needsDownload": pack.needsDownload
+                ]
                 
-                resolve(vocabArray)
+                resolve(result)
             } catch {
                 reject("VOCAB_ERROR", error.localizedDescription, error)
             }
@@ -117,39 +125,35 @@ class UniversalTranslationModule: RCTEventEmitter {
     }
     
     @objc
-    func downloadVocabulary(_ name: String,
-                           resolver resolve: @escaping RCTPromiseResolveBlock,
-                           rejecter reject: @escaping RCTPromiseRejectBlock) {
+    func downloadVocabularyPacks(_ languages: [String],
+                                resolver resolve: @escaping RCTPromiseResolveBlock,
+                                rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
                 let vocabManager = VocabularyManager()
                 
-                try await vocabManager.downloadVocabulary(name: name) { [weak self] progress in
-                    guard self?.hasListeners == true else { return }
-                    
-                    self?.sendEvent(withName: "vocabularyDownloadProgress", body: [
-                        "name": name,
-                        "progress": progress
-                    ])
+                // Download packs for each language
+                for language in languages {
+                    if let pack = try? await vocabManager.getVocabularyForPair(
+                        source: language,
+                        target: language
+                    ), pack.needsDownload {
+                        try await vocabManager.downloadVocabulary(pack)
+                        
+                        // Send progress event if listeners are active
+                        if hasListeners {
+                            sendEvent(withName: "vocabularyDownloadProgress", body: [
+                                "language": language,
+                                "progress": 100
+                            ])
+                        }
+                    }
                 }
                 
                 resolve(nil)
             } catch {
                 reject("DOWNLOAD_ERROR", error.localizedDescription, error)
             }
-        }
-    }
-    
-    @objc
-    func deleteVocabulary(_ name: String,
-                         resolver resolve: @escaping RCTPromiseResolveBlock,
-                         rejecter reject: @escaping RCTPromiseRejectBlock) {
-        do {
-            let vocabManager = VocabularyManager()
-            try vocabManager.deleteVocabulary(packName: name)
-            resolve(nil)
-        } catch {
-            reject("DELETE_ERROR", error.localizedDescription, error)
         }
     }
     
@@ -173,7 +177,7 @@ class UniversalTranslationModule: RCTEventEmitter {
                        rejecter reject: @escaping RCTPromiseRejectBlock) {
         Task {
             do {
-                guard let encoder = self.encoder else {
+                guard let encoder = await self.translationClient?.encoder else {
                     throw TranslationError.encoderNotInitialized
                 }
                 
@@ -186,10 +190,12 @@ class UniversalTranslationModule: RCTEventEmitter {
     }
     
     @objc
-    func clearCache(_ resolve: @escaping RCTPromiseResolveBlock,
-                   rejecter reject: @escaping RCTPromiseRejectBlock) {
-        // Clear any caches
-        resolve(nil)
+    func clearTranslationCache(_ resolve: @escaping RCTPromiseResolveBlock,
+                              rejecter reject: @escaping RCTPromiseRejectBlock) {
+        Task {
+            await self.translationClient?.clearCache()
+            resolve(nil)
+        }
     }
 }
 

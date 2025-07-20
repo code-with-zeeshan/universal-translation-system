@@ -175,4 +175,4 @@ class UniversalEncoder(nn.Module):
     
     def enable_quantization(self):
         """Mark model as quantized"""
-        self.is_quantized = True        
+        self.is_quantized = True   

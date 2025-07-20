@@ -5,9 +5,10 @@ package com.universaltranslation
 import android.util.Base64
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
-import com.universaltranslation.encoder.TranslationEncoder
+import com.universaltranslation.encoder.TranslationClient
 import com.universaltranslation.encoder.TranslationResult
-import com.universaltranslation.encoder.VocabularyPack
+import com.universaltranslation.encoder.VocabularyManager
+import com.universaltranslation.encoder.VocabularyPackManager
 import kotlinx.coroutines.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -16,12 +17,38 @@ class UniversalTranslationModule(reactContext: ReactApplicationContext) :
 
     override val coroutineContext = SupervisorJob() + Dispatchers.Main
     
-    private var encoder: TranslationEncoder? = null
-    private val downloadJobs = ConcurrentHashMap<String, Job>()
+    private var translationClient: TranslationClient? = null
+    private var vocabularyManager: VocabularyManager? = null
+    private var vocabularyPackManager: VocabularyPackManager? = null
+    private val preparationJobs = ConcurrentHashMap<String, Job>()
     
     companion object {
         const val NAME = "UniversalTranslationModule"
         private const val TAG = "UniversalTranslation"
+        
+        // Supported languages mapping
+        private val SUPPORTED_LANGUAGES = listOf(
+            mapOf("code" to "en", "name" to "English", "nativeName" to "English", "isRTL" to false),
+            mapOf("code" to "es", "name" to "Spanish", "nativeName" to "Español", "isRTL" to false),
+            mapOf("code" to "fr", "name" to "French", "nativeName" to "Français", "isRTL" to false),
+            mapOf("code" to "de", "name" to "German", "nativeName" to "Deutsch", "isRTL" to false),
+            mapOf("code" to "zh", "name" to "Chinese", "nativeName" to "中文", "isRTL" to false),
+            mapOf("code" to "ja", "name" to "Japanese", "nativeName" to "日本語", "isRTL" to false),
+            mapOf("code" to "ko", "name" to "Korean", "nativeName" to "한국어", "isRTL" to false),
+            mapOf("code" to "ar", "name" to "Arabic", "nativeName" to "العربية", "isRTL" to true),
+            mapOf("code" to "hi", "name" to "Hindi", "nativeName" to "हिन्दी", "isRTL" to false),
+            mapOf("code" to "ru", "name" to "Russian", "nativeName" to "Русский", "isRTL" to false),
+            mapOf("code" to "pt", "name" to "Portuguese", "nativeName" to "Português", "isRTL" to false),
+            mapOf("code" to "it", "name" to "Italian", "nativeName" to "Italiano", "isRTL" to false),
+            mapOf("code" to "tr", "name" to "Turkish", "nativeName" to "Türkçe", "isRTL" to false),
+            mapOf("code" to "th", "name" to "Thai", "nativeName" to "ไทย", "isRTL" to false),
+            mapOf("code" to "vi", "name" to "Vietnamese", "nativeName" to "Tiếng Việt", "isRTL" to false),
+            mapOf("code" to "pl", "name" to "Polish", "nativeName" to "Polski", "isRTL" to false),
+            mapOf("code" to "uk", "name" to "Ukrainian", "nativeName" to "Українська", "isRTL" to false),
+            mapOf("code" to "nl", "name" to "Dutch", "nativeName" to "Nederlands", "isRTL" to false),
+            mapOf("code" to "id", "name" to "Indonesian", "nativeName" to "Bahasa Indonesia", "isRTL" to false),
+            mapOf("code" to "sv", "name" to "Swedish", "nativeName" to "Svenska", "isRTL" to false)
+        )
     }
 
     override fun getName(): String = NAME
@@ -29,19 +56,52 @@ class UniversalTranslationModule(reactContext: ReactApplicationContext) :
     override fun onCatalystInstanceDestroy() {
         super.onCatalystInstanceDestroy()
         coroutineContext.cancelChildren()
-        encoder?.destroy()
+        translationClient?.destroy()
     }
 
     @ReactMethod
-    fun initialize(promise: Promise) {
+    fun initialize(decoderUrl: String, promise: Promise) {
         launch {
             try {
-                if (encoder == null) {
-                    encoder = TranslationEncoder(reactApplicationContext)
-                }
+                // Initialize translation client
+                translationClient = TranslationClient(
+                    context = reactApplicationContext,
+                    decoderUrl = decoderUrl
+                )
+                
+                // Initialize vocabulary managers
+                vocabularyManager = VocabularyManager(reactApplicationContext)
+                vocabularyPackManager = VocabularyPackManager(reactApplicationContext)
+                
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("INIT_ERROR", "Failed to initialize encoder", e)
+                promise.reject("INIT_ERROR", "Failed to initialize: ${e.message}", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun translate(text: String, sourceLang: String, targetLang: String, promise: Promise) {
+        launch {
+            try {
+                val client = translationClient 
+                    ?: throw IllegalStateException("Translation client not initialized")
+                
+                when (val result = client.translate(text, sourceLang, targetLang)) {
+                    is TranslationResult.Success -> {
+                        val resultMap = WritableNativeMap().apply {
+                            putString("translation", result.translation)
+                            putString("targetLang", targetLang)
+                            putDouble("confidence", 1.0) // Add confidence if available
+                        }
+                        promise.resolve(resultMap)
+                    }
+                    is TranslationResult.Error -> {
+                        promise.reject("TRANSLATION_ERROR", result.message)
+                    }
+                }
+            } catch (e: Exception) {
+                promise.reject("TRANSLATION_ERROR", e.message ?: "Translation failed", e)
             }
         }
     }
@@ -50,144 +110,99 @@ class UniversalTranslationModule(reactContext: ReactApplicationContext) :
     fun prepareTranslation(sourceLang: String, targetLang: String, promise: Promise) {
         launch {
             try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                val success = enc.prepareTranslation(sourceLang, targetLang)
+                val client = translationClient?.encoder
+                    ?: throw IllegalStateException("Translation client not initialized")
                 
-                if (success) {
-                    promise.resolve(null)
-                } else {
-                    promise.reject("PREPARE_ERROR", "Failed to prepare translation")
-                }
-            } catch (e: Exception) {
-                promise.reject("PREPARE_ERROR", e.message, e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun encode(text: String, sourceLang: String, targetLang: String, promise: Promise) {
-        launch {
-            try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                val encoded = enc.encode(text, sourceLang, targetLang)
+                // Cancel any existing preparation for this pair
+                val key = "$sourceLang-$targetLang"
+                preparationJobs[key]?.cancel()
                 
-                // Convert to base64 for React Native bridge
-                val base64 = Base64.encodeToString(encoded, Base64.NO_WRAP)
-                promise.resolve(base64)
-            } catch (e: Exception) {
-                promise.reject("ENCODE_ERROR", e.message, e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun getAvailableVocabularies(promise: Promise) {
-        launch {
-            try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                val vocabs = enc.getAvailableVocabularies()
-                
-                val vocabArray = WritableNativeArray()
-                vocabs.forEach { vocab ->
-                    val vocabMap = WritableNativeMap().apply {
-                        putString("name", vocab.name)
-                        putArray("languages", WritableNativeArray().apply {
-                            vocab.languages.forEach { pushString(it) }
-                        })
-                        putDouble("sizeMB", vocab.sizeMb.toDouble())
-                        putBoolean("isDownloaded", !vocab.needsDownload())
-                        putString("version", vocab.version)
-                    }
-                    vocabArray.pushMap(vocabMap)
-                }
-                
-                promise.resolve(vocabArray)
-            } catch (e: Exception) {
-                promise.reject("VOCAB_ERROR", e.message, e)
-            }
-        }
-    }
-
-    @ReactMethod
-    fun downloadVocabulary(name: String, promise: Promise) {
-        launch {
-            try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                
-                // Cancel any existing download for this vocabulary
-                downloadJobs[name]?.cancel()
-                
-                // Start new download job
+                // Start new preparation job
                 val job = launch {
-                    enc.downloadVocabulary(name) { progress ->
-                        sendEvent("vocabularyDownloadProgress", WritableNativeMap().apply {
-                            putString("name", name)
-                            putDouble("progress", progress.toDouble())
-                        })
+                    val success = client.prepareTranslation(sourceLang, targetLang)
+                    if (!success) {
+                        throw Exception("Failed to prepare translation")
                     }
                 }
                 
-                downloadJobs[name] = job
+                preparationJobs[key] = job
                 job.join()
-                downloadJobs.remove(name)
+                preparationJobs.remove(key)
                 
                 promise.resolve(null)
             } catch (e: CancellationException) {
-                downloadJobs.remove(name)
-                promise.reject("DOWNLOAD_CANCELLED", "Download was cancelled")
+                promise.reject("PREPARE_CANCELLED", "Preparation was cancelled")
             } catch (e: Exception) {
-                downloadJobs.remove(name)
-                promise.reject("DOWNLOAD_ERROR", e.message, e)
+                promise.reject("PREPARE_ERROR", e.message ?: "Preparation failed", e)
             }
         }
     }
 
     @ReactMethod
-    fun deleteVocabulary(name: String, promise: Promise) {
+    fun getVocabularyForPair(sourceLang: String, targetLang: String, promise: Promise) {
         launch {
             try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                enc.deleteVocabulary(name)
+                val manager = vocabularyManager 
+                    ?: throw IllegalStateException("Vocabulary manager not initialized")
+                
+                val pack = manager.getVocabularyForPair(sourceLang, targetLang)
+                
+                val packMap = WritableNativeMap().apply {
+                    putString("name", pack.name)
+                    putArray("languages", WritableNativeArray().apply {
+                        pack.languages.forEach { pushString(it) }
+                    })
+                    putString("downloadUrl", pack.downloadUrl)
+                    putString("localPath", pack.localPath)
+                    putDouble("sizeMb", pack.sizeMb.toDouble())
+                    putString("version", pack.version)
+                    putBoolean("needsDownload", pack.needsDownload())
+                }
+                
+                promise.resolve(packMap)
+            } catch (e: Exception) {
+                promise.reject("VOCAB_ERROR", e.message ?: "Failed to get vocabulary", e)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun downloadVocabularyPacks(languages: ReadableArray, promise: Promise) {
+        launch {
+            try {
+                val packManager = vocabularyPackManager 
+                    ?: throw IllegalStateException("Pack manager not initialized")
+                
+                val langSet = mutableSetOf<String>()
+                for (i in 0 until languages.size()) {
+                    langSet.add(languages.getString(i))
+                }
+                
+                packManager.downloadPacksForLanguages(langSet)
                 promise.resolve(null)
             } catch (e: Exception) {
-                promise.reject("DELETE_ERROR", e.message, e)
+                promise.reject("DOWNLOAD_ERROR", e.message ?: "Download failed", e)
             }
         }
     }
 
     @ReactMethod
     fun getSupportedLanguages(promise: Promise) {
-        launch {
-            try {
-                val languages = WritableNativeArray()
-                
-                val supportedLangs = listOf(
-                    mapOf("code" to "en", "name" to "English", "nativeName" to "English", "isRTL" to false),
-                    mapOf("code" to "es", "name" to "Spanish", "nativeName" to "Español", "isRTL" to false),
-                    mapOf("code" to "fr", "name" to "French", "nativeName" to "Français", "isRTL" to false),
-                    mapOf("code" to "de", "name" to "German", "nativeName" to "Deutsch", "isRTL" to false),
-                    mapOf("code" to "zh", "name" to "Chinese", "nativeName" to "中文", "isRTL" to false),
-                    mapOf("code" to "ja", "name" to "Japanese", "nativeName" to "日本語", "isRTL" to false),
-                    mapOf("code" to "ko", "name" to "Korean", "nativeName" to "한국어", "isRTL" to false),
-                    mapOf("code" to "ar", "name" to "Arabic", "nativeName" to "العربية", "isRTL" to true),
-                    mapOf("code" to "hi", "name" to "Hindi", "nativeName" to "हिन्दी", "isRTL" to false),
-                    mapOf("code" to "ru", "name" to "Russian", "nativeName" to "Русский", "isRTL" to false),
-                    mapOf("code" to "pt", "name" to "Portuguese", "nativeName" to "Português", "isRTL" to false)
-                )
-                
-                supportedLangs.forEach { lang ->
-                    languages.pushMap(WritableNativeMap().apply {
-                        putString("code", lang["code"] as String)
-                        putString("name", lang["name"] as String)
-                        putString("nativeName", lang["nativeName"] as String)
-                        putBoolean("isRTL", lang["isRTL"] as Boolean)
-                    })
-                }
-                
-                promise.resolve(languages)
-            } catch (e: Exception) {
-                promise.reject("LANG_ERROR", e.message, e)
+        try {
+            val languages = WritableNativeArray()
+            
+            SUPPORTED_LANGUAGES.forEach { lang ->
+                languages.pushMap(WritableNativeMap().apply {
+                    putString("code", lang["code"] as String)
+                    putString("name", lang["name"] as String)
+                    putString("nativeName", lang["nativeName"] as String)
+                    putBoolean("isRTL", lang["isRTL"] as Boolean)
+                })
             }
+            
+            promise.resolve(languages)
+        } catch (e: Exception) {
+            promise.reject("LANG_ERROR", e.message ?: "Failed to get languages", e)
         }
     }
 
@@ -195,25 +210,25 @@ class UniversalTranslationModule(reactContext: ReactApplicationContext) :
     fun getMemoryUsage(promise: Promise) {
         launch {
             try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                val memoryUsage = enc.getMemoryUsage()
+                val encoder = translationClient?.encoder
+                    ?: throw IllegalStateException("Encoder not initialized")
+                
+                val memoryUsage = encoder.getMemoryUsage()
                 promise.resolve(memoryUsage.toDouble())
             } catch (e: Exception) {
-                promise.reject("MEMORY_ERROR", e.message, e)
+                promise.reject("MEMORY_ERROR", e.message ?: "Failed to get memory usage", e)
             }
         }
     }
 
     @ReactMethod
-    fun clearCache(promise: Promise) {
-        launch {
-            try {
-                val enc = encoder ?: throw IllegalStateException("Encoder not initialized")
-                enc.clearCache()
-                promise.resolve(null)
-            } catch (e: Exception) {
-                promise.reject("CACHE_ERROR", e.message, e)
-            }
+    fun clearTranslationCache(promise: Promise) {
+        try {
+            // TranslationClient doesn't have a clearCache method in the native implementation
+            // This is a no-op for now, but we resolve successfully
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("CACHE_ERROR", e.message ?: "Failed to clear cache", e)
         }
     }
 

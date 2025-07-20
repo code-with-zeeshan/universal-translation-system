@@ -19,35 +19,60 @@ import { useTranslation, LanguageInfo } from '../index';
 
 interface TranslationScreenProps {
   decoderUrl?: string;
+  defaultSourceLang?: string;
+  defaultTargetLang?: string;
 }
 
-export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
+export function TranslationScreen({ 
+  decoderUrl,
+  defaultSourceLang = 'en',
+  defaultTargetLang = 'es'
+}: TranslationScreenProps) {
   const {
     translate,
     isTranslating,
     error,
+    clearError,
     getSupportedLanguages,
+    downloadLanguages,
+    downloadProgress,
     clearCache,
   } = useTranslation({ decoderUrl });
 
   const [inputText, setInputText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
-  const [sourceLang, setSourceLang] = useState('en');
-  const [targetLang, setTargetLang] = useState('es');
+  const [sourceLang, setSourceLang] = useState(defaultSourceLang);
+  const [targetLang, setTargetLang] = useState(defaultTargetLang);
   const [languages, setLanguages] = useState<LanguageInfo[]>([]);
   const [showSourcePicker, setShowSourcePicker] = useState(false);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
+  const [isLoadingLanguages, setIsLoadingLanguages] = useState(true);
 
   useEffect(() => {
     loadLanguages();
   }, []);
 
+  useEffect(() => {
+    if (error) {
+      Alert.alert('Error', error, [
+        { text: 'OK', onPress: clearError }
+      ]);
+    }
+  }, [error, clearError]);
+
   const loadLanguages = async () => {
     try {
+      setIsLoadingLanguages(true);
       const langs = await getSupportedLanguages();
       setLanguages(langs);
+      
+      // Pre-download vocabularies for default languages
+      await downloadLanguages([defaultSourceLang, defaultTargetLang]);
     } catch (err) {
       console.error('Failed to load languages:', err);
+      Alert.alert('Error', 'Failed to load languages. Please restart the app.');
+    } finally {
+      setIsLoadingLanguages(false);
     }
   };
 
@@ -65,22 +90,63 @@ export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
       });
       setTranslatedText(result.translation);
     } catch (err: any) {
-      Alert.alert('Translation Error', err.message);
+      // Error is already handled by the hook
+      console.error('Translation error:', err);
     }
   };
 
-  const swapLanguages = () => {
-    setSourceLang(targetLang);
-    setTargetLang(sourceLang);
+  const swapLanguages = async () => {
+    const newSource = targetLang;
+    const newTarget = sourceLang;
+    
+    setSourceLang(newSource);
+    setTargetLang(newTarget);
+    
     if (translatedText) {
       setInputText(translatedText);
       setTranslatedText('');
+    }
+    
+    // Pre-download vocabularies for swapped languages
+    try {
+      await downloadLanguages([newSource, newTarget]);
+    } catch (err) {
+      console.error('Failed to prepare languages:', err);
     }
   };
 
   const getLanguageName = (code: string) => {
     return languages.find((lang) => lang.code === code)?.name || code;
   };
+
+  const handleLanguageSelect = async (
+    language: string, 
+    isSource: boolean
+  ) => {
+    if (isSource) {
+      setSourceLang(language);
+      setShowSourcePicker(false);
+    } else {
+      setTargetLang(language);
+      setShowTargetPicker(false);
+    }
+    
+    // Download vocabulary for the new language
+    try {
+      await downloadLanguages([language]);
+    } catch (err) {
+      console.error('Failed to download vocabulary:', err);
+    }
+  };
+
+  if (isLoadingLanguages) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Loading languages...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -111,6 +177,24 @@ export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
           </TouchableOpacity>
         </View>
 
+        {/* Download Progress */}
+        {Object.keys(downloadProgress).length > 0 && (
+          <View style={styles.progressContainer}>
+            {Object.entries(downloadProgress).map(([lang, progress]) => (
+              <View key={lang} style={styles.progressItem}>
+                <Text style={styles.progressText}>
+                  Downloading {getLanguageName(lang)}: {Math.round(progress)}%
+                </Text>
+                <View style={styles.progressBar}>
+                  <View 
+                    style={[styles.progressFill, { width: `${progress}%` }]} 
+                  />
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Input Section */}
         <View style={styles.inputSection}>
           <Text style={styles.sectionLabel}>Enter text</Text>
@@ -123,7 +207,14 @@ export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
             numberOfLines={5}
             textAlignVertical="top"
           />
-          <Text style={styles.charCount}>{inputText.length} characters</Text>
+          <View style={styles.inputFooter}>
+            <Text style={styles.charCount}>{inputText.length} characters</Text>
+            {inputText.length > 0 && (
+              <TouchableOpacity onPress={() => setInputText('')}>
+                <Text style={styles.clearButton}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* Translate Button */}
@@ -139,19 +230,12 @@ export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
           )}
         </TouchableOpacity>
 
-        {/* Error Display */}
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
         {/* Translation Result */}
         {translatedText && !error && (
           <View style={styles.resultSection}>
             <View style={styles.resultHeader}>
               <Text style={styles.sectionLabel}>Translation</Text>
-              <TouchableOpacity onPress={() => clearCache()}>
+              <TouchableOpacity onPress={clearCache}>
                 <Text style={styles.clearButton}>Clear Cache</Text>
               </TouchableOpacity>
             </View>
@@ -170,10 +254,7 @@ export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
         languages={languages}
         selectedLanguage={sourceLang}
         excludeLanguage={targetLang}
-        onSelect={(lang) => {
-          setSourceLang(lang);
-          setShowSourcePicker(false);
-        }}
+        onSelect={(lang) => handleLanguageSelect(lang, true)}
         onClose={() => setShowSourcePicker(false)}
       />
 
@@ -182,10 +263,7 @@ export function TranslationScreen({ decoderUrl }: TranslationScreenProps) {
         languages={languages}
         selectedLanguage={targetLang}
         excludeLanguage={sourceLang}
-        onSelect={(lang) => {
-          setTargetLang(lang);
-          setShowTargetPicker(false);
-        }}
+        onSelect={(lang) => handleLanguageSelect(lang, false)}
         onClose={() => setShowTargetPicker(false)}
       />
     </KeyboardAvoidingView>
@@ -235,8 +313,18 @@ function LanguagePicker({
                 onPress={() => onSelect(item.code)}
               >
                 <View>
-                  <Text style={styles.languageItemName}>{item.name}</Text>
-                  <Text style={styles.languageItemNative}>{item.nativeName}</Text>
+                  <Text style={[
+                    styles.languageItemName,
+                    item.isRTL && styles.rtlText
+                  ]}>
+                    {item.name}
+                  </Text>
+                  <Text style={[
+                    styles.languageItemNative,
+                    item.isRTL && styles.rtlText
+                  ]}>
+                    {item.nativeName}
+                  </Text>
                 </View>
                 {item.code === selectedLanguage && (
                   <Text style={styles.checkmark}>✓</Text>
@@ -254,6 +342,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F5F5',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666666',
   },
   scrollContent: {
     padding: 16,
@@ -294,6 +393,27 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: '#007AFF',
   },
+  progressContainer: {
+    marginBottom: 16,
+  },
+  progressItem: {
+    marginBottom: 8,
+  },
+  progressText: {
+    fontSize: 12,
+    color: '#666666',
+    marginBottom: 4,
+  },
+  progressBar: {
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#007AFF',
+  },
   inputSection: {
     marginBottom: 20,
   },
@@ -315,11 +435,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  inputFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
   charCount: {
     fontSize: 12,
     color: '#666666',
-    marginTop: 4,
-    textAlign: 'right',
+  },
+  clearButton: {
+    fontSize: 14,
+    color: '#007AFF',
   },
   translateButton: {
     backgroundColor: '#007AFF',
@@ -336,16 +464,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  errorContainer: {
-    backgroundColor: '#FFE5E5',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-  },
-  errorText: {
-    color: '#CC0000',
-    fontSize: 14,
-  },
   resultSection: {
     marginTop: 20,
   },
@@ -354,10 +472,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 8,
-  },
-  clearButton: {
-    fontSize: 14,
-    color: '#007AFF',
   },
   resultContainer: {
     backgroundColor: '#FFFFFF',
@@ -422,6 +536,9 @@ const styles = StyleSheet.create({
   languageItemNative: {
     fontSize: 14,
     color: '#666666',
+  },
+  rtlText: {
+    textAlign: 'right',
   },
   checkmark: {
     fontSize: 20,

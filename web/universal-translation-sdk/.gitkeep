@@ -1,0 +1,4 @@
+mkdir -p public/models public/vocabs public/wasm
+touch public/models/.gitkeep
+touch public/vocabs/.gitkeep  
+touch public/wasm/.gitkeep

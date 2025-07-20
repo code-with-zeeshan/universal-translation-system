@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build outputs
+dist/
+lib/
+build/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Assets (these should be downloaded/generated)
+public/models/*.onnx
+public/models/*.ort
+public/vocabs/*.msgpack
+public/vocabs/*.json
+!public/vocabs/.gitkeep
+!public/models/.gitkeep
+public/wasm/*.wasm
+!public/wasm/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

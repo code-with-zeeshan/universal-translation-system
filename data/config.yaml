@@ -58,4 +58,4 @@ vocabulary_strategy:
     
 training:
   dynamic_vocabulary: true
-  vocab_switch_penalty: 0.001  # Small penalty for switching  
+  vocab_switch_penalty: 0.001  # Small penalty for switching

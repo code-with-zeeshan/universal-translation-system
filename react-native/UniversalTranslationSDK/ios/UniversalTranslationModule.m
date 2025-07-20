@@ -5,7 +5,14 @@
 
 @interface RCT_EXTERN_MODULE(UniversalTranslationModule, RCTEventEmitter)
 
-RCT_EXTERN_METHOD(initialize:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(initialize:(NSString *)decoderURL
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(translate:(NSString *)text
+                  sourceLang:(NSString *)sourceLang
+                  targetLang:(NSString *)targetLang
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(prepareTranslation:(NSString *)sourceLang
@@ -13,20 +20,12 @@ RCT_EXTERN_METHOD(prepareTranslation:(NSString *)sourceLang
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(encode:(NSString *)text
-                  sourceLang:(NSString *)sourceLang
+RCT_EXTERN_METHOD(getVocabularyForPair:(NSString *)sourceLang
                   targetLang:(NSString *)targetLang
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(getAvailableVocabularies:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
-
-RCT_EXTERN_METHOD(downloadVocabulary:(NSString *)name
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
-
-RCT_EXTERN_METHOD(deleteVocabulary:(NSString *)name
+RCT_EXTERN_METHOD(downloadVocabularyPacks:(NSArray *)languages
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -36,7 +35,7 @@ RCT_EXTERN_METHOD(getSupportedLanguages:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(getMemoryUsage:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(clearCache:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(clearTranslationCache:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 + (BOOL)requiresMainQueueSetup
