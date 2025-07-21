@@ -4,7 +4,89 @@ training:
   gradient_accumulation: 4
   effective_batch_size: 128
   mixed_precision: true
-  
+  dynamic_batch_size: true
+  max_sentence_length: 50
+  dynamic_vocabulary: true
+  vocab_switch_penalty: 0.001
+
+distributed:
+  backend: nccl
+  gradient_as_bucket_view: false
+
+optimization:
+  learning_rate: 3e-4
+  warmup_steps: 4000
+  weight_decay: 0.01
+
 memory:
-  gradient_checkpointing: true  # Save memory
-  max_seq_length: 128  # Shorter sequences
+  gradient_checkpointing: true
+  cpu_offload: true
+  activation_offload: false
+  use_flash_attention: true
+  pin_memory: true
+  persistent_workers: true
+  prefetch_factor: 4
+  compile_model: true
+  compile_mode: reduce-overhead
+  use_channels_last: true
+  use_fused_optimizer: true
+  enable_nested_tensor: true
+  use_inductor: true
+  dtype: bfloat16
+  profile_memory: false
+  use_safetensors: true
+  max_split_size: 512
+
+data:
+  processed_dir: data/processed
+  languages:
+    - en
+    - es
+    - fr
+    - de
+    - zh
+    - ja
+    - ko
+    - ar
+    - hi
+    - ru
+    - pt
+    - it
+    - tr
+    - th
+    - vi
+    - pl
+    - uk
+    - nl
+    - id
+    - sv
+  training_distribution:
+    en-es: 2000000
+    en-fr: 2000000
+    en-de: 2000000
+    en-zh: 1500000
+    en-ru: 1500000
+    en-ja: 1000000
+    en-ar: 1000000
+    en-pt: 1000000
+    en-it: 1000000
+    en-hi: 500000
+    en-ko: 500000
+    en-tr: 500000
+    en-th: 300000
+    en-vi: 300000
+    en-pl: 300000
+    en-uk: 300000
+    en-nl: 300000
+    en-id: 300000
+    en-sv: 300000
+    es-pt: 200000
+    zh-ja: 200000
+    fr-es: 200000
+    de-fr: 200000
+    ru-uk: 200000
+  vocabulary_strategy:
+    approach: production
+    groups:
+      latin: [en, es, fr, de, it, pt]
+      cjk: [zh, ja, ko]

@@ -1,29 +1,22 @@
-# test_local.py
-import sys
-sys.path.append('.')
-
-from encoder_core.universal_encoder import UniversalEncoder
+import pytest
+import torch
+from encoder.universal_encoder import UniversalEncoder
 from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
 
-def test_translation():
-    print("🧪 Testing Universal Translation System")
-    
+def test_translation_pipeline():
     # Initialize encoder
-    encoder = UniversalEncoder("models/production/encoder.onnx")
-    encoder.load_vocabulary("vocabulary/latin_v1.msgpack")
-    
-    # Test encoding
+    encoder = UniversalEncoder()
+    encoder.load_vocabulary_pack({'tokens': {'<bos>': 0, '<eos>': 2, '<unk>': 1, 'hello': 3, 'how': 4, 'are': 5, 'you': 6, '?': 7}})
     text = "Hello, how are you?"
-    encoded = encoder.encode(text, "en", "es")
-    print(f"✅ Encoded: {len(encoded)} bytes")
-    
+    input_ids = torch.tensor([[3, 4, 5, 6, 7]])
+    encoded = encoder(input_ids)
+    assert encoded.shape[0] == 1
     # Initialize decoder
     decoder = OptimizedUniversalDecoder()
-    decoder.load_state_dict(torch.load("models/production/decoder.pt"))
-    
-    # Test decoding
-    translation = decoder.decode(encoded, "es")
-    print(f"✅ Translation: {translation}")
-
-if __name__ == "__main__":
-    test_translation()
+    decoder_input_ids = torch.tensor([[3, 4, 5, 6, 7]])
+    output = decoder.forward(
+        decoder_input_ids=decoder_input_ids,
+        encoder_hidden_states=encoded
+    )
+    assert output.shape[0] == 1
+    assert isinstance(output, torch.Tensor)

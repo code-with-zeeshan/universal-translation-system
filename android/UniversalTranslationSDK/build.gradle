@@ -62,7 +62,7 @@ android {
     }
 
     buildFeatures {
-        viewBinding true
+        buildConfig true  // Enable BuildConfig generation
     }
 
     packagingOptions {
@@ -104,6 +104,21 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
     testImplementation 'org.mockito:mockito-core:5.7.0'
+
+    // Add WorkManager for better background task handling
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
+    
+    // Add LiveData for observing download progress
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
+    
+    // Memory leak detection (debug only)
+    debugImplementation 'com.squareup.leakcanary:leakcanary-android:2.12'
+
+     // Material Design Components
+    implementation 'com.google.android.material:material:1.11.0'
+    
+    // ConstraintLayout
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 }
 
 // Publishing configuration

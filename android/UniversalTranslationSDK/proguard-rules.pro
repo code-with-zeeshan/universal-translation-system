@@ -16,6 +16,7 @@
 
 # ONNX Runtime
 -keep class ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
 
 # OkHttp
 -dontwarn okhttp3.**
@@ -29,9 +30,20 @@
 -dontwarn sun.misc.**
 -keep class com.google.gson.** { *; }
 
+# Keep native methods
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+
+# Vocabulary models
+-keepclassmembers class com.universaltranslation.encoder.VocabularyPack {
+    <fields>;
+}
+
 # Coroutines
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
 -keepclassmembernames class kotlinx.** {
     volatile <fields>;
 }
+-dontwarn kotlinx.coroutines.flow.**

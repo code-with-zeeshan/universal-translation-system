@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import litserve as ls
 from fastapi import FastAPI, Request, Header
 from fastapi.responses import JSONResponse
 import asyncio
@@ -303,7 +304,7 @@ class OptimizedDecoderLayer(nn.Module):
 
 
 # FastAPI application for serving
-app = FastAPI(title="Universal Translation Decoder")
+app = ls.LitApp()
 
 # Global model and optimization
 model: Optional[OptimizedUniversalDecoder] = None
@@ -380,11 +381,8 @@ async def startup():
         logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
 
 
-@app.post("/decode")
-async def decode(
-    request: Request,
-    x_target_language: str = Header(None)
-):
+@app.route('/decode', methods=['POST'])
+async def decode(request):
     """
     Decode encoder output to target language
     """
@@ -395,20 +393,17 @@ async def decode(
         # Add to batch
         result = await batcher.add_request({
             'compressed_data': compressed_data,
-            'target_lang': x_target_language
+            'target_lang': request.headers.get('x-target-language')
         })
         
-        return JSONResponse(content=result)
+        return result
         
     except Exception as e:
         logger.error(f"Decode error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e)}
-        )
+        return {"error": str(e)}
 
-@app.get("/health")
-async def health():
+@app.route('/health', methods=['GET'])
+async def health(request):
     """Health check endpoint"""
     return {"status": "healthy", "device": str(device)}
 

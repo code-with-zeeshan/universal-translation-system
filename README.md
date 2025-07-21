@@ -8,7 +8,7 @@ A flexible and scalable translation platform designed to support multiple langua
 
 Unlike traditional translation apps that bundle 200MB+ models, our system uses:
 - **Universal Encoder**: 35MB base + 2-4MB vocabulary packs (only download what you need)
-- **Cloud Decoder**: Shared infrastructure for all users
+- **Cloud Decoder**: Shared infrastructure for all users, served via Litserve (2x faster than FastAPI)
 - **Result**: 40MB app with 90% quality of full models
 
 ## 📋 Features
@@ -18,12 +18,14 @@ Unlike traditional translation apps that bundle 200MB+ models, our system uses:
 - ✅ Edge encoding, cloud decoding architecture
 - ✅ ~85M parameters total (vs 600M+ for traditional models)
 - ✅ Designed for low-end devices (2GB RAM)
+- ✅ Full-system monitoring with Prometheus/Grafana
+- ✅ CI/CD pipelines for encoder/decoder and SDKs
 
 ## 🚀 Quick Start
 
 ```bash
 # Clone repository
-git clone [repository-url]
+git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-translation-system
 
 # Install dependencies
@@ -33,10 +35,12 @@ pip install -r requirements.txt
 python data/download_sample_data.py
 
 # Run local test
-python test_local.py --text "Hello world" --source en --target es
+pytest tests/
 ```
 
 ## 📱 SDK Integration
+
+See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for full details and code examples for all platforms.
 
 ### Android
 ```java
@@ -63,20 +67,27 @@ const result = await translator.translate({
 ## 🏗️ Architecture
 
 - **Encoder**: Runs on device, converts text to language-agnostic embeddings
-- **Decoder**: Runs on server, converts embeddings to target language
+- **Decoder**: Runs on server (Litserve), converts embeddings to target language
 - **Vocabulary Packs**: Downloadable language-specific token mappings
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
-See [docs/Architecture.md](Architecture.md) for details.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## 📚 Documentation
-- **API Documentation**
-- **Architecture Overview**
-- **Training Guide**
-- **Deployment Guide**
-- **Contributing Guidelines**
-- **License**
-- **Community Acknowledgments (soon)**
+- [API Documentation](docs/API.md)
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Training Guide](docs/TRAINING.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [CI/CD Guide](docs/CI_CD.md)
+- [SDK Integration Guide](docs/SDK_INTEGRATION.md)
+- [Monitoring Guide](monitoring/README.md)
+- [Contributing Guidelines](CONTRIBUTING.md)
+- [License](LICENSE)
+
+## 📊 Monitoring
+- All services expose Prometheus metrics at `/metrics` (see [monitoring/README.md](monitoring/README.md))
+- System metrics available on port 9000 if `system_metrics.py` is running
+- Visualize with Grafana, set up alerts for latency, errors, and resource usage
 
 ## 🤝 Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and more details on how to contribute.
@@ -102,6 +113,8 @@ This project builds upon amazing work from the ML community:
 - [Transformers](https://huggingface.co/transformers) by Hugging Face - Model implementations
 - [ONNX Runtime](https://onnxruntime.ai/) - Mobile inference
 - [SentencePiece](https://github.com/google/sentencepiece) - Tokenization
+- [Litserve](https://github.com/litserve/litserve) - High-performance AI serving
+- [Prometheus](https://prometheus.io/) & [Grafana](https://grafana.com/) - Monitoring
 
 ### Data Sources
 - [OPUS](https://opus.nlpl.eu/) - Parallel corpora

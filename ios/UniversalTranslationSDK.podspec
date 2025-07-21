@@ -1,3 +1,5 @@
+# ios/UniversalTranslationSDK.podspec
+
 Pod::Spec.new do |s|
   s.name             = 'UniversalTranslationSDK'
   s.version          = '1.0.0'
@@ -19,12 +21,27 @@ Pod::Spec.new do |s|
   
   s.swift_version = '5.7'
   
-  s.source_files = 'ios/UniversalTranslationSDK/Sources/**/*.swift'
+  s.source_files = 'ios/UniversalTranslationSDK/Sources/**/*.{swift,h,m,mm}'
+  s.public_header_files = 'ios/UniversalTranslationSDK/Sources/EncoderBridge/include/*.h'
   s.resources = 'ios/UniversalTranslationSDK/Resources/**/*'
   
   s.frameworks = 'Foundation', 'CoreML', 'Compression', 'Network'
   s.ios.frameworks = 'UIKit'
   s.osx.frameworks = 'AppKit'
   
-  s.dependency 'swift-log', '~> 1.5'
+  s.libraries = 'c++'
+  
+  # Dependencies
+  s.dependency 'MessagePack.swift', '~> 4.0'
+  s.dependency 'SWCompression', '~> 4.8'
+  
+  # If using ONNX Runtime
+  s.ios.vendored_frameworks = 'Frameworks/onnxruntime.xcframework'
+  
+  s.pod_target_xcconfig = {
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    'CLANG_CXX_LIBRARY' => 'libc++',
+    'OTHER_CPLUSPLUSFLAGS' => '-std=c++17 -stdlib=libc++',
+    'HEADER_SEARCH_PATHS' => '$(PODS_ROOT)/../../encoder_core/include'
+  }
 end

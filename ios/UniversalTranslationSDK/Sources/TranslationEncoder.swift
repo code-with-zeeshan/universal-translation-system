@@ -5,6 +5,7 @@ import CoreML
 import Compression
 import OSLog
 import Accelerate
+import BackgroundTasks
 
 // MARK: - Error Types
 
@@ -50,10 +51,40 @@ public enum TranslationError: LocalizedError {
 
 private let logger = Logger(subsystem: "com.universaltranslation.sdk", category: "TranslationEncoder")
 
+// Add performance monitoring
+private class PerformanceMonitor {
+    private var metrics: [String: [TimeInterval]] = [:]
+    private let queue = DispatchQueue(label: "com.translation.performance", attributes: .concurrent)
+    
+    func measure<T>(_ operation: String, block: () throws -> T) rethrows -> T {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        defer {
+            let duration = CFAbsoluteTimeGetCurrent() - startTime
+            queue.async(flags: .barrier) {
+                if self.metrics[operation] == nil {
+                    self.metrics[operation] = []
+                }
+                self.metrics[operation]?.append(duration)
+                
+                if duration > 1.0 {
+                    logger.warning("\(operation) took \(duration)s")
+                }
+            }
+        }
+        return try block()
+    }
+    
+    func getMetrics() -> [String: [TimeInterval]] {
+        queue.sync { metrics }
+    }
+}
+
 // MARK: - Translation Encoder
 
 @available(iOS 15.0, macOS 12.0, *)
 public actor TranslationEncoder {
+    private let performanceMonitor = PerformanceMonitor() // performance monitor
+    private var isWarmedUp = false //  warmup flag
     private let modelURL: URL
     private let vocabularyManager: VocabularyManager
     private var encoderModel: MLModel?
@@ -62,6 +93,40 @@ public actor TranslationEncoder {
     
     // Cache for loaded models
     private var modelCache: [String: MLModel] = [:]
+
+    public func initialize() async throws {
+        if encoderModel != nil { return }
+        
+        try await loadModel()
+        
+        // Warm up model in background
+        Task.detached(priority: .background) { [weak self] in
+            await self?.warmupModel()
+        }
+    }
+
+    // Add warmup method
+    private func warmupModel() async {
+        guard !isWarmedUp else { return }
+        
+        do {
+            logger.info("Starting model warmup...")
+            let startTime = CFAbsoluteTimeGetCurrent()
+            
+            // Run dummy inference
+            _ = try await encode(
+                text: "test",
+                sourceLang: "en",
+                targetLang: "es"
+            )
+            
+            isWarmedUp = true
+            let warmupTime = CFAbsoluteTimeGetCurrent() - startTime
+            logger.info("Model warmup completed in \(warmupTime)s")
+        } catch {
+            logger.warning("Model warmup failed: \(error)")
+        }
+    }
     
     public init() throws {
         // Try multiple locations for the model
@@ -120,68 +185,93 @@ public actor TranslationEncoder {
         logger.info("Translation prepared successfully")
     }
     
+    // Update loadModel with optimizations
     private func loadModel() async throws {
         let config = MLModelConfiguration()
         
-        // Configure for optimal performance
+        // Optimize for Neural Engine
+        #if os(iOS)
+        if #available(iOS 16.0, *) { // iOS-specific optimizations
+            config.modelDisplayName = "Universal Encoder"
+            config.computeUnits = .cpuAndNeuralEngine
+            config.allowLowPrecisionAccumulationOnGPU = true
+
+            // Enable model caching
+            config.parameters = [
+                .enablePerformanceShaping: true,
+                .profileDuringCompilation: true
+            ]
+        } else {
+            config.computeUnits = .all
+        }
+        #else
         config.computeUnits = .cpuAndNeuralEngine
+        #endif
+
         config.allowLowPrecisionAccumulationOnGPU = true
         
-        #if os(iOS)
-        // iOS-specific optimizations
-        if #available(iOS 16.0, *) {
-            config.modelDisplayName = "Universal Encoder"
+        encoderModel = try await performanceMonitor.measure("loadModel") {
+            try await Task {
+                try MLModel(contentsOf: modelURL, configuration: config)
+            }.value
         }
-        #endif
         
-        encoderModel = try await Task {
-            try MLModel(contentsOf: modelURL, configuration: config)
-        }.value
-        
-        logger.info("Model loaded successfully")
+        logger.info("Model loaded successfully with configuration: \(config)")
     }
     
+    // Update encode method with performance monitoring
     public func encode(text: String, sourceLang: String, targetLang: String) async throws -> Data {
-        // Validate input
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else {
-            throw TranslationError.invalidInput
+        try await performanceMonitor.measure("encode") {
+            // Existing encode implementation...
+            if !isWarmedUp {
+                logger.info("Encoding without warmup")
+            }
+            // Validate input
+            let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedText.isEmpty else {
+                throw TranslationError.invalidInput
+            }
+        
+            // Ensure prepared
+            if currentVocabulary == nil {
+                try await prepareTranslation(sourceLang: sourceLang, targetLang: targetLang)
+            }
+        
+            guard let vocabulary = currentVocabulary else {
+                throw TranslationError.vocabularyNotLoaded
+            }
+        
+            guard let model = encoderModel else {
+                throw TranslationError.modelNotLoaded
+            }
+        
+            // Tokenize
+            let tokens = try tokenize(text: trimmedText, sourceLang: sourceLang, vocabulary: vocabulary)
+        
+            // Create input array
+            let inputArray = try MLMultiArray(shape: [1, 128], dataType: .int32)
+            for (i, token) in tokens.enumerated() {
+                inputArray[i] = NSNumber(value: token)
+            }
+        
+            // Create model input
+            let input = try createModelInput(inputArray: inputArray)
+        
+            // Run inference
+            let output = try await Task {
+                try model.prediction(from: input)
+            }.value
+        
+            // Extract and compress output
+            let outputArray = try extractEncoderOutput(from: output)
+            return try compressOutput(outputArray)
         }
-        
-        // Ensure prepared
-        if currentVocabulary == nil {
-            try await prepareTranslation(sourceLang: sourceLang, targetLang: targetLang)
-        }
-        
-        guard let vocabulary = currentVocabulary else {
-            throw TranslationError.vocabularyNotLoaded
-        }
-        
-        guard let model = encoderModel else {
-            throw TranslationError.modelNotLoaded
-        }
-        
-        // Tokenize
-        let tokens = try tokenize(text: trimmedText, sourceLang: sourceLang, vocabulary: vocabulary)
-        
-        // Create input array
-        let inputArray = try MLMultiArray(shape: [1, 128], dataType: .int32)
-        for (i, token) in tokens.enumerated() {
-            inputArray[i] = NSNumber(value: token)
-        }
-        
-        // Create model input
-        let input = try createModelInput(inputArray: inputArray)
-        
-        // Run inference
-        let output = try await Task {
-            try model.prediction(from: input)
-        }.value
-        
-        // Extract and compress output
-        let outputArray = try extractEncoderOutput(from: output)
-        return try compressOutput(outputArray)
-    }
+    }   
+
+    // Add method to get performance metrics
+    public func getPerformanceMetrics() -> [String: [TimeInterval]] {
+        performanceMonitor.getMetrics()
+    } 
     
     private func tokenize(text: String, sourceLang: String, vocabulary: VocabularyPack) throws -> [Int32] {
         var tokens: [Int32] = []

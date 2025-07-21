@@ -1,24 +1,41 @@
-## 📋 **Adding New Languages - Complete Process**
+# Adding New Languages
 
-### **Step-by-Step Process for Adding Languages (e.g., Adding Portuguese-Brazil 'pt-BR')**
+To add a new language to the Universal Translation System, follow these steps:
 
-| Step | Component | Action Required | Code/Command | Time |
-|------|-----------|----------------|--------------|------|
-| **1** | **Config** | Add to language list | ```yaml<br># data/config.yaml<br>languages:<br>  - pt-BR  # Add here<br>``` | 5 min |
-| **2** | **Data Collection** | Gather corpus data | ```bash<br># Add to corpus_paths<br>'pt-BR': 'data/pt-BR_corpus.txt'<br>``` | 1-2 days |
-| **3** | **Data Pipeline** | Process new data | ```python<br># Add to training_distribution<br>training_distribution:<br>  en-pt-BR: 500000<br>  pt-pt-BR: 200000<br>``` | 2-4 hours |
-| **4** | **Vocabulary Decision** | Choose vocabulary strategy | **Option A**: Add to existing Latin pack<br>**Option B**: Create new pack | 30 min |
-| **5** | **Vocabulary Creation** | Generate/Update pack | ```bash<br># If adding to Latin pack<br>python vocabulary/create_vocabulary_packs_from_data.py \<br>  --update-pack latin \<br>  --add-language pt-BR<br>``` | 2-3 hours |
-| **6** | **Model Embeddings** | Initialize new embeddings | ```python<br># Auto-handled if using dynamic loading<br># Otherwise: initialize embeddings for new tokens<br>``` | 1 hour |
-| **7** | **Testing** | Validate integration | ```python<br># Test new language pair<br>test_translation('en', 'pt-BR', 'Hello')<br>``` | 1 hour |
-| **8** | **Deployment** | Update production | Deploy new vocabulary pack only | 30 min |
+## 1. Update Data Pipeline
+- Add new language code to `data/config.yaml` under `languages:`
+- Update `training_distribution` in `data/config.yaml` to include new language pairs
 
-### **Language Addition Scenarios**
+## 2. Download and Prepare Data
+- Use `data/download_training_data.py` or `data/practical_data_pipeline.py` to fetch and preprocess parallel data for the new language
+- Ensure data is placed in the correct directory structure (`data/raw`, `data/processed`)
 
-| Scenario | Languages | Vocabulary Strategy | Complexity | Time |
-|----------|-----------|-------------------|------------|------|
-| **Similar Script** | Adding Italian to Latin group | Update existing Latin pack | Low | 1 day |
-| **New Script** | Adding Tamil (new script) | Create new Dravidian pack | High | 3-5 days |
-| **Rare Language** | Adding Quechua | Create specialized pack or add to Latin | Medium | 2-3 days |
-| **Dialect** | Adding Swiss German | Extend German vocabulary | Low | 1 day |
-| **Code-Mixed** | Adding Hinglish (Hindi+English) | Create hybrid pack | High | 4-5 days |
+## 3. Create/Update Vocabulary Packs
+- Run `python vocabulary/create_vocabulary_packs_from_data.py` to generate or update vocabulary packs
+- If the new language uses a unique script, create a new vocabulary group in `data/config.yaml` under `vocabulary_strategy.groups`
+
+## 4. Update Model Training Configs
+- Ensure the new language is included in all relevant `config/training_*.yaml` files
+- Adjust batch size or training distribution as needed
+
+## 5. Train or Fine-tune Models
+- Use `scripts/train_from_scratch.sh` or `training/train_universal_system.py` to train or fine-tune the encoder/decoder
+- Config auto-detection will select the best hardware config
+
+## 6. Update SDKs
+- Add the new language code to supported languages in each SDK (Android, iOS, Flutter, React Native, Web)
+- Update language pickers and UI as needed
+
+## 7. Register in Coordinator/Decoder Pool (if needed)
+- If deploying a new decoder node for the language, use `tools/register_decoder_node.py` to add it to the pool
+- Ensure the node passes health checks and is visible in the coordinator dashboard
+
+## 8. Test End-to-End
+- Use `tests/` and SDK integration tests to verify translation quality and system integration
+
+## 9. Update Documentation
+- Add the new language to all relevant docs and user guides
+
+---
+
+For more details, see [docs/SDK_INTEGRATION.md](../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md).

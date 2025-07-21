@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Internal storage paths -->
+    <files-path name="internal_files" path="." />
+    <files-path name="vocabularies" path="vocabularies/" />
+    <files-path name="models" path="models/" />
+    
+    <!-- Cache paths -->
+    <cache-path name="cache" path="." />
+    
+    <!-- External storage paths (if needed) -->
+    <external-path name="external_files" path="." />
+    <external-files-path name="external_app_files" path="." />
+</paths>

@@ -1,124 +1,55 @@
 # Deployment Guide
 
-## Encoder Deployment (Mobile)
+## Encoder Deployment (Mobile/Edge)
 
-### Android
+### Android/iOS/Flutter
+- Include the native encoder library (`libuniversal_encoder.so`/`.dylib`/`.dll`) in your app bundle.
+- Use the SDK's FFI wrapper to call the encoder from Dart/Swift/Kotlin.
+- Vocabulary packs are loaded dynamically as needed.
 
-1. Add encoder to your app:
+### React Native/Web
+- Use the SDK to send text to the cloud decoder via API.
+- (Optional: future support for native encoding via WASM/FFI)
+
+## Decoder Deployment (Cloud)
+
+### Docker Deployment (Litserve)
 ```bash
-app/src/main/assets/ 
-├── models/ 
-│ └── universal_encoder.onnx 
-└── vocabularies/ 
-    └── latin_v1.msgpack
-```
-
-2. Add dependency:
-```gradle
-dependencies {
-    implementation 'com.universaltranslation:encoder-sdk:1.0.0'
-}
-```
-
-### iOS
-
-1. Add to Xcode project:
-- Drag **UniversalEncoder.mlmodelc** to project
-- Ensure "Copy items if needed" is checked
-
-2. Install via CocoaPods:
-```Podfile
-pod 'UniversalTranslationSDK', '~> 1.0'
-```
-### Web
-```Javascript
-<script src="https://cdn.example.com/universal-translation-sdk.min.js"></script>
-```
-
-Or via npm:
-```bash
-npm install universal-translation-sdk
-```
-## Decoder Deployment (Server)
-
-### Docker Deployment
-```bash
-# Build image
 docker build -f cloud_decoder/Dockerfile -t universal-decoder:latest .
-
-# Run with GPU support
-docker run --gpus all -p 8000:8000 \
-  -e MAX_BATCH_SIZE=64 \
-  -e GPU_MEMORY_FRACTION=0.9 \
-  universal-decoder:latest
+docker run --gpus all -p 8000:8000 universal-decoder:latest
 ```
 
 ### Kubernetes Deployment
-```yaml
-# kubernetes/decoder-deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: universal-decoder
-spec:
-  replicas: 2
-  template:
-    spec:
-      containers:
-      - name: decoder
-        image: universal-decoder:latest
-        resources:
-          limits:
-            nvidia.com/gpu: 1
-```
+- Use `kubernetes/decoder-deployment.yaml` and `decoder-service.yaml`.
+- For CI/CD encoder builds, use `encoder-build.yaml` and `encoder-artifacts-pvc.yaml`.
 
-Apply:
 ```bash
-kubectl apply -f kubernetes/
+kubectl apply -f kubernetes/namespace.yaml
+kubectl apply -f kubernetes/encoder-artifacts-pvc.yaml
+kubectl apply -f kubernetes/encoder-build.yaml
+kubectl apply -f kubernetes/decoder-deployment.yaml
+kubectl apply -f kubernetes/decoder-service.yaml
 ```
 
 ### Cloud Platforms
-**AWS**
-- Use EC2 with GPU (g4dn.xlarge minimum)
-- Or use SageMaker for managed deployment
-
-**Google Cloud**
-- Use Compute Engine with T4 GPU
-- Or use Vertex AI for managed deployment
-
-**Azure**
-- Use NC-series VMs
-- Or use Azure ML for managed deployment
+- AWS: EC2 with GPU, SageMaker, or EKS
+- GCP: Compute Engine with T4, Vertex AI, or GKE
+- Azure: NC-series VMs, Azure ML, or AKS
 
 ## Environment Variables
-
-### Decoder Service
-- **MAX_BATCH_SIZE**: Maximum batch size (default: 32)
-- **GPU_MEMORY_FRACTION**: GPU memory to use (default: 0.9)
+- **MAX_BATCH_SIZE**: Maximum batch size (default: 64)
 - **MODEL_PATH**: Path to decoder model
+- **VOCAB_DIR**: Path to vocabulary packs
 - **PORT**: Service port (default: 8000)
 
-## Monitoring
+## Monitoring & Scaling
+- Health: `/health` endpoint
+- Metrics: `/metrics` (Prometheus)
+- Horizontal scaling: add more decoder replicas
+- Vertical scaling: use larger GPUs, increase batch size
 
-### Health Check
-```bash
-curl http://decoder-service:8000/health
-```
-### Metrics
-The decoder exposes Prometheus metrics at **/metrics**
-
-## Scaling
-
-### Horizontal Scaling
-- Add more decoder replicas
-- Use load balancer to distribute requests
-
-### Vertical Scaling
-- Use larger GPUs (V100, A100)
-- Increase batch size
-
-### Security
-1. **API Authentication**: Implement API keys or JWT
-2. **Rate Limiting**: Limit requests per client
-3. **HTTPS**: Always use TLS in production
-4. **Input Validation**: Limit text length, validate language codes
+## Security
+- API authentication (keys/JWT)
+- Rate limiting
+- HTTPS/TLS
+- Input validation

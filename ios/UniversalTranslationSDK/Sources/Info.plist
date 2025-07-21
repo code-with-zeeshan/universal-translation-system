@@ -1,0 +1,10 @@
+<key>BGTaskSchedulerPermittedIdentifiers</key>
+<array>
+    <string>com.universal.translation.process</string>
+</array>
+
+<key>UIBackgroundModes</key>
+<array>
+    <string>fetch</string>
+    <string>processing</string>
+</array>

@@ -2,220 +2,76 @@
 
 ## Overview
 
-The Universal Translation System uses a split architecture to minimize mobile app size while maintaining translation quality.
+The Universal Translation System uses a split architecture to minimize client size while maximizing translation quality and performance.
 
 ## Components
 
-### 1. Universal Encoder (Mobile)
-- **Size**: 35MB base model
-- **Architecture**: 6-layer transformer, 384 hidden dimensions
-- **Vocabulary**: Dynamic loading (2-4MB per language pack)
-- **Output**: Compressed embeddings (2-3KB per translation)
+### 1. Universal Encoder (Edge/Client)
+- **Platforms:** Android, iOS, Flutter, React Native, Web
+- **Implementation:**
+  - Android/iOS/Flutter: Native C++ core via FFI (libuniversal_encoder)
+  - React Native/Web: API-based encoding (optionally native in future)
+- **Vocabulary:** Dynamic loading (2-4MB per language pack)
+- **Output:** Compressed embeddings (2-3KB per translation)
 
 ### 2. Vocabulary Packs
-- **Latin Pack**: ~3MB (covers 12 languages)
-- **CJK Pack**: ~4MB (Chinese, Japanese, Korean)
-- **Arabic Pack**: ~2MB
-- **Other Packs**: 1-2MB each
+- **Latin Pack:** ~3MB (covers 12 languages)
+- **CJK Pack:** ~4MB (Chinese, Japanese, Korean)
+- **Other Packs:** 1-2MB each
 
-### 3. Universal Decoder (Server)
-- **Size**: ~50M parameters
-- **Architecture**: 6-layer transformer with cross-attention
-- **Infrastructure**: Runs on GPU servers (T4 or better)
+### 3. Universal Decoder (Cloud)
+- **Implementation:** PyTorch, served via Litserve (2x faster than FastAPI)
+- **Architecture:** 6-layer transformer with cross-attention
+- **Infrastructure:** Runs on GPU servers (T4, 3090, V100, A100)
+- **Deployment:** Docker, Kubernetes, supports horizontal/vertical scaling
+
+### 4. Advanced Coordinator
+- **Role:** Manages communication between multiple edge encoders and a dynamic pool of cloud decoders
+- **Features:**
+  - Least-loaded load balancing (routes requests to the decoder with the lowest current load)
+  - Dynamic decoder pool: add/remove decoders at runtime via REST API or dashboard, no downtime
+  - Health checks: background thread checks each decoder’s `/health` endpoint
+  - Prometheus metrics: exposes coordinator and decoder pool metrics for monitoring
+  - Authentication: token-based for admin endpoints and dashboard actions
+  - Web UI: dashboard for monitoring, manual routing, and node management
+  - **Enhanced Dashboard:**
+    - Authentication UI for admin actions
+    - Real-time charts (load, uptime) using Chart.js
+    - Advanced analytics: uptime, request rates, error rates, per-decoder stats
+    - Manual routing for authenticated users
+- **How it works:**
+  - Encoders send requests to the coordinator’s `/decode` endpoint
+  - Coordinator selects the least-loaded healthy decoder and proxies the request
+  - Decoders can be added/removed at any time; the system automatically adjusts
+  - All activity and health is visible in the dashboard and via Prometheus
 
 ## Data Flow
 
 1. User inputs text
 2. App loads relevant vocabulary pack (if needed)
-3. Encoder converts text → embeddings
-4. Embeddings compressed and sent to server (2-3KB)
-5. Decoder generates translation
-6. Translation sent back to app
+3. Encoder converts text → embeddings (on device or via API)
+4. Embeddings compressed and sent to coordinator `/decode` endpoint
+5. Coordinator load-balances and proxies to a healthy decoder
+6. Decoder generates translation (Litserve endpoint)
+7. Translation sent back to app
+
+## SDK Alignment Table
+
+| SDK           | Edge Encoding | Cloud Decoding | Native/FFI | API-based | Aligned? |
+|---------------|--------------|---------------|------------|-----------|----------|
+| Android/iOS   | Yes          | Yes           | Yes        | Yes       | Yes      |
+| Flutter       | Yes          | Yes           | Yes        | Yes       | Yes      |
+| React Native  | No           | Yes           | No         | Yes       | Yes      |
+| Web           | No           | Yes           | No         | Yes       | Yes      |
 
 ## Key Design Decisions
 
-### Why Split Architecture?
-- Mobile apps stay small (<50MB total)
-- Expensive computation happens on server
-- Users only download languages they need
+- **Split Architecture:** Small client, heavy compute on server
+- **Universal Encoder:** One encoder, dynamic vocab, zero-shot
+- **Litserve for Inference:** Fast, production-grade AI serving
+- **Advanced Coordinator:** Scalable, dynamic, observable, and secure routing for all decoders
+- **CI/CD:** Automated builds for encoder/decoder, artifact storage
+- **Config Auto-Detection:** Training scripts auto-select best config for detected GPU
 
-### Why Universal Encoder?
-- One encoder works with any vocabulary
-- No need for language-specific models
-- Enables zero-shot translation
-
-### Vocabulary Management
-- Packs are grouped by script similarity
-- Common tokens shared across languages
-- Subword tokenization for unknown words
-
-## Model Specifications
-
-### Encoder
-```python
-EncoderConfig = {
-    'num_layers': 6,
-    'hidden_dim': 384,
-    'num_heads': 8,
-    'ffn_dim': 1536,
-    'max_seq_length': 128,
-    'dynamic_vocab_size': 50000
-}
-```
-
-### Decoder
-```python
-DecoderConfig = {
-    'num_layers': 6,
-    'hidden_dim': 512,
-    'num_heads': 8,
-    'ffn_dim': 2048,
-    'max_seq_length': 256,
-    'vocab_size': 50000
-}
-```
-
-### Performance Characteristics
-
-**Encoding Latency**: 10-50ms on mobile CPU
-**Network Transfer**: 2-3KB per request
-**Decoding Latency**: 20-50ms on server GPU
-**Total Translation Time**: 100-200ms (including network)
-
-📁 Complete Universal Translation System Directory Structure
-🗂️ Full Project Structure
-
-```bash
-universal-translation-system/
-├── README.md
-├── requirements.txt
-├── setup.py
-├── .gitignore
-├── .env.example
-├── CONTRIBUTING.md
-├── LICENSE
-├── CHANGELOG.md
-├── checkpoints
-│
-├── data/
-│   ├── essential/                   # High-quality evaluation sets
-│   ├── processed/                   # Final training corpus (~8GB)
-│   ├── sampled/                     # Quality-filtered samples
-│   ├── final/                       # Augmented training data
-│   ├── Balanced/                     
-│   ├── raw/                         # Downloaded raw data
-│   ├── __init__.py
-│   ├── download_training_data.py
-│   ├── download_curated_data.py
-│   ├── smart_data_downloader.py
-│   ├── smart_sampler.py
-│   ├── synthetic_augmentation.py
-│   └── practical_data_pipeline.py
-│
-├── vocabulary/
-│   ├── __init__.py
-│   ├── create_vocabulary_packs_from_data.py
-│   └── vocab_cache/
-│
-├── training/
-│   ├── __init__.py
-│   ├── bootstrap_from_pretrained.py
-│   ├── train_universal_system.py
-│   ├── train_from_scratch.py
-│   ├── distributed_train.py
-│   ├── memory_efficient_training.py
-│   └── convert_models.py
-│
-├── encoder_core/
-│   ├── CMakeLists.txt
-│   ├── include/
-│   │   └── universal_encoder.h
-│   └── src/
-│       └── universal_encoder.cpp
-│
-├── logs
-├── models/
-│   ├── encoder/
-│   ├── decoder/
-│   └── production/
-│
-├── android/
-│   └── UniversalTranslationSDK/
-│       ├── build.gradle
-│       └── src/main/java/com/universaltranslation/encoder/
-│           └── TranslationEncoder.kt
-│
-├── ios/
-│   └── UniversalTranslationSDK/
-│       └── Sources/
-│           └── TranslationEncoder.swift
-│
-├── flutter/
-│   └── universal_translation_sdk/
-│       ├── pubspec.yaml
-│       └── lib/src/
-│           └── translation_encoder.dart
-│
-├── react-native/
-│   └── UniversalTranslationSDK/
-│       ├── package.json
-│       └── src/
-│           └── index.tsx
-│
-├── monitoring/
-│   └── metrics_collector.py
-│
-├── web/
-│   └── universal-translation-sdk/
-│       ├── package.json
-│       └── src/
-│           └── index.ts
-│
-├── cloud_decoder/
-│   ├── __init__.py
-│   ├── optimized_decoder.py
-│   ├── Dockerfile
-│   └── requirements.txt
-│
-├── docker/
-│   ├── encoder.Dockerfile
-│   ├── decoder.Dockerfile
-│   └── docker-compose.yml
-│
-├── config/
-│   ├── training_a100.yaml
-│   ├── training_rtx3090.yaml
-│   └── training_v100.yaml
-│
-│
-├── kubernetes/
-│   ├── namespace.yaml
-│   ├── decoder-deployment.yaml
-│   ├── decoder-service.yaml
-│   └── coordinator-deployment.yaml
-│
-├── tests/
-│   ├── __init__.py
-│   ├── test_local.py
-│   ├── test_encoder.py
-│   ├── test_decoder.py
-│   └── test_translation_quality.py
-│
-├── tools/
-│   └── create_vocabulary_packs.py
-│
-├── scripts/
-│   ├── train_from_scratch.sh
-│   ├── build_models.py
-│   ├── multi-GPU_training.sh
-│   ├── deploy.sh
-│   └── setup_environment.sh
-│
-└── docs/
-    ├── API.md
-    ├── Architecture.md
-    ├── DEPLOYMENT.md
-    ├── Roadmap.md
-    ├── TROUBLESHOOT.md
-    └── TRAINING.md
-```
+## Directory Structure
+(see project root for up-to-date structure)

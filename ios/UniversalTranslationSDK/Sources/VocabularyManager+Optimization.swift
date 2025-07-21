@@ -1,9 +1,70 @@
-// ios/UniversalTranslationSDK/Sources/VocabularyManager.swift
+// ios/UniversalTranslationSDK/Sources/VocabularyManager+Optimization.swift
 
 import Foundation
 import OSLog
 
 private let logger = Logger(subsystem: "com.universaltranslation.sdk", category: "VocabularyManager")
+
+extension VocabularyManager {
+    // Prefetch vocabularies based on user preferences
+    public func prefetchVocabulariesForUserLanguages() async {
+        let preferredLanguages = Locale.preferredLanguages
+            .compactMap { Locale(identifier: $0).languageCode }
+            .prefix(3)
+        
+        logger.info("Prefetching vocabularies for user languages: \(preferredLanguages)")
+        
+        await withTaskGroup(of: Void.self) { group in
+            for lang in preferredLanguages {
+                group.addTask { [weak self] in
+                    await self?.prefetchVocabulary(for: lang)
+                }
+            }
+        }
+    }
+    
+    private func prefetchVocabulary(for language: String) async {
+        do {
+            // Get vocabulary pack for common pairs
+            let commonPairs = ["en", language] // Most users translate to/from English
+            
+            for sourceLang in commonPairs {
+                for targetLang in commonPairs where sourceLang != targetLang {
+                    let pack = try await getVocabularyForPair(
+                        source: sourceLang,
+                        target: targetLang
+                    )
+                    
+                    if pack.needsDownload {
+                        logger.info("Prefetching vocabulary: \(pack.name)")
+                        try await downloadVocabulary(pack)
+                    }
+                }
+            }
+        } catch {
+            logger.warning("Failed to prefetch vocabulary for \(language): \(error)")
+        }
+    }
+    
+    // Memory-efficient loading for large vocabularies
+    public func loadVocabularyEfficient(from path: String) async throws -> VocabularyPack {
+        let url = URL(fileURLWithPath: path)
+        let fileSize = try FileManager.default.attributesOfItem(atPath: path)[.size] as? Int ?? 0
+        
+        if fileSize > 5 * 1024 * 1024 { // 5MB
+            logger.info("Using memory-mapped loading for large vocabulary: \(fileSize / 1024 / 1024)MB")
+            return try await loadVocabularyMemoryMapped(from: url)
+        } else {
+            return try await loadVocabulary(from: path)
+        }
+    }
+    
+    private func loadVocabularyMemoryMapped(from url: URL) async throws -> VocabularyPack {
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        let decoder = JSONDecoder()
+        return try decoder.decode(VocabularyPack.self, from: data)
+    }
+}
 
 @available(iOS 15.0, macOS 12.0, *)
 public class VocabularyManager {

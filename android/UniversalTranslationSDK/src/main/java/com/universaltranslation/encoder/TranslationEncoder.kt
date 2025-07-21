@@ -2,20 +2,26 @@
 package com.universaltranslation.encoder
 
 import android.content.Context
-import androidx.lifecycle.lifecycleScope
-import androidx.appcompat.app.AppCompatActivity
+import android.os.Build
+import android.util.Log
+import androidx.annotation.Keep
 import com.google.gson.Gson
 import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.File
-import java.util.concurrent.TimeUnit
-import android.util.Log
-import androidx.annotation.Keep
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 // Data classes
+@Keep
+data class PerformanceMetrics(
+    val operation: String,
+    val duration: Long,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 @Keep
 data class VocabularyPack(
     val name: String,
@@ -43,13 +49,35 @@ sealed class TranslationResult {
     data class Error(val message: String) : TranslationResult()
 }
 
+// Performance monitor
+object PerformanceMonitor {
+    private val metrics = mutableListOf<PerformanceMetrics>()
+    
+    inline fun <T> measureTime(operation: String, block: () -> T): T {
+        val startTime = System.currentTimeMillis()
+        return try {
+            block()
+        } finally {
+            val duration = System.currentTimeMillis() - startTime
+            metrics.add(PerformanceMetrics(operation, duration))
+            
+            if (duration > 1000) {
+                Log.w("PerformanceMonitor", "$operation took ${duration}ms")
+            }
+        }
+    }
+    
+    fun getMetrics(): List<PerformanceMetrics> = metrics.toList()
+    fun clearMetrics() = metrics.clear()
+}
+
 // Vocabulary Manager
 class VocabularyManager(private val context: Context) {
     
     companion object {
-        private const val TAG = "VocabularyManager"
-        private const val VOCAB_DIR = "vocabularies"
-        private val LANGUAGE_TO_PACK = mapOf(
+        const val TAG = "VocabularyManager"
+        const val VOCAB_DIR = "vocabularies"
+        val LANGUAGE_TO_PACK = mapOf(
             "en" to "latin", "es" to "latin", "fr" to "latin",
             "de" to "latin", "it" to "latin", "pt" to "latin",
             "zh" to "cjk", "ja" to "cjk", "ko" to "cjk",
@@ -66,7 +94,6 @@ class VocabularyManager(private val context: Context) {
         val sourcePack = LANGUAGE_TO_PACK[sourceLang] ?: "latin"
         val targetPack = LANGUAGE_TO_PACK[targetLang] ?: "latin"
         
-        // Use target language pack as priority
         val packName = if (targetPack != "latin") targetPack else sourcePack
         
         return VocabularyPack(
@@ -91,7 +118,6 @@ class VocabularyManager(private val context: Context) {
     }
     
     private fun getDownloadUrl(packName: String): String {
-        // Replace with your actual CDN URL
         return "https://cdn.yourdomain.com/vocabs/${packName}_v1.0.msgpack"
     }
     
@@ -113,6 +139,11 @@ class TranslationEncoder(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .addInterceptor { chain ->
             val request = chain.request()
+                .newBuilder()
+                .addHeader("X-SDK-Version", "Android/1.0.0")
+                .addHeader("X-SDK-Platform", "Android/${Build.VERSION.SDK_INT}")
+                .addHeader("X-Device-Model", Build.MODEL)
+                .build()
             Log.d(TAG, "Request: ${request.url}")
             chain.proceed(request)
         }
@@ -120,6 +151,7 @@ class TranslationEncoder(private val context: Context) {
     
     private val vocabularyManager = VocabularyManager(context)
     private val downloadScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val warmupScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
     companion object {
         private const val TAG = "TranslationEncoder"
@@ -158,11 +190,32 @@ class TranslationEncoder(private val context: Context) {
         downloadScope.launch {
             initializeEncoder()
         }
+        
+        warmupScope.launch {
+            delay(1000)
+            warmupModel()
+        }
+    }
+    
+    private suspend fun warmupModel() = withContext(Dispatchers.Default) {
+        try {
+            if (nativeHandle != 0L) {
+                Log.d(TAG, "Starting model warmup...")
+                val startTime = System.currentTimeMillis()
+                
+                val dummyText = "test"
+                nativeEncode(nativeHandle, dummyText, "en", "es")
+                
+                val warmupTime = System.currentTimeMillis() - startTime
+                Log.d(TAG, "Model warmup completed in ${warmupTime}ms")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Model warmup failed: ${e.message}")
+        }
     }
     
     private suspend fun initializeEncoder() = withContext(Dispatchers.IO) {
         try {
-            // Extract model from assets if needed
             val modelFile = File(context.filesDir, "universal_encoder.onnx")
             if (!modelFile.exists()) {
                 context.assets.open("models/universal_encoder_int8.onnx").use { input ->
@@ -184,47 +237,45 @@ class TranslationEncoder(private val context: Context) {
         }
     }
     
-    suspend fun prepareTranslation(sourceLang: String, targetLang: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            // Get vocabulary pack
-            val vocabPack = vocabularyManager.getVocabularyForPair(sourceLang, targetLang)
-            
-            // Download if needed
-            if (vocabPack.needsDownload()) {
-                Log.d(TAG, "Downloading vocabulary pack: ${vocabPack.name}")
-                downloadVocabulary(vocabPack)
+    suspend fun prepareTranslation(sourceLang: String, targetLang: String): Boolean = 
+        withContext(Dispatchers.IO) {
+            try {
+                val vocabPack = vocabularyManager.getVocabularyForPair(sourceLang, targetLang)
+                
+                if (vocabPack.needsDownload()) {
+                    Log.d(TAG, "Downloading vocabulary pack: ${vocabPack.name}")
+                    downloadVocabulary(vocabPack)
+                }
+                
+                val loaded = nativeLoadVocabulary(nativeHandle, vocabPack.localPath)
+                if (loaded) {
+                    Log.d(TAG, "Vocabulary loaded successfully: ${vocabPack.name}")
+                } else {
+                    Log.e(TAG, "Failed to load vocabulary: ${vocabPack.name}")
+                }
+                
+                loaded
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to prepare translation", e)
+                false
             }
-            
-            // Load into native encoder
-            val loaded = nativeLoadVocabulary(nativeHandle, vocabPack.localPath)
-            if (loaded) {
-                Log.d(TAG, "Vocabulary loaded successfully: ${vocabPack.name}")
-            } else {
-                Log.e(TAG, "Failed to load vocabulary: ${vocabPack.name}")
-            }
-            
-            loaded
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to prepare translation", e)
-            false
         }
-    }
     
     suspend fun encode(
         text: String,
         sourceLang: String,
         targetLang: String
     ): ByteArray = withContext(Dispatchers.Default) {
-        // Ensure vocabulary is loaded
-        if (!prepareTranslation(sourceLang, targetLang)) {
-            throw IOException("Failed to prepare translation")
+        PerformanceMonitor.measureTime("encode") {
+            if (!prepareTranslation(sourceLang, targetLang)) {
+                throw IOException("Failed to prepare translation")
+            }
+            
+            val encoded = nativeEncode(nativeHandle, text, sourceLang, targetLang)
+            Log.d(TAG, "Encoded ${text.length} chars to ${encoded.size} bytes")
+            
+            encoded
         }
-        
-        // Encode using native method
-        val encoded = nativeEncode(nativeHandle, text, sourceLang, targetLang)
-        Log.d(TAG, "Encoded ${text.length} chars to ${encoded.size} bytes")
-        
-        encoded
     }
     
     private suspend fun downloadVocabulary(vocabPack: VocabularyPack) = withContext(Dispatchers.IO) {
@@ -243,7 +294,6 @@ class TranslationEncoder(private val context: Context) {
                     body.byteStream().copyTo(output)
                 }
                 
-                // Atomic rename
                 if (!tempFile.renameTo(File(vocabPack.localPath))) {
                     tempFile.delete()
                     throw IOException("Failed to save vocabulary pack")
@@ -262,193 +312,17 @@ class TranslationEncoder(private val context: Context) {
         }
     }
     
+    fun getPerformanceMetrics(): List<PerformanceMetrics> {
+        return PerformanceMonitor.getMetrics()
+    }
+    
     fun destroy() {
         downloadScope.cancel()
+        warmupScope.cancel()
         if (nativeHandle != 0L) {
             nativeDestroy(nativeHandle)
             nativeHandle = 0
             Log.d(TAG, "Native encoder destroyed")
-        }
-    }
-}
-
-// Translation Client
-class TranslationClient(
-    private val context: Context,
-    private val decoderUrl: String = "https://api.yourdomain.com/decode"
-) {
-    companion object {
-        private const val TAG = "TranslationClient"
-    }
-    
-    private val encoder = TranslationEncoder(context)
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-    private val gson = Gson()
-    
-    suspend fun translate(
-        text: String,
-        sourceLang: String,
-        targetLang: String
-    ): TranslationResult = withContext(Dispatchers.IO) {
-        try {
-            // Validate input
-            if (text.isBlank()) {
-                return@withContext TranslationResult.Error("Text cannot be empty")
-            }
-            
-            // Encode locally
-            val encoded = encoder.encode(text, sourceLang, targetLang)
-            
-            // Send to decoder
-            val requestBody = encoded.toRequestBody("application/octet-stream".toMediaType())
-            
-            val request = Request.Builder()
-                .url(decoderUrl)
-                .post(requestBody)
-                .header("X-Target-Language", targetLang)
-                .header("X-Source-Language", sourceLang)
-                .header("Content-Type", "application/octet-stream")
-                .build()
-            
-            httpClient.newCall(request).execute().use { response ->
-                when {
-                    response.isSuccessful -> {
-                        val responseBody = response.body?.string() ?: throw IOException("Empty response")
-                        val result = gson.fromJson(responseBody, TranslationResponse::class.java)
-                        TranslationResult.Success(result.translation)
-                    }
-                    response.code == 429 -> {
-                        TranslationResult.Error("Rate limit exceeded. Please try again later.")
-                    }
-                    response.code in 500..599 -> {
-                        TranslationResult.Error("Server error. Please try again later.")
-                    }
-                    else -> {
-                        TranslationResult.Error("Translation failed: ${response.code}")
-                    }
-                }
-            }
-        } catch (e: IOException) {
-            Log.e(TAG, "Network error", e)
-            TranslationResult.Error("Network error: ${e.message}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Translation error", e)
-            TranslationResult.Error("Translation error: ${e.message}")
-        }
-    }
-    
-    fun destroy() {
-        encoder.destroy()
-    }
-}
-
-// Usage Example Activity
-class MainActivity : AppCompatActivity() {
-    companion object {
-        private const val TAG = "MainActivity"
-    }
-    
-    private lateinit var translationClient: TranslationClient
-    
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        
-        translationClient = TranslationClient(this)
-        
-        // Example translation
-        translateText("Hello world", "en", "es")
-    }
-    
-    private fun translateText(text: String, sourceLang: String, targetLang: String) {
-        lifecycleScope.launch {
-            when (val result = translationClient.translate(text, sourceLang, targetLang)) {
-                is TranslationResult.Success -> {
-                    showTranslation(result.translation)
-                }
-                is TranslationResult.Error -> {
-                    showError(result.message)
-                }
-            }
-        }
-    }
-    
-    private fun showTranslation(translation: String) {
-        Log.d(TAG, "Translation: $translation")
-        // Update UI
-    }
-    
-    private fun showError(message: String) {
-        Log.e(TAG, "Error: $message")
-        // Show error to user
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        translationClient.destroy()
-    }
-}
-
-// Vocabulary Pack Manager for bulk operations
-class VocabularyPackManager(private val context: Context) {
-    private val vocabularyManager = VocabularyManager(context)
-    private val workManager = androidx.work.WorkManager.getInstance(context)
-    
-    fun downloadPacksForLanguages(languages: Set<String>) {
-        val requiredPacks = languages.mapNotNull { lang ->
-            LANGUAGE_TO_PACK[lang]
-        }.toSet()
-        
-        requiredPacks.forEach { packName ->
-            schedulePackDownload(packName)
-        }
-    }
-    
-    private fun schedulePackDownload(packName: String) {
-        val downloadRequest = androidx.work.OneTimeWorkRequestBuilder<VocabularyDownloadWorker>()
-            .setInputData(
-                androidx.work.Data.Builder()
-                    .putString("pack_name", packName)
-                    .build()
-            )
-            .setConstraints(
-                androidx.work.Constraints.Builder()
-                    .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
-                    .build()
-            )
-            .build()
-        
-        workManager.enqueue(downloadRequest)
-    }
-    
-    companion object {
-        private val LANGUAGE_TO_PACK = mapOf(
-            "en" to "latin", "es" to "latin", "fr" to "latin",
-            "de" to "latin", "it" to "latin", "pt" to "latin",
-            "zh" to "cjk", "ja" to "cjk", "ko" to "cjk",
-            "ar" to "arabic", "hi" to "devanagari",
-            "ru" to "cyrillic", "uk" to "cyrillic"
-        )
-    }
-}
-
-// Background download worker
-class VocabularyDownloadWorker(
-    context: Context,
-    params: androidx.work.WorkerParameters
-) : androidx.work.CoroutineWorker(context, params) {
-    
-    override suspend fun doWork(): Result {
-        val packName = inputData.getString("pack_name") ?: return Result.failure()
-        
-        return try {
-            // Download vocabulary pack
-            // Implementation depends on your download mechanism
-            Result.success()
-        } catch (e: Exception) {
-            Result.retry()
         }
     }
 }

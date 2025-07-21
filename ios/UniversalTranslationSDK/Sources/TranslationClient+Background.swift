@@ -1,10 +1,81 @@
-// ios/UniversalTranslationSDK/Sources/TranslationClient.swift
+// ios/UniversalTranslationSDK/Sources/TranslationClient+Background.swift
 
 import Foundation
 import OSLog
 import Network
+import BackgroundTasks
 
 private let logger = Logger(subsystem: "com.universaltranslation.sdk", category: "TranslationClient")
+
+@available(iOS 15.0, *)
+extension TranslationClient {
+    
+    // Register background task identifier
+    static let backgroundTaskIdentifier = "com.universal.translation.process"
+    
+    public func enableBackgroundTranslation() {
+        // Register background task
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.backgroundTaskIdentifier,
+            using: nil
+        ) { task in
+            self.handleBackgroundTranslation(task: task as! BGProcessingTask)
+        }
+        
+        // Schedule initial task
+        scheduleBackgroundTranslation()
+    }
+    
+    private func scheduleBackgroundTranslation() {
+        let request = BGProcessingTaskRequest(identifier: Self.backgroundTaskIdentifier)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.info("Background translation task scheduled")
+        } catch {
+            logger.error("Failed to schedule background task: \(error)")
+        }
+    }
+    
+    private func handleBackgroundTranslation(task: BGProcessingTask) {
+        // Schedule next task
+        scheduleBackgroundTranslation()
+        
+        task.expirationHandler = {
+            logger.info("Background task expired")
+            task.setTaskCompleted(success: false)
+        }
+        
+        Task {
+            do {
+                // Process any pending translations
+                let success = await processPendingTranslations()
+                
+                // Prefetch vocabularies
+                await vocabularyManager.prefetchVocabulariesForUserLanguages()
+                
+                task.setTaskCompleted(success: success)
+            } catch {
+                logger.error("Background task failed: \(error)")
+                task.setTaskCompleted(success: false)
+            }
+        }
+    }
+    
+    private func processPendingTranslations() async -> Bool {
+        // Implement your pending translation logic
+        // This could include:
+        // - Retrying failed translations
+        // - Preloading frequently used language pairs
+        // - Cleaning up old cache entries
+        
+        logger.info("Processing pending translations in background")
+        return true
+    }
+}
 
 // MARK: - Translation Client
 

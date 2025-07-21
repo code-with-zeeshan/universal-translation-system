@@ -13,6 +13,31 @@ import time
 from contextlib import contextmanager
 import safetensors.torch
 from vocabulary.vocabulary_manager import VocabularyManager
+import yaml
+
+GPU_CONFIG_MAP = [
+    ("A100", "config/training_a100.yaml"),
+    ("V100", "config/training_v100.yaml"),
+    ("3090", "config/training_rtx3090.yaml"),
+    ("T4", "config/training_t4.yaml"),
+]
+
+def auto_select_config():
+    import torch
+    if not torch.cuda.is_available():
+        print("No GPU detected, using default config.")
+        return "config/training_t4.yaml"  # fallback or CPU config
+    gpu_name = torch.cuda.get_device_name(0)
+    for key, config_path in GPU_CONFIG_MAP:
+        if key in gpu_name:
+            print(f"Detected GPU: {gpu_name}, using config: {config_path}")
+            return config_path
+    print(f"Unknown GPU: {gpu_name}, using default config.")
+    return "config/training_t4.yaml"  # fallback
+
+def load_config(config_path):
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
 
 from memory_efficient_training import (
     MemoryOptimizedTrainer, 
@@ -638,20 +663,25 @@ class QuantizationAwareTrainer:
 # Usage example
 def main():
     """Main training function"""
-    
+    import torch
+    # Auto-detect GPU and load config
+    config_path = auto_select_config()
+    config_dict = load_config(config_path)
+    # You may want to convert config_dict to MemoryConfig, etc. as needed
+    # For now, just print for confirmation
+    print(f"Loaded config from: {config_path}")
     # Initialize models (assuming they're defined elsewhere)
     # encoder = YourEncoderModel()
     # decoder = YourDecoderModel()
-    
     # Configure memory optimizations
     memory_config = MemoryConfig(
-        mixed_precision=True,
-        gradient_checkpointing=True,
-        compile_model=True,
-        compile_mode="reduce-overhead",
-        use_flash_attention=True
+        mixed_precision=config_dict["training"].get("mixed_precision", True),
+        gradient_checkpointing=config_dict["memory"].get("gradient_checkpointing", True),
+        compile_model=config_dict["memory"].get("compile_model", True),
+        compile_mode=config_dict["memory"].get("compile_mode", "reduce-overhead"),
+        use_flash_attention=config_dict["memory"].get("use_flash_attention", True)
+        # Add more fields as needed
     )
-    
     # Initialize trainer
     trainer = ModernUniversalSystemTrainer(
         encoder=encoder,
@@ -661,7 +691,6 @@ def main():
         config=memory_config,
         experiment_name="universal-translation-v2"
     )
-    
     # Start training
     trainer.train(
         num_epochs=20,

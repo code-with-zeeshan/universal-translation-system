@@ -51,16 +51,17 @@ pytest --cov=. tests/
 ### Development Setup
 ```bash
 # Clone repo
-git clone [repository-url]
+git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-translation-system
 
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate
 
-# Install in development mode
+# Install requirements
+pip install -r requirements.txt
+# Or install in development mode
 pip install -e .
-pip install -r requirements-dev.txt
 
 # Run tests
 pytest
@@ -72,17 +73,15 @@ Want to help by running a decoder node? Here's how:
 
 #### Option 1: Quick Deploy (Managed)
 ```bash
-# Install decoder node software
 pip install universal-decoder-node
-
-# Register and run
 universal-decoder-node register --name "my-node" --gpu "T4"
 universal-decoder-node start
 ```
+
 #### Option 2: Custom Deploy
-1. Deploy the decoder to your cloud provider
+1. Deploy the decoder to your cloud provider or on-prem server (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))
 2. Ensure it meets minimum requirements (T4 GPU, 16GB RAM)
-3. Submit a PR to configs/decoder_pool.json:
+3. Register your node by submitting a PR to `configs/decoder_pool.json`:
 
 ```json
 {
@@ -90,19 +89,26 @@ universal-decoder-node start
   "endpoint": "https://your-decoder.com",
   "region": "us-east-1",
   "gpu_type": "T4",
-  "capacity": 100  // requests per second
+  "capacity": 100
 }
 ```
+
 **Decoder Node Requirements**
 - HTTPS endpoint with valid certificate
 - 99% uptime commitment
 - Response time < 100ms (p95)
-- Support for health checks
+- Support for health checks (`/health` endpoint)
 
 **Benefits for Contributors**
 - Recognition in project contributors list
 - Usage statistics dashboard access
 - Priority support for issues
+
+### How Encoder and Decoder Communicate
+- **Encoder (Edge/SDK)** encodes text to embeddings on device
+- **Decoder (Cloud Node)** exposes a REST API (e.g., `/decode` endpoint, now served by Litserve)
+- **Communication Protocol**: The encoder sends compressed embeddings (binary) to the decoder's `/decode` endpoint, specifying the target language in the header. The decoder returns the translated text as JSON.
+- See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/API.md](docs/API.md) for protocol details.
 
 ## 🌍 Our Mission
 

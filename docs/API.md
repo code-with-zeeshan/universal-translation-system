@@ -23,26 +23,37 @@ results = await client.translate_batch([
 ])
 ```
 
-## REST API (Decoder)
+### Flutter SDK
+```dart
+import 'package:universal_translation_sdk/universal_translation_sdk.dart';
+final encoder = TranslationEncoder();
+await encoder.initialize();
+await encoder.loadVocabulary('en', 'es');
+final encoded = await encoder.encode(text: 'Hello, world!', sourceLang: 'en', targetLang: 'es');
+// Send encoded data to cloud decoder
+```
 
-### POST /decode
-Decode encoder output to target language.
+### REST API (Decoder, served by Litserve)
 
-**Headers**:
-
-- `Content-Type`: `application/octet-stream`
-- `X-Target-Language`: `[language_code]`
-
-**Body**: Binary compressed encoder output
-
-**Response**: `application/json`
-```bash
+#### POST /decode
+- **Headers**:
+  - `Content-Type`: `application/octet-stream`
+  - `X-Target-Language`: `[language_code]`
+- **Body**: Binary compressed encoder output
+- **Response**: `application/json`
+```json
 {
-    "translation": "Hola mundo",
-    "target_lang": "es",
-    "confidence": 0.95
+  "translation": "Hola mundo",
+  "target_lang": "es",
+  "confidence": 0.95
 }
 ```
+
+#### GET /health
+- Returns 200 if service is healthy
+
+#### GET /metrics
+- Prometheus metrics for monitoring
 
 ### Language Codes
 |**Language** |	**Code** |

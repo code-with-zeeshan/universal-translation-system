@@ -1,0 +1,21 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: encoder-build-job
+  namespace: translation-system
+spec:
+  template:
+    spec:
+      containers:
+      - name: encoder-builder
+        image: ubuntu:20.04
+        command: ["/bin/bash", "-c", "apt-get update && apt-get install -y cmake g++ git wget make liblz4-dev && git clone https://github.com/your-org/universal-translation-system.git /src && cd /src/encoder_core && mkdir -p build && cd build && cmake .. && make -j$(nproc) && cp libuniversal_encoder_core.so /output/"]
+        volumeMounts:
+        - name: output
+          mountPath: /output
+      restartPolicy: Never
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: encoder-artifacts-pvc
+  backoffLimit: 1 

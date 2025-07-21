@@ -64,13 +64,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the FastAPI server
-CMD ["uvicorn", "optimized_decoder:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--loop", "uvloop", \
-     "--log-level", "info"]
+# Run the Litserve server
+CMD ["litserve", "serve", "optimized_decoder:app", "--host", "0.0.0.0", "--port", "8000"]
 
 # Alternative for production with gunicorn
 # CMD ["gunicorn", "optimized_decoder:app", \

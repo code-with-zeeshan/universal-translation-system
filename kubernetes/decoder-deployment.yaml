@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: decoder-deployment
+  labels:
+    app: decoder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: decoder
+  template:
+    metadata:
+      labels:
+        app: decoder
+    spec:
+      containers:
+      - name: decoder
+        image: universal-decoder:latest
+        command: ["litserve", "serve", "optimized_decoder:app", "--host", "0.0.0.0", "--port", "8000"]
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            memory: "16Gi"
+            cpu: "8"
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: OMP_NUM_THREADS
+          value: "4"
+        - name: MODEL_PATH
+          value: "/app/models/decoder_model.pt"
+        - name: VOCAB_DIR
+          value: "/app/vocabs"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: MAX_BATCH_SIZE
+          value: "64"
+        - name: BATCH_TIMEOUT_MS
+          value: "10"
+        volumeMounts:
+        - name: models
+          mountPath: /app/models
+        - name: vocabs
+          mountPath: /app/vocabs
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: models
+        hostPath:
+          path: /app/models
+      - name: vocabs
+        hostPath:
+          path: /app/vocabs
+      - name: logs
+        hostPath:
+          path: /app/logs
+      nodeSelector:
+        kubernetes.io/hostname: gpu-node
