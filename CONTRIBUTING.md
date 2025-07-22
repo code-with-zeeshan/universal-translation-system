@@ -132,5 +132,5 @@ We believe communication is a human right, not a luxury
 
 > **Note**: This is a solo developer project. Response times may vary. For urgent issues, please use GitHub Issues.
 
-**Code of Conduct**
+**[Code of Conduct](CODE_OF_CONDUCT.md)**
 Please be respectful and constructive in all interactions.
