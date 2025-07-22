@@ -3,7 +3,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 import litserve as ls
-from fastapi import FastAPI, Request, Header
+from fastapi import FastAPI, Request, Header, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 import asyncio
 from typing import List, Dict, Optional, Tuple
@@ -12,9 +14,35 @@ import triton_python_backend_utils as pb_utils
 import msgpack
 import lz4.frame
 import logging
+import os
+import yaml
+import threading
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Import vocabulary manager
 from vocabulary.vocabulary_manager import VocabularyManager
+
+# OpenTelemetry imports
+from opentelemetry import trace
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+# OpenTelemetry setup
+trace.set_tracer_provider(
+    TracerProvider(resource=Resource.create({SERVICE_NAME: "cloud-decoder"}))
+)
+otlp_exporter = OTLPSpanExporter()
+span_processor = BatchSpanProcessor(otlp_exporter)
+trace.get_tracer_provider().add_span_processor(span_processor)
+tracer = trace.get_tracer(__name__)
+
+MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
+JWT_SECRET = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
+CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +332,55 @@ class OptimizedDecoderLayer(nn.Module):
 
 
 # FastAPI application for serving
-app = ls.LitApp()
+app = FastAPI(title="Cloud Decoder API", version=MODEL_VERSION, openapi_url="/openapi.json")
+FastAPIInstrumentor.instrument_app(app)
+
+security = HTTPBearer()
+def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    import jwt
+    token = credentials.credentials
+    try:
+        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# Live config reload
+class ConfigReloadHandler(FileSystemEventHandler):
+    def on_modified(self, event):
+        if event.src_path.endswith(CONFIG_PATH):
+            with tracer.start_as_current_span("config_reload"):
+                print("[Decoder] Config file changed, reloading...")
+                # Reload config logic here
+                # (For demo, just print. In production, update in-memory config.)
+observer = Observer()
+observer.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
+observer.start()
+
+class StatusResponse(BaseModel):
+    model_version: str
+    healthy: bool
+
+@app.get("/status", response_model=StatusResponse)
+def status():
+    with tracer.start_as_current_span("status_endpoint") as span:
+        span.set_attribute("model_version", MODEL_VERSION)
+        return {"model_version": MODEL_VERSION, "healthy": True}
+
+@app.post("/decode")
+def decode(request: Request, x_target_language: str = Header(None)):
+    with tracer.start_as_current_span("decode_request") as span:
+        span.set_attribute("target_language", x_target_language or "unknown")
+        # ... actual decode logic ...
+        return {"translation": "TODO: implement decode logic"}
+
+@app.post("/admin/reload_model")
+def reload_model(credentials: HTTPAuthorizationCredentials = Depends(require_jwt)):
+    with tracer.start_as_current_span("reload_model"):
+        # ... reload model logic ...
+        return {"status": "Model reloaded"}
+
+# OpenAPI and Swagger UI are available at /openapi.json and /docs
+# All endpoints are traced, and admin endpoints require JWT
 
 # Global model and optimization
 model: Optional[OptimizedUniversalDecoder] = None

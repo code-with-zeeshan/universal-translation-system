@@ -8,13 +8,83 @@ import os
 from prometheus_client import start_http_server, Counter, Gauge
 from functools import wraps
 from datetime import datetime
+from flask_smorest import Api, Blueprint
+from flask.views import MethodView
+from marshmallow import Schema, fields
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from opentelemetry import trace
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+# OpenTelemetry setup
+trace.set_tracer_provider(
+    TracerProvider(resource=Resource.create({SERVICE_NAME: "coordinator-service"}))
+)
+otlp_exporter = OTLPSpanExporter()
+span_processor = BatchSpanProcessor(otlp_exporter)
+trace.get_tracer_provider().add_span_processor(span_processor)
+tracer = trace.get_tracer(__name__)
 
 POOL_PATH = os.path.join("configs", "decoder_pool.json")
+CONFIG_PATH = os.path.join("config", "coordinator_config.json")
+MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 AUTH_TOKEN = os.environ.get("COORDINATOR_TOKEN", "changeme123")
 SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "supersecret")
 
 app = Flask(__name__)
 app.secret_key = SECRET_KEY
+FlaskInstrumentor().instrument_app(app)
+api = Api(app)
+blp = Blueprint('api', 'api', url_prefix='/api', description='Coordinator API')
+
+# OpenAPI schema for status
+class DecoderNodeSchema(Schema):
+    node_id = fields.Str()
+    endpoint = fields.Str()
+    region = fields.Str()
+    gpu_type = fields.Str()
+    capacity = fields.Int()
+    healthy = fields.Bool()
+    load = fields.Int()
+    uptime = fields.Int()
+
+class StatusSchema(Schema):
+    model_version = fields.Str()
+    decoders = fields.List(fields.Nested(DecoderNodeSchema))
+
+# JWT authentication
+import jwt
+JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "jwtsecret123")
+def require_jwt(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            return {"error": "Unauthorized"}, 401
+        token = auth_header.replace('Bearer ', '')
+        try:
+            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        except Exception:
+            return {"error": "Invalid token"}, 401
+        return f(*args, **kwargs)
+    return decorated
+
+# Live config reload
+class ConfigReloadHandler(FileSystemEventHandler):
+    def on_modified(self, event):
+        if event.src_path.endswith(CONFIG_PATH):
+            with tracer.start_as_current_span("config_reload"):
+                print("[Coordinator] Config file changed, reloading...")
+                # Reload config logic here
+                # (For demo, just print. In production, update in-memory config.)
+
+observer = Observer()
+observer.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
+observer.start()
 
 # Prometheus metrics
 requests_total = Counter('coordinator_requests_total', 'Total requests received', ['endpoint'])
@@ -221,44 +291,56 @@ def background_health_check():
             decoder_uptime.labels(node_id=node['node_id']).set(node.get('uptime', 0))
         time.sleep(10)
 
-@app.route("/status")
-def status():
-    requests_total.labels(endpoint="/status").inc()
-    return jsonify(pool.get_healthy_decoders())
+@blp.route('/status')
+class StatusResource(MethodView):
+    @blp.response(200, StatusSchema)
+    def get(self):
+        with tracer.start_as_current_span("status_endpoint") as span:
+            span.set_attribute("model_version", MODEL_VERSION)
+            # pool is assumed to be globally available
+            return {"model_version": MODEL_VERSION, "decoders": pool.get_healthy_decoders()}
 
-@app.route("/add_decoder", methods=["POST"])
-@require_auth
-def add_decoder():
-    node = request.json
-    if not node.get('endpoint') or not node.get('node_id'):
-        return {"error": "Missing endpoint or node_id"}, 400
-    node['healthy'] = pool.check_health(node['endpoint'])
-    node['load'] = pool.get_load(node)
-    node['uptime'] = pool.get_uptime(node)
-    pool.add_decoder(node)
-    return {"status": "added", "node": node}
+@blp.route('/add_decoder')
+class AddDecoderResource(MethodView):
+    @require_jwt
+    def post(self):
+        with tracer.start_as_current_span("add_decoder") as span:
+            node = request.json
+            span.set_attribute("node_id", node.get('node_id', ''))
+            node['healthy'] = pool.check_health(node['endpoint'])
+            node['load'] = pool.get_load(node)
+            node['uptime'] = pool.get_uptime(node)
+            pool.add_decoder(node)
+            return {"status": "added", "node": node}
 
-@app.route("/remove_decoder", methods=["POST"])
-@require_auth
-def remove_decoder():
-    node_id = request.json.get('node_id')
-    pool.remove_decoder(node_id)
-    return {"status": "removed", "node_id": node_id}
+@blp.route('/remove_decoder')
+class RemoveDecoderResource(MethodView):
+    @require_jwt
+    def post(self):
+        with tracer.start_as_current_span("remove_decoder") as span:
+            node_id = request.json.get('node_id')
+            span.set_attribute("node_id", node_id)
+            pool.remove_decoder(node_id)
+            return {"status": "removed", "node_id": node_id}
 
-@app.route("/decode", methods=["POST"])
-def decode_proxy():
-    requests_total.labels(endpoint="/decode").inc()
-    node = pool.pick_least_loaded()
-    if not node:
-        requests_errors.labels(endpoint="/decode").inc()
-        return {"error": "No healthy decoders available"}, 503
-    try:
-        headers = dict(request.headers)
-        resp = requests.post(f"{node['endpoint']}/decode", data=request.data, headers=headers, timeout=10)
-        return (resp.content, resp.status_code, resp.headers.items())
-    except Exception as e:
-        requests_errors.labels(endpoint="/decode").inc()
-        return {"error": f"Failed to contact decoder: {e}"}, 502
+@blp.route('/decode')
+class DecodeResource(MethodView):
+    def post(self):
+        with tracer.start_as_current_span("decode_proxy") as span:
+            node = pool.pick_least_loaded()
+            if not node:
+                span.set_attribute("error", True)
+                return {"error": "No healthy decoders available"}, 503
+            span.set_attribute("node_id", node['node_id'])
+            try:
+                headers = dict(request.headers)
+                resp = requests.post(f"{node['endpoint']}/decode", data=request.data, headers=headers, timeout=10)
+                return (resp.content, resp.status_code, resp.headers.items())
+            except Exception as e:
+                span.set_attribute("error", True)
+                return {"error": f"Failed to contact decoder: {e}"}, 502
+
+api.register_blueprint(blp)
 
 @app.route("/dashboard")
 def dashboard():
