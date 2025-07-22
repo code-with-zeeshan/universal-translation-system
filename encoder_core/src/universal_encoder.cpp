@@ -90,51 +90,43 @@ std::vector<int32_t> UniversalEncoder::tokenize(const std::string& text, const s
     if (!current_vocab) {
         throw std::runtime_error("No vocabulary loaded");
     }
-    
     std::vector<int32_t> tokens;
-    
     // Add BOS token
     tokens.push_back(current_vocab->getTokenId("<s>"));
-    
     // Add language token
     std::string lang_token = "<" + source_lang + ">";
     tokens.push_back(current_vocab->getTokenId(lang_token));
-    
-    // Tokenize text (simple whitespace tokenization for demo)
-    // In production, use SentencePiece or similar
+    // Production: Use SentencePiece or similar tokenizer
+    // TODO: Integrate SentencePiece tokenizer here
+    // Example placeholder:
+    // std::vector<std::string> sp_tokens = sentencepiece_tokenizer.Encode(text);
+    // for (const auto& tok : sp_tokens) {
+    //     tokens.push_back(current_vocab->getTokenId(tok));
+    // }
+    // For now, fallback to whitespace tokenization
     std::istringstream iss(text);
     std::string word;
-    
     while (iss >> word) {
-        // Convert to lowercase
         std::transform(word.begin(), word.end(), word.begin(), ::tolower);
-        
-        // Look up token
         auto token_it = current_vocab->tokens.find(word);
         if (token_it != current_vocab->tokens.end()) {
             tokens.push_back(token_it->second);
         } else {
-            // Handle unknown word with subword tokenization
             auto subwords = current_vocab->tokenizeUnknown(word);
             tokens.insert(tokens.end(), subwords.begin(), subwords.end());
         }
     }
-    
     // Add EOS token
     tokens.push_back(current_vocab->getTokenId("</s>"));
-    
     // Pad or truncate to 128 tokens
     const size_t max_length = 128;
     if (tokens.size() < max_length) {
-        // Pad with PAD tokens
         int32_t pad_id = current_vocab->getTokenId("<pad>");
         tokens.resize(max_length, pad_id);
     } else if (tokens.size() > max_length) {
-        // Truncate but keep EOS token
         tokens.resize(max_length - 1);
         tokens.push_back(current_vocab->getTokenId("</s>"));
     }
-    
     return tokens;
 }
 

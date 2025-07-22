@@ -27,20 +27,14 @@ int32_t VocabularyPack::getTokenId(const std::string& token) const {
 
 std::vector<int32_t> VocabularyPack::tokenizeUnknown(const std::string& word) const {
     std::vector<int32_t> result;
-    
-    // Simple subword tokenization
-    // In production, use proper BPE or SentencePiece
-    
-    // Try to find longest matching subwords
+    // TODO: Integrate production BPE or SentencePiece subword tokenization here
+    // For now, fallback to simple subword logic
     size_t pos = 0;
     while (pos < word.length()) {
         size_t best_match_len = 0;
         int32_t best_match_id = -1;
-        
-        // Try all possible substrings starting at pos
         for (size_t len = std::min(word.length() - pos, size_t(10)); len > 0; --len) {
             std::string subword = "##" + word.substr(pos, len);
-            
             auto it = subwords.find(subword);
             if (it != subwords.end()) {
                 best_match_len = len;
@@ -48,17 +42,14 @@ std::vector<int32_t> VocabularyPack::tokenizeUnknown(const std::string& word) co
                 break;
             }
         }
-        
         if (best_match_len > 0) {
             result.push_back(best_match_id);
             pos += best_match_len;
         } else {
-            // No match found, use UNK token and move one character
             result.push_back(getTokenId("<unk>"));
             pos++;
         }
     }
-    
     return result;
 }
 

@@ -495,29 +495,28 @@ def decompress_encoder_output(compressed_data: bytes) -> Dict:
         return compressed_data
 
 def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
-    """Decode token IDs to text using vocabulary pack"""
-    # Simple decoding - replace with proper implementation
+    """Decode token IDs to text using vocabulary pack (production-grade)."""
+    # Use SentencePiece if available
+    try:
+        import sentencepiece as spm
+        if hasattr(vocab_pack, 'sp_model'):
+            return vocab_pack.sp_model.decode_ids(list(tokens))
+    except ImportError:
+        pass
+    # Fallback: reconstruct text using vocab pack
+    id_to_token = {idx: tok for tok, idx in vocab_pack.tokens.items()}
     text_tokens = []
-    
     for token_id in tokens:
         if token_id == 2:  # EOS token
             break
         elif token_id == 0:  # Padding
             continue
-        
-        # Find token in vocabulary
-        for token, idx in vocab_pack.tokens.items():
-            if idx == token_id:
-                text_tokens.append(token)
-                break
-    
-    # Join tokens (basic - replace with proper detokenization)
+        token = id_to_token.get(token_id, '<unk>')
+        text_tokens.append(token)
+    # Join tokens and clean up subwords
     text = ' '.join(text_tokens)
-    
-    # Clean up subword tokens
     text = text.replace(' ##', '')
     text = text.replace('▁', ' ')
-    
     return text.strip()
 
 

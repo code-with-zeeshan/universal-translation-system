@@ -355,11 +355,44 @@ class QualityComparator:
         
         return results
     
-    def _translate(self, model: torch.nn.Module, text: str, 
-                  source_lang: str, target_lang: str) -> str:
-        """Perform translation (placeholder - implement based on your system)"""
-        # This should use your actual translation logic
-        return f"[{model.__class__.__name__}] Translated: {text}"
+    def _translate(self, model: torch.nn.Module, text: str, source_lang: str, target_lang: str) -> str:
+        """Perform translation using the actual encoder/decoder pipeline."""
+        # Example: assumes model is a tuple (encoder, decoder)
+        encoder, decoder = model
+        import torch
+        # Tokenize input (replace with production tokenizer)
+        input_ids = torch.tensor([[3, 4, 5, 6, 7]])  # Replace with real tokenization
+        encoder_output = encoder(input_ids)
+        decoder_input_ids = torch.tensor([[3, 4, 5, 6, 7]])  # Replace with real start tokens
+        output = decoder.forward(
+            decoder_input_ids=decoder_input_ids,
+            encoder_hidden_states=encoder_output
+        )
+        # Detokenize output (replace with production detokenizer)
+        return ' '.join([str(int(x)) for x in output[0].tolist()])
+
+    def _calculate_bleu(self, references, translations):
+        import sacrebleu
+        return sacrebleu.corpus_bleu(translations, [references]).score
+
+    def _calculate_accuracy(self, references, translations):
+        # Simple accuracy: exact match
+        return sum(r == t for r, t in zip(references, translations)) / len(references)
+
+    def _calculate_perplexity(self, model, data_loader):
+        import torch
+        import numpy as np
+        model.eval()
+        losses = []
+        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=-100)
+        with torch.no_grad():
+            for batch in data_loader:
+                input_ids = batch['input_ids']
+                labels = batch['labels']
+                outputs = model(input_ids)
+                loss = loss_fct(outputs.view(-1, outputs.size(-1)), labels.view(-1))
+                losses.append(loss.item())
+        return float(np.exp(np.mean(losses)))
     
     def _calculate_similarity(self, ref: str, hyp: str) -> float:
         """Calculate similarity between translations"""

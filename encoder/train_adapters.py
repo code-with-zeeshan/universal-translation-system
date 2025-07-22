@@ -178,24 +178,13 @@ class AdapterTrainer:
         return avg_loss, accuracy
     
     def _compute_loss(self, outputs, labels, attention_mask):
-        """Compute task-specific loss"""
-        # This is a placeholder - implement your specific loss
-        # For MLM task:
-        vocab_size = 50000  # Your vocab size
-        
-        # Project to vocabulary
-        projection = nn.Linear(outputs.size(-1), vocab_size).to(self.device)
-        logits = projection(outputs)
-        
-        # Flatten for cross entropy
+        """Compute task-specific loss (production)."""
+        # For MLM or sequence-to-sequence, use CrossEntropyLoss
+        vocab_size = outputs.size(-1)
         loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-        
-        # Masked language modeling loss
-        masked_lm_loss = loss_fct(
-            logits.view(-1, vocab_size),
-            labels.view(-1)
-        )
-        
+        logits = outputs.view(-1, vocab_size)
+        labels_flat = labels.view(-1)
+        masked_lm_loss = loss_fct(logits, labels_flat)
         return masked_lm_loss
     
     def _get_linear_schedule_with_warmup(self, optimizer, num_warmup_steps, num_training_steps):

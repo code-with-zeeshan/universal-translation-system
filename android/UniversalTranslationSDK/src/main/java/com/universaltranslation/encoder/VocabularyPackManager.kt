@@ -118,15 +118,26 @@ class EnhancedVocabularyPackManager(private val context: Context) {
     }
     
     private fun parseMessagePackData(data: ByteArray, file: File): VocabularyPack {
-        // TODO: Implement actual MessagePack parsing
-        // For now, return a placeholder
+        // Production: Parse MessagePack data using a library
+        // Example using msgpack-java (add to build.gradle):
+        // implementation 'org.msgpack:msgpack-core:0.8.22'
+        val msgpack = org.msgpack.core.MessagePack.newDefaultUnpacker(data)
+        val tokens = mutableMapOf<String, Int>()
+        // Parse tokens map (simplified, adjust for your schema)
+        msgpack.unpackMapHeader()
+        while (msgpack.hasNext()) {
+            val key = msgpack.unpackString()
+            val value = msgpack.unpackInt()
+            tokens[key] = value
+        }
         return VocabularyPack(
             name = file.nameWithoutExtension,
             languages = getLanguagesForPack(file.nameWithoutExtension),
             downloadUrl = "",
             localPath = file.absolutePath,
             sizeMb = (file.length() / 1024f / 1024f),
-            version = "1.0"
+            version = "1.0",
+            tokens = tokens
         )
     }
     

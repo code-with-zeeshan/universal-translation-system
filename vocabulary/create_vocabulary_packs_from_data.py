@@ -558,25 +558,30 @@ class VocabularyPackCreator:
         """
         Extract embeddings for tokens from the trained model.
         This is crucial for maintaining quality in quantized models.
-    
         Args:
             tokens: Dictionary mapping tokens to IDs
-        
         Returns:
             Dictionary mapping tokens to embedding vectors
         """
-        # For production, you would extract from a pre-trained model
-        # For now, create placeholder embeddings
+        import torch
+        import os
+        # Path to your trained encoder model (update as needed)
+        model_path = os.environ.get('ENCODER_MODEL_PATH', 'models/production/encoder.pt')
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Trained encoder model not found at {model_path}. Set ENCODER_MODEL_PATH.")
+        from encoder.universal_encoder import UniversalEncoder
+        model = torch.load(model_path, map_location='cpu')
+        if hasattr(model, 'embedding_layer'):
+            embedding_weight = model.embedding_layer.weight.detach().cpu().numpy()
+        else:
+            raise AttributeError("Model does not have 'embedding_layer'. Update extraction logic.")
         embeddings = {}
-        embedding_dim = 128  # Adjust based on your model
-    
         for token, token_id in tokens.items():
-            # In production: load from pre-trained embeddings
-            # For now: create consistent pseudo-embeddings
-            np.random.seed(token_id)  # Consistent embeddings
-            embeddings[token] = np.random.randn(embedding_dim).tolist()
-    
-        return embeddings           
+            if token_id < embedding_weight.shape[0]:
+                embeddings[token] = embedding_weight[token_id].tolist()
+            else:
+                embeddings[token] = [0.0] * embedding_weight.shape[1]
+        return embeddings
     
     def get_pack_info(self, pack_name: str) -> Optional[Dict[str, Any]]:
         """
