@@ -33,8 +33,8 @@ lz4>=4.3.2
 pyarrow>=14.0.0
 
 # Mobile/Web conversion
-coremltools>=7.0  # For iOS
-tensorflow-lite>=2.13.0  # For Android
+coremltools>=7.0  # For iOS 
+tflite-runtime>=2.13.0 # For Android
 onnx-tf>=1.10.0  # ONNX to TF conversion
 
 # Cloud and deployment
