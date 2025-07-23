@@ -22,6 +22,10 @@ For GPU support:
 ```bash
 pip install universal-decoder-node[gpu]
 ```
+## Usage Modes
+
+- For private/local use, you do not need to register your node—just start the service and use it.
+- To contribute compute resources to the project, follow the registration steps below.
 
 ## Quick Start
 
@@ -117,11 +121,9 @@ pytest
 black universal_decoder_node
 isort universal_decoder_node
 ```
-```
-## License
 
-Apache License 2.0
-```
+## License
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
 ## Usage Examples
 

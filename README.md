@@ -21,6 +21,18 @@ Unlike traditional translation apps that bundle 200MB+ models, our system uses:
 - ✅ Full-system monitoring with Prometheus/Grafana
 - ✅ CI/CD pipelines for encoder/decoder and SDKs
 
+## 🎯 Usage Modes
+
+You can use `universal-decoder-node` in two ways:
+
+- **Personal Use:**  
+  Run the decoder on your own device or cloud for private translation needs and testing. No registration is required.
+
+- **Contributing Compute Power:**  
+  If you want to support the project and make your node available to the global system, register your node (see below) so it can be added to the public decoder pool.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions.
+
 ## 🚀 Quick Start
 
 ```bash

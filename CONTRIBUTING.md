@@ -69,12 +69,23 @@ pytest
 
 ### Contributing Compute Resources
 
+#### Usage Modes
+
+There are two ways to run a decoder node (`universal-decoder-node`):
+
+- **Private/Personal Use:**  
+  You may run a decoder node for your own needs or testing without registering it with the project. No further action is needed.
+  > Run the decoder on your own device or cloud for private translation needs and testing. Registration is NOT required if you do not wish to contribute compute power to the project.
+
+- **Public Contribution:**  
+  If you wish to contribute compute power to support the Universal Translation System, register your node so it can be added to the global decoder pool and serve requests for all users.
+
 Want to help by running a decoder node? Here's how:
 
 #### Option 1: Quick Deploy (Managed)
 ```bash
 pip install universal-decoder-node
-universal-decoder-node register --name "my-node" --gpu "T4"
+universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com" --gpu-type "T4" --capacity 100 --output registration.json
 universal-decoder-node start
 ```
 

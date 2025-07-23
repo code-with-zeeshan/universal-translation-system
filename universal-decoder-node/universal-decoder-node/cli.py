@@ -16,7 +16,13 @@ from .config import DecoderConfig, load_config, save_config
 @click.group()
 @click.version_option(version='0.1.0')
 def cli():
-    """Universal Decoder Node - High-performance translation decoder service"""
+    """
+    Universal Decoder Node - High-performance translation decoder service
+
+    Usage Modes:
+    - Personal/Private: Run the decoder on your own device or cloud for private translation/testing. Registration is not required.
+    - Contributing: If you want to support the project by adding your node to the public decoder pool, follow the registration steps.
+    """
     pass
 
 
