@@ -1,3 +1,4 @@
+# Root setup.py for UNIVERSAl TRANSLATION SYSTEM
 from setuptools import setup, find_packages
 
 setup(

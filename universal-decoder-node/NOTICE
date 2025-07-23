@@ -9,4 +9,4 @@ This project builds upon and acknowledges the following open source projects:
 - ONNX Runtime (https://onnxruntime.ai/)
 - SentencePiece (https://github.com/google/sentencepiece)
 
-See the [README.md](../README.md) for full acknowledgments.
+See the [README.md](../../README.md) for full acknowledgments.
