@@ -388,4 +388,5 @@ def logout():
 if __name__ == "__main__":
     start_http_server(9200)  # Prometheus metrics on 9200
     threading.Thread(target=background_health_check, daemon=True).start()
-    app.run(host="0.0.0.0", port=5100, debug=True) 
+    debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    app.run(host="0.0.0.0", port=5100, debug=debug_mode)
