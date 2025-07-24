@@ -649,13 +649,19 @@ class ModernParallelDataset(torch.utils.data.Dataset):
 
 # During training, simulate quantization
 class QuantizationAwareTrainer:
-    def train_step(self, ...):
+    def train_step(self, model, input_data):
         # Normal forward pass
-        output = model(input)
+        output = model(input_data)
         
         # Simulate quantization effects
-        if self.quantization_aware:
-            output = fake_quantize(output)
+        if hasattr(self, 'quantization_aware') and self.quantization_aware:
+            output = self.fake_quantize(output)
+        
+        return output
+    
+    def fake_quantize(self, tensor):
+        # TODO: Implement fake quantization
+        return tensor
         
         # This helps model learn to be robust to quantization!        
 
