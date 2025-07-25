@@ -29,7 +29,8 @@ data class VocabularyPack(
     val downloadUrl: String,
     val localPath: String,
     val sizeMb: Float,
-    val version: String
+    val version: String,
+    val tokens: Map<String, Int>? = null
 ) {
     fun needsDownload(): Boolean {
         return !File(localPath).exists()

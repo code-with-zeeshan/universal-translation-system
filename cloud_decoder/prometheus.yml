@@ -8,3 +8,12 @@ scrape_configs:
     static_configs:
       - targets: ['decoder:8000']
     metrics_path: '/metrics'
+
+  - job_name: 'system_metrics'
+    static_configs:
+      - targets: ['localhost:9000']
+  
+  # Optional: separate vocabulary monitoring
+  - job_name: 'vocabulary_metrics'
+    static_configs:
+      - targets: ['localhost:9001']  

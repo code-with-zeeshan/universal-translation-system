@@ -1,3 +1,4 @@
+# monitoring/system_metrics.py
 import time
 import psutil
 from prometheus_client import start_http_server, Gauge
@@ -6,6 +7,13 @@ try:
     HAS_GPU = True
 except ImportError:
     HAS_GPU = False
+
+# vocabulary metrics collection
+try:
+    from metrics_collector import collect_vocabulary_metrics
+    HAS_VOCAB_METRICS = True
+except ImportError:
+    HAS_VOCAB_METRICS = False    
 
 # System metrics
 cpu_usage = Gauge('system_cpu_usage_percent', 'System CPU usage percent')
@@ -16,6 +24,7 @@ net_bytes_recv = Gauge('system_net_bytes_recv', 'Network bytes received', ['ifac
 if HAS_GPU:
     gpu_util = Gauge('system_gpu_utilization_percent', 'GPU utilization percent', ['gpu_id'])
     gpu_mem = Gauge('system_gpu_memory_used_mb', 'GPU memory used (MB)', ['gpu_id'])
+    
 
 def collect_metrics():
     cpu_usage.set(psutil.cpu_percent())
@@ -34,6 +43,13 @@ def collect_metrics():
         for gpu in GPUtil.getGPUs():
             gpu_util.labels(gpu_id=gpu.id).set(gpu.load * 100)
             gpu_mem.labels(gpu_id=gpu.id).set(gpu.memoryUsed)
+
+    # Collect vocabulary metrics
+    if HAS_VOCAB_METRICS:
+        try:
+            collect_vocabulary_metrics()
+        except Exception as e:
+            print(f"Error collecting vocabulary metrics: {e}")        
 
 def main():
     start_http_server(9000)  # Expose metrics on port 9000

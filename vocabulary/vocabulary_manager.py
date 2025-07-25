@@ -60,3 +60,23 @@ class VocabularyManager:
             data = msgpack.unpackb(f.read(), raw=False)
             
         return VocabularyPack(**data)
+
+    def get_vocabulary_version_info(self) -> Dict[str, str]:
+        """Get version info for all vocabulary packs."""
+        versions = {}
+        for pack_file in self.vocab_dir.glob('*_v*.msgpack'):
+            # Extract pack name and version from filename
+            # e.g., "latin_v1.2.msgpack" -> name: "latin", version: "1.2"
+            parts = pack_file.stem.split('_v')
+            if len(parts) >= 2:
+                pack_name = '_'.join(parts[:-1])  # Handle names with underscores
+                version = parts[-1]
+                versions[pack_name] = version
+        return versions
+    
+    def get_loaded_versions(self) -> Dict[str, str]:
+        """Get versions of currently loaded packs."""
+        loaded = {}
+        for name, pack in self.loaded_packs.items():
+            loaded[name] = pack.version
+        return loaded

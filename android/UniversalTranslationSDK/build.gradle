@@ -1,5 +1,9 @@
 // android/UniversalTranslationSDK/build.gradle
 
+buildscript {
+    ext.kotlin_version = '1.9.0'
+}
+
 plugins {
     id 'com.android.library'
     id 'kotlin-android'

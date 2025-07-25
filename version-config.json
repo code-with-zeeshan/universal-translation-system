@@ -1,0 +1,46 @@
+{
+  "core": {
+    "version": "1.0.0",
+    "minSupportedVersion": "1.0.0"
+  },
+  "components": {
+    "encoder": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "decoder": ">=1.0.0 <2.0.0"
+      }
+    },
+    "decoder": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0"
+      }
+    },
+    "android-sdk": {
+      "version": "1.0.0",
+      "versionCode": 10000,
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0"
+      }
+    },
+    "ios-sdk": {
+      "version": "1.0.0",
+      "buildNumber": "100",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0"
+      }
+    },
+    "python-package": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "decoder": ">=1.0.0 <2.0.0"
+      }
+    }
+  },
+  "vocabularies": {
+    "independent": true,
+    "note": "Vocabulary packs version independently from the system"
+  }
+}

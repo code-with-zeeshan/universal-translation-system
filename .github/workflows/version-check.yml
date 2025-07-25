@@ -1,0 +1,89 @@
+name: Version Compatibility Check
+
+on:
+  pull_request:
+    paths:
+      - 'version-config.json'
+      - '**/build.gradle'
+      - '**/Package.swift'
+      - '**/setup.py'
+      - '**/*.podspec'
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install semver
+    
+    - name: Validate version compatibility
+      run: |
+        python scripts/version_manager.py validate
+    
+    - name: Show compatibility matrix
+      run: |
+        python scripts/version_manager.py matrix
+    
+    - name: Check version consistency
+      run: |
+        # Check that all files have matching versions
+        python -c "
+        import json
+        import re
+        from pathlib import Path
+        
+        # Load config
+        with open('version-config.json') as f:
+            config = json.load(f)
+        
+        errors = []
+        
+        # Check Android
+        build_gradle = Path('android/UniversalTranslationSDK/build.gradle')
+        if build_gradle.exists():
+            content = build_gradle.read_text()
+            match = re.search(r'versionName \"([^\"]+)\"', content)
+            if match:
+                file_version = match.group(1)
+                config_version = config['components']['android-sdk']['version']
+                if file_version != config_version:
+                    errors.append(f'Android: {file_version} != {config_version}')
+        
+        # Check iOS podspec
+        podspec = Path('ios/UniversalTranslationSDK.podspec')
+        if podspec.exists():
+            content = podspec.read_text()
+            match = re.search(r's\.version\s*=\s*\'([^\']+)\'', content)
+            if match:
+                file_version = match.group(1)
+                config_version = config['components']['ios-sdk']['version']
+                if file_version != config_version:
+                    errors.append(f'iOS: {file_version} != {config_version}')
+        
+        # Check Python
+        setup_py = Path('universal-decoder-node/setup.py')
+        if setup_py.exists():
+            content = setup_py.read_text()
+            match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+            if match:
+                file_version = match.group(1)
+                config_version = config['components']['python-package']['version']
+                if file_version != config_version:
+                    errors.append(f'Python: {file_version} != {config_version}')
+        
+        if errors:
+            print('❌ Version mismatches found:')
+            for error in errors:
+                print(f'  - {error}')
+            exit(1)
+        else:
+            print('✅ All versions are consistent')
+        "

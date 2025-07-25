@@ -19,6 +19,13 @@ import yaml
 import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from monitoring.metrics_collector import (
+    track_translation_request,
+    collect_vocabulary_metrics,
+    get_metrics_summary,
+    active_connections,
+    gpu_utilization
+)
 
 # Import vocabulary manager
 from vocabulary.vocabulary_manager import VocabularyManager
@@ -360,18 +367,71 @@ class StatusResponse(BaseModel):
     model_version: str
     healthy: bool
 
+# enhanced status endpoint
 @app.get("/status", response_model=StatusResponse)
-def status():
+async def status():
+    """Enhanced status with vocabulary info."""
+    metrics_summary = get_metrics_summary()
+
+    return {
+        "model_version": MODEL_VERSION,
+        "healthy": True,
+        "metrics": metrics_summary,
+        "vocabulary": metrics_summary.get('vocabulary', {})
+    }
+
     with tracer.start_as_current_span("status_endpoint") as span:
+        # Get vocabulary version info
+        vocab_versions = vocabulary_manager.get_vocabulary_version_info()
+
         span.set_attribute("model_version", MODEL_VERSION)
-        return {"model_version": MODEL_VERSION, "healthy": True}
+        span.set_attribute("vocabulary_packs", json.dumps(vocab_versions))
+
+        return {"model_version": MODEL_VERSION, "healthy": True, "vocabulary_packs": vocab_versions}
 
 @app.post("/decode")
-def decode(request: Request, x_target_language: str = Header(None)):
-    with tracer.start_as_current_span("decode_request") as span:
-        span.set_attribute("target_language", x_target_language or "unknown")
-        # ... actual decode logic ...
-        return {"translation": "TODO: implement decode logic"}
+async def decode(request: Request, x_target_language: str = Header(None)):
+    start_time = time.time()
+    active_connections.inc()  # Increment active connections
+
+    try:
+        with tracer.start_as_current_span("decode_request") as span:
+            span.set_attribute("target_language", x_target_language or "unknown")
+            # ... actual decode logic ...
+            return {"translation": "TODO: implement decode logic"}
+
+        # Track successful request
+        latency = time.time() - start_time
+        track_translation_request(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            status='success',
+            latency=latency
+        )
+        
+        return result
+        
+    except Exception as e:
+        # Track failed request
+        track_translation_request(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            status='error'
+        )
+        raise
+    finally:
+        active_connections.dec()  # Decrement active connections
+
+# metrics endpoint
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    from prometheus_client import generate_latest
+    
+    # Collect vocabulary metrics before generating response
+    collect_vocabulary_metrics()
+    
+    return Response(generate_latest(), media_type="text/plain")        
 
 @app.post("/admin/reload_model")
 def reload_model(credentials: HTTPAuthorizationCredentials = Depends(require_jwt)):

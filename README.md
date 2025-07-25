@@ -67,7 +67,7 @@ let result = try await translator.translate(text: "Hello", from: "en", to: "es")
 ```
 
 ### Web
-```Javascript
+```javascript
 const translator = new TranslationClient();
 const result = await translator.translate({
   text: "Hello",
@@ -83,7 +83,7 @@ const result = await translator.translate({
 - **Vocabulary Packs**: Downloadable language-specific token mappings
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## 📚 Documentation
 - [API Documentation](docs/API.md)
@@ -93,6 +93,8 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [CI/CD Guide](docs/CI_CD.md)
 - [SDK Integration Guide](docs/SDK_INTEGRATION.md)
 - [Monitoring Guide](monitoring/README.md)
+- [Vocabulary Guide](vocabulary/Vocabulary_Guide.md)
+- [Acknowledgments](docs/ACKNOWLEDGMENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [License](LICENSE)
 
@@ -113,28 +115,7 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 🙏 Acknowledgments
 
-This project builds upon amazing work from the ML community:
-
-### Models & Research
-- [NLLB-200](https://github.com/facebookresearch/fairseq/tree/nllb) by Meta AI - Inspiration and pretrained models
-- [XLM-RoBERTa](https://huggingface.co/xlm-roberta-base) - Encoder initialization
-- [mBART](https://github.com/pytorch/fairseq/tree/master/examples/mbart) - Decoder architecture insights
-
-### Libraries & Tools
-- [PyTorch](https://pytorch.org/) - Deep learning framework
-- [Transformers](https://huggingface.co/transformers) by Hugging Face - Model implementations
-- [ONNX Runtime](https://onnxruntime.ai/) - Mobile inference
-- [SentencePiece](https://github.com/google/sentencepiece) - Tokenization
-- [Litserve](https://github.com/litserve/litserve) - High-performance AI serving
-- [Prometheus](https://prometheus.io/) & [Grafana](https://grafana.com/) - Monitoring
-
-### Data Sources
-- [OPUS](https://opus.nlpl.eu/) - Parallel corpora
-- [Tatoeba](https://tatoeba.org/) - Community translations
-- [FLORES-200](https://github.com/facebookresearch/flores) - Evaluation data
-
-### Community
-Special thanks to the open-source community for making projects like this possible.
+We are grateful to the amazing open-source community and the researchers who have made this project possible. See [ACKNOWLEDGMENTS.md](docs/ACKNOWLEDGMENTS.md) for detailed acknowledgments.
 
 ## 📜 Changelog
 See [CHANGELOG.md](CHANGELOG.md) for the latest updates.

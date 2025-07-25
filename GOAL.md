@@ -42,7 +42,7 @@ Never sends actual text to server!
 
 ## 🎖️ **My Quality Preservation Strategy**
 
-Since I want **"highest translation quality even for small/quantized encoder"**, you've added:
+Since I want **"highest translation quality even for small/quantized encoder"**, I've added:
 
 1. **Language Adapters**: Small neural networks (2MB) that adapt the universal encoder for specific languages
 2. **Optimized Vocabulary Loading**: Pre-computed high-quality embeddings in vocab packs

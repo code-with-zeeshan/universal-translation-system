@@ -13,6 +13,14 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.util.concurrent.TimeUnit
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import androidx.work.Worker
+import androidx.work.WorkerParameters
+import org.msgpack.core.MessagePack
 
 class EnhancedVocabularyPackManager(private val context: Context) {
     
