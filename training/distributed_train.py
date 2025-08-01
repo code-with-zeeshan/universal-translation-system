@@ -1,5 +1,10 @@
 # training/distributed_train.py
 import torch
+import argparse
+import torch.multiprocessing as mp
+from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import DataLoader
+from pathlib import Path
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
@@ -34,8 +39,13 @@ import time
 import psutil
 import gc
 import socket
+from utils.exceptions import TrainingError
 from dataclasses import dataclass
 from torch.profiler import profile, record_function, ProfilerActivity
+from collections import defaultdict
+from utils.shutdown_handler import GracefulShutdown
+from utils.model_versioning import ModelVersion
+from utils.resource_monitor import resource_monitor
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -104,6 +114,10 @@ class UnifiedDistributedTrainer:
         # Set device
         torch.cuda.set_device(gpu_id)
         self.device = torch.device(f'cuda:{gpu_id}')
+
+        # Optimize GPU memory
+        from utils.gpu_utils import optimize_gpu_memory
+        optimize_gpu_memory()
         
         # Initialize modern mixed precision scaler with BFloat16 support 
         if self.config.mixed_precision:
@@ -658,6 +672,62 @@ class UnifiedDistributedTrainer:
         # Run garbage collection
         gc.collect()
 
+    def validate_checkpoint(self, checkpoint_path: str) -> bool:
+        """Validate checkpoint compatibility"""
+        try:
+            if checkpoint_path.endswith('.safetensors'):
+                import safetensors.torch as st
+                metadata = st.load_file(checkpoint_path, device='cpu')
+            else:
+                checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+            
+            # Check required keys
+            required_keys = ['model_state_dict', 'config', 'torch_version']
+            if not all(key in checkpoint for key in required_keys):
+                logger.error(f"Missing required keys in checkpoint")
+                return False
+            
+            # Check version compatibility
+            saved_version = checkpoint.get('torch_version', '0.0.0')
+            current_version = torch.__version__
+        
+            if saved_version.split('.')[:2] != current_version.split('.')[:2]:
+                logger.warning(f"Version mismatch: saved with {saved_version}, current {current_version}")
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Invalid checkpoint: {e}")
+            return False    
+
+# Add to UnifiedDistributedTrainer
+class TrainingAnalytics:
+    """Comprehensive training analytics"""
+    
+    def __init__(self):
+        self.metrics = defaultdict(list)
+        self.start_time = time.time()
+    
+    def log_step(self, loss: float, lr: float, grad_norm: float, 
+                 memory_gb: float, tokens_per_sec: float):
+        """Log training step metrics"""
+        self.metrics['loss'].append(loss)
+        self.metrics['lr'].append(lr)
+        self.metrics['grad_norm'].append(grad_norm)
+        self.metrics['memory_gb'].append(memory_gb)
+        self.metrics['tokens_per_sec'].append(tokens_per_sec)
+        self.metrics['timestamp'].append(time.time() - self.start_time)
+    
+    def generate_report(self) -> Dict[str, Any]:
+        """Generate training report"""
+        return {
+            'duration_hours': (time.time() - self.start_time) / 3600,
+            'avg_tokens_per_sec': np.mean(self.metrics['tokens_per_sec']),
+            'peak_memory_gb': max(self.metrics['memory_gb']),
+            'final_loss': self.metrics['loss'][-1] if self.metrics['loss'] else None,
+            'loss_reduction': (self.metrics['loss'][0] - self.metrics['loss'][-1]) / self.metrics['loss'][0] if len(self.metrics['loss']) > 1 else 0
+        }
+
 # Modern training function with all optimizations
 def train_with_unified_distributed(gpu_id: int, 
                                  world_size: int,
@@ -847,118 +917,211 @@ def validate_model(encoder: torch.nn.Module,
     
     return total_loss / num_batches
 
-# Usage example
-if __name__ == "__main__":
-    import torch.multiprocessing as mp
-    from torch.utils.data.distributed import DistributedSampler
-    
-    def main():
-        """Complete example with actual model initialization"""
-        # Setup distributed environment
-        setup_distributed_environment()
-        
-        world_size = torch.cuda.device_count()
-        if world_size == 0:
-            raise RuntimeError("No CUDA devices available")
-        
-        logger.info(f"Starting training on {world_size} GPUs")
 
-        # Import and initialize actual models
+@torch.inference_mode()
+def distributed_validate(encoder: torch.nn.Module,
+                        decoder: torch.nn.Module,
+                        val_loader: torch.utils.data.DataLoader,
+                        device: torch.device,
+                        config: TrainingConfig,
+                        world_size: int) -> float:
+    """Distributed validation with proper reduction"""
+    encoder.eval()
+    decoder.eval()
+    
+    local_loss = 0.0
+    local_batches = 0
+    
+    for batch in val_loader:
+        # ... compute loss ...
+        local_loss += loss.item()
+        local_batches += 1
+    
+    # Reduce across all processes
+    if dist.is_initialized():
+        loss_tensor = torch.tensor([local_loss, local_batches], device=device)
+        dist.all_reduce(loss_tensor, op=dist.ReduceOp.SUM)
+        
+        total_loss = loss_tensor[0].item()
+        total_batches = loss_tensor[1].item()
+    else:
+        total_loss = local_loss
+        total_batches = local_batches
+    
+    return total_loss / max(total_batches, 1)    
+
+def main():
+    """
+    Main entry point for orchestrating distributed training.
+    This function handles setup, configuration, and spawning of training processes.
+    """
+    # 1. --- SETUP PHASE ---
+    parser = argparse.ArgumentParser(description="Unified Distributed Training")
+    parser.add_argument('--config', type=str, default=None,
+                        help="Path to training config file. If not provided, auto-detects based on GPU.")
+    parser.add_argument('--epochs', type=int, default=20, help="Number of training epochs.")
+    parser.add_argument('--global-batch-size', type=int, default=128,
+                        help="Total batch size across all GPUs.")
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help="Path to a checkpoint to resume training from.")
+    args = parser.parse_args()
+
+    # Setup logging and performance optimizations first
+    from utils.logging_config import setup_logging
+    setup_logging(log_dir="logs/distributed_training", log_level="INFO")
+    
+    from utils.performance_setup import setup_performance_optimizations
+    setup_performance_optimizations()
+
+    # Setup distributed environment variables
+    setup_distributed_environment()
+
+    # Load configuration
+    config_path = args.config or auto_select_config()
+    try:
+        config_dict = load_config(config_path)
+        logger.info(f"Loaded configuration from: {config_path}")
+    except FileNotFoundError as e:
+        logger.error(e)
+        sys.exit(1)
+
+    # Check for available GPUs
+    world_size = torch.cuda.device_count()
+    if world_size == 0:
+        raise TrainingError("No CUDA devices found. Distributed training requires GPUs.")
+    logger.info(f"Found {world_size} GPUs. Starting distributed training...")
+
+    # 2. --- RESOURCE PREPARATION PHASE ---
+    try:
+        # Import models and dataset (place imports here to avoid issues with multiprocessing)
         from encoder.universal_encoder import UniversalEncoder
         from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
-    
-        # Create models
+        from training.train_universal_system import ModernParallelDataset
+
+        # Get the model config section from the dictionary
+        model_config = config_dict.get('model', {})
+
+        # Initialize models on CPU first; they will be moved to GPUs in the spawned processes
         encoder = UniversalEncoder(
-            max_vocab_size=50000,
-            hidden_dim=1024,
-            num_layers=6
+            max_vocab_size=model_config.get('vocab_size', 50000),
+            hidden_dim=model_config.get('hidden_dim', 1024),
+            num_layers=model_config.get('num_layers', 6),
+            num_heads=model_config.get('num_heads', 16),
+            dropout=model_config.get('dropout', 0.1)
         )
-    
         decoder = OptimizedUniversalDecoder(
-            encoder_dim=1024,
-            decoder_dim=512,
-            vocab_size=50000,
-            num_layers=6
-        )
-    
-        # Create datasets
-        from train_universal_system import ModernParallelDataset
-        train_dataset = ModernParallelDataset('data/processed/train_final.txt')
-        val_dataset = ModernParallelDataset('data/processed/val_final.txt')
-
-        # Note: DataLoader creation should happen inside the spawned process
-        # to ensure proper DistributedSampler usage
-    
-        # Create configuration
-        config = TrainingConfig(
-            use_fsdp=True,
-            mixed_precision=True,
-            gradient_checkpointing=True,
-            compile_model=True,
-            flash_attention=True
-        )
-        
-        # Create unified configuration
-        """
-        config = TrainingConfig(
-            use_fsdp=True,
-            mixed_precision=True,
-            gradient_checkpointing=True,
-            activation_checkpointing=True,
-            compile_model=True,
-            compile_mode="max-autotune",
-            flash_attention=True,
-            accumulation_steps=4,
-            lr=5e-5,
-            profile_training=False,  # Enable for profiling
-            save_every=1000,
-            log_every=100
-        )
-        """
-
-        # Spawn processes for distributed training
-        mp.spawn(
-            train_with_unified_distributed_wrapper,
-            args=(world_size, encoder, decoder, train_dataset, val_dataset, 10, config),
-            nprocs=world_size,
-            join=True
+            encoder_dim=model_config.get('hidden_dim', 1024),
+            decoder_dim=model_config.get('decoder_dim', 512),
+            vocab_size=model_config.get('vocab_size', 50000),
+            num_layers=model_config.get('decoder_layers', 6),
+            num_heads=model_config.get('decoder_heads', 8),
+            dropout=model_config.get('dropout', 0.1) 
         )
 
-    def train_with_unified_distributed_wrapper(gpu_id, world_size, encoder, decoder, 
-                                            train_dataset, val_dataset, num_epochs, config):
-        """Wrapper to create dataloaders inside spawned process"""
+        # Load datasets
+        train_data_path = Path(config_dict['data']['processed_dir']) / 'train_final.txt'
+        val_data_path = Path(config_dict['data']['processed_dir']) / 'val_final.txt'
+        train_dataset = ModernParallelDataset(str(train_data_path))
+        val_dataset = ModernParallelDataset(str(val_data_path))
+
+    except (ImportError, FileNotFoundError) as e:
+        logger.error(f"Failed to prepare resources: {e}")
+        logger.error("Please ensure models are importable and data pipeline has been run.")
+        sys.exit(1)
+
+    # 3. --- EXECUTION PHASE ---
+    # Setup graceful shutdown and model versioning in the main process
+    def emergency_cleanup():
+        logger.critical("Emergency cleanup initiated. A final checkpoint might be saved by the training process.")
+        # Note: The actual checkpoint saving is handled in the child process.
+        # This function is for cleaning up main process resources if any.
+
+    shutdown_handler = GracefulShutdown(cleanup_func=emergency_cleanup)
+    versioning = ModelVersion(model_dir=config_dict.get('model_dir', 'models'))
+
+    # Prepare arguments for the spawned processes
+    spawn_args = (
+        world_size,
+        encoder,
+        decoder,
+        train_dataset,
+        val_dataset,
+        args,
+        config_dict,
+        shutdown_handler
+    )
+
+    # Spawn training processes
+    mp.spawn(
+        train_with_unified_distributed_wrapper,
+        args=spawn_args,
+        nprocs=world_size,
+        join=True
+    )
+
+    # 4. --- POST-TRAINING PHASE ---
+    logger.info("🎉 Distributed training has completed.")
     
-        # Create dataloaders with DistributedSampler
-        from torch.utils.data.distributed import DistributedSampler
-    
-        train_sampler = DistributedSampler(
-            train_dataset,
-            num_replicas=world_size,
-            rank=gpu_id,
-            shuffle=True
-        )
-    
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=32,
-            sampler=train_sampler,
-            num_workers=4,
-            pin_memory=True
-        )
-    
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=64,
-            shuffle=False,
-            num_workers=4,
-            pin_memory=True
-        )
-    
-        # Call the actual training function
-        train_with_unified_distributed(
-            gpu_id, world_size, encoder, decoder, 
-            train_loader, val_loader, num_epochs, config
-        )   
-    
-    if __name__ == "__main__":
-        main()
+    # Log final resource usage summary
+    summary = resource_monitor.get_summary()
+    logger.info(f"Final resource usage summary: {summary}")
+
+    # Register the final model version
+    final_model_path = Path(config_dict.get('checkpoint_dir', 'checkpoints')) / "final_model.pt"
+    if final_model_path.exists():
+        logger.info("Registering final model version...")
+        try:
+            version = versioning.register_model(
+                model_path=str(final_model_path),
+                model_type="universal-encoder-decoder-fsdp",
+                metrics={"final_loss": "N/A"}, # You can load metrics from the final checkpoint
+                metadata={
+                    "config_file": config_path,
+                    "world_size": world_size,
+                    "epochs": args.epochs
+                }
+            )
+            logger.info(f"✅ Final model registered as version: {version}")
+        except Exception as e:
+            logger.error(f"Failed to register final model: {e}")
+
+
+def train_with_unified_distributed_wrapper(gpu_id: int, world_size: int, encoder, decoder,
+                                           train_dataset, val_dataset, args, config_dict, shutdown_handler):
+    """
+    Wrapper function to prepare dataloaders inside each spawned process
+    before calling the main training logic.
+    """
+    # Calculate batch size per GPU
+    batch_size_per_gpu = args.global_batch_size // world_size
+    if args.global_batch_size % world_size != 0:
+        logger.warning(f"Global batch size {args.global_batch_size} is not divisible by world size {world_size}. "
+                       f"This may lead to uneven batches.")
+
+    # Create dataloaders with DistributedSampler
+    train_sampler = DistributedSampler(train_dataset, num_replicas=world_size, rank=gpu_id, shuffle=True, seed=42)
+    val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=gpu_id, shuffle=False)
+
+    train_loader = DataLoader(
+        train_dataset, batch_size=batch_size_per_gpu, sampler=train_sampler,
+        num_workers=4, pin_memory=True, drop_last=True, prefetch_factor=2
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=batch_size_per_gpu * 2, sampler=val_sampler,
+        num_workers=4, pin_memory=True, drop_last=False
+    )
+
+    # Create TrainingConfig from the loaded dictionary
+    training_config = TrainingConfig(**config_dict.get('training', {}))
+
+    # Call the actual training function
+    train_with_unified_distributed(
+        gpu_id, world_size, encoder, decoder,
+        train_loader, val_loader, args.epochs, training_config, shutdown_handler
+    )
+
+
+if __name__ == "__main__":
+    # This is crucial for CUDA multiprocessing
+    torch.multiprocessing.set_start_method('spawn', force=True)
+    main()

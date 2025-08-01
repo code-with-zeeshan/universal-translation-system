@@ -1,0 +1,31 @@
+# config/training_h100.yaml
+
+# H100-specific configuration (80GB memory, Hopper Architecture)
+# Inherits from base.yaml and overrides for maximum performance.
+
+_base_: base.yaml
+
+# H100 can handle very large batches directly in memory.
+training:
+  batch_size: 128
+  gradient_accumulation: 1  # No accumulation needed with this batch size.
+  effective_batch_size: 128
+
+# H100 can sustain a high, stable learning rate.
+optimization:
+  learning_rate: 6e-4
+
+# H100 has abundant memory, so we can disable memory-saving features
+# to maximize speed.
+memory:
+  gradient_checkpointing: false
+  cpu_offload: false
+  activation_offload: false
+  compile_mode: "max-autotune"  # H100 benefits most from aggressive compilation.
+  dtype: bfloat16             # Native support for bfloat16 is highly efficient.
+  # fp8 support could be added here in the future for even more performance.
+
+# Optimized distributed settings for high-speed interconnects (NVLink).
+distributed:
+  gradient_as_bucket_view: true
+  static_graph: true

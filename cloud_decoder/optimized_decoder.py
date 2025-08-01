@@ -1,6 +1,7 @@
 # cloud_decoder/optimized_decoder.py
 import torch
 import torch.nn as nn
+import struct
 import numpy as np
 import litserve as ls
 from fastapi import FastAPI, Request, Header, Depends, HTTPException
@@ -107,53 +108,7 @@ class OptimizedUniversalDecoder(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0, std=0.02)
-
-    def decompress_embeddings(self, compressed_data: Dict[str, Any]) -> torch.Tensor:
-        """Decompress encoder embeddings"""
-        # Extract compressed embeddings
-        if isinstance(compressed_data, dict):
-            compressed_embeddings = compressed_data.get('embeddings')
-            scale = compressed_data.get('scale', 1.0)
-            original_shape = compressed_data.get('shape')
-        else:
-            # Handle raw compressed data
-            return self._decompress_raw_embeddings(compressed_data)
-        
-        # Decompress
-        if isinstance(compressed_embeddings, bytes):
-            # LZ4 decompression
-            decompressed = lz4.frame.decompress(compressed_embeddings)
-            embeddings = np.frombuffer(decompressed, dtype=np.float32)
-        else:
-            embeddings = compressed_embeddings
-        
-        # Reshape and convert to tensor
-        if original_shape:
-            embeddings = embeddings.reshape(original_shape)
-        
-        return torch.tensor(embeddings, device=self.device) * scale
-
-    def _decompress_raw_embeddings(self, compressed_data: bytes) -> torch.Tensor:
-        """Decompress raw embedding data"""
-        # Read metadata
-        metadata_size = 12
-        shape1 = int.from_bytes(compressed_data[0:4], 'little')
-        shape2 = int.from_bytes(compressed_data[4:8], 'little')
-        scale = np.frombuffer(compressed_data[8:12], dtype=np.float32)[0]
-        
-        # Decompress data
-        compressed = compressed_data[metadata_size:]
-        decompressed = lz4.frame.decompress(compressed)
-        
-        # Dequantize
-        quantized = np.frombuffer(decompressed, dtype=np.int8)
-        dequantized = quantized.astype(np.float32) / scale
-        
-        # Reshape
-        hidden_states = dequantized.reshape(1, shape1, shape2)
-        
-        return torch.tensor(hidden_states, device=self.device)   
-            
+ 
     @torch.jit.script_method
     def forward(
         self,
@@ -598,34 +553,34 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
         return results
 
 
-def decompress_encoder_output(compressed_data: bytes) -> Dict:
-    """Decompress encoder output"""
-    if isinstance(compressed_data, bytes):
-        # Read metadata
-        metadata_size = 12
-        if len(compressed_data) < metadata_size:
-            raise ValueError("Invalid compressed data")
+def decompress_encoder_output(self, compressed_data: bytes) -> Dict:
+    """Decompress encoder output with correct 16-byte header parsing."""
+    if not isinstance(compressed_data, bytes):
+        # Handle non-byte data (e.g., already decompressed dict)
+        return compressed_data
 
-        shape1 = int.from_bytes(compressed_data[0:4], 'little')
-        shape2 = int.from_bytes(compressed_data[4:8], 'little')
-        scale = np.frombuffer(compressed_data[8:12], dtype=np.float32)[0]
-    
-        # Decompress data
-        compressed = compressed_data[metadata_size:]
-        decompressed = lz4.frame.decompress(compressed)
-    
-        # Dequantize
-        quantized = np.frombuffer(decompressed, dtype=np.int8)
-        dequantized = quantized.astype(np.float32) / scale
-    
-        # Reshape
-        hidden_states = dequantized.reshape(1, shape1, shape2)
-    
-        return {
-            'hidden_states': hidden_states,
-            'attention_mask': np.ones((1, shape1), dtype=np.int32)
-        }
+    header_size = 16  # 4*int32 + 4*float32
+    if len(compressed_data) < header_size:
+        raise ValueError("Invalid compressed data: header is too short.")
 
+    # Unpack the 16-byte header using struct
+    seq_len, hidden_dim, scale, _ = struct.unpack('<iif i', compressed_data[:header_size])    
+        
+    # Decompress the payload
+    compressed_payload = compressed_data[header_size:]
+    decompressed_payload = lz4.frame.decompress(compressed_payload)
+
+    # Dequantize the int8 data to float32
+    quantized_embeddings = np.frombuffer(decompressed_payload, dtype=np.int8)
+    dequantized_embeddings = quantized_embeddings.astype(np.float32) * (1.0 / scale)
+    
+    # Reshape to the original 3D tensor shape
+    hidden_states = dequantized_embeddings.reshape(1, seq_len, hidden_dim)
+    
+    return {
+        'hidden_states': torch.tensor(hidden_states, device=self.device),
+        'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=self.device)
+    }
     else:
         # Handle dict format
         return compressed_data

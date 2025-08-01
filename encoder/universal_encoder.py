@@ -142,14 +142,18 @@ class UniversalEncoder(nn.Module):
             # Resize embedding layer to match pack
             pack_size = len(vocab_pack.tokens)
 
+            # Save device before creating new embedding
+            device = self.embedding_layer.weight.device
+
             # Save old embeddings if needed
             old_embeddings = self.embedding_layer.weight.data.clone()
 
             # Create new embedding layer
             self.embedding_layer = nn.Embedding(pack_size, self.hidden_dim)
+            self.embedding_layer.to(device)
         
             # Load pre-computed embeddings if available
-            if hasattr(vocab_pack, 'embeddings'):
+            if hasattr(vocab_pack, 'embeddings') and vocab_pack.embeddings:
                 # This maintains quality even with smaller vocab!
                 if isinstance(vocab_pack.embeddings, dict):
                     # If embeddings are stored as dict
@@ -161,6 +165,9 @@ class UniversalEncoder(nn.Module):
                 else:
                     # If embeddings are stored as tensor
                     self.embedding_layer.weight.data = torch.tensor(vocab_pack.embeddings)
+                    # Initialize with random embeddings
+                    nn.init.normal_(self.embedding_layer.weight, mean=0.0, std=0.02)
+                    logger.warning(f"No pre-computed embeddings in vocab pack {vocab_pack.name}, using random initialization")
         
             # Re-apply quantization if model was quantized
             if self.is_quantized:

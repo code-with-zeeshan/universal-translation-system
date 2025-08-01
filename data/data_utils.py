@@ -11,6 +11,7 @@ import torch
 from datasets import Dataset, IterableDataset
 from tqdm import tqdm
 import logging
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Import from common utils
 from utils.common_utils import StandardLogger, DirectoryManager
@@ -63,6 +64,40 @@ class ConfigManager:
         config = cls.load_config()
         return config.get('output_dir', 'data/processed')
 
+    @classmethod
+    def validate_config(cls) -> List[str]:
+        """Validate configuration and return list of errors"""
+        errors = []
+        config = cls.load_config()
+    
+        # Check required fields
+        required_fields = ['languages', 'max_sentence_length', 'quality_threshold', 
+                          'output_dir', 'training_distribution']
+        for field in required_fields:
+            if field not in config:
+                errors.append(f"Missing required field: {field}")
+    
+        # Validate language codes
+        if 'languages' in config:
+            valid_langs = set(config['languages'])
+        
+            # Check training distribution
+            if 'training_distribution' in config:
+               for pair_str in config['training_distribution']:
+                   if '-' in pair_str:
+                        src, tgt = pair_str.split('-')
+                        if src not in valid_langs:
+                           errors.append(f"Unknown source language in pair {pair_str}: {src}")
+                        if tgt not in valid_langs:
+                            errors.append(f"Unknown target language in pair {pair_str}: {tgt}")
+    
+        # Validate numeric values
+        if 'quality_threshold' in config:
+            if not 0 <= config['quality_threshold'] <= 1:
+                errors.append(f"quality_threshold must be between 0 and 1")
+    
+        return errors    
+
 
 class DataProcessor:
     """Shared data processing functionality"""
@@ -79,16 +114,23 @@ class DataProcessor:
         max_samples: Optional[int] = None
     ) -> int:
         """
-        Process streaming dataset with memory efficiency
+        Process streaming dataset with memory efficiency and proper cleanup
+
+        This function processes large datasets in batches to avoid memory issues,
+        with automatic garbage collection and GPU cache clearing.        
         
         Args:
             dataset: Streaming dataset from HuggingFace
             output_path: Path to save processed data
-            batch_size: Batch size for processing
-            max_samples: Maximum number of samples to process
+            batch_size: Number of samples to process at once (default: 1000)
+            max_samples: Maximum number of samples to process (default: None - process all)
             
         Returns:
-            Number of samples processed
+            int: Number of samples processed
+
+        Raises:
+            DataError: If dataset processing fails
+            IOError: If output path is not writable    
         """
         output_path = Path(output_path)
         DirectoryManager.create_directory(output_path.parent)
@@ -105,11 +147,18 @@ class DataProcessor:
                 # Save batch when full
                 if len(batch_data) >= batch_size:
                     self._save_batch(batch_data, output_path, samples_processed)
-                    batch_data = []
+
+                    # Proper cleanup - delete variables before empty_cache
+                    batch_data = []  # Clear the list
+
+                    # Force garbage collection periodically
+                    if samples_processed % (batch_size * 10) == 0:
+                        import gc
+                        gc.collect()
                     
-                    # Clear GPU cache if available
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                        # Clear GPU cache if available
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache() 
                 
                 # Stop if max_samples reached
                 if max_samples and samples_processed >= max_samples:
@@ -118,6 +167,14 @@ class DataProcessor:
             # Save remaining data
             if batch_data:
                 self._save_batch(batch_data, output_path, samples_processed)
+                # Final cleanup
+                del batch_data
+
+                import gc
+                gc.collect()
+            
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             
             self.logger.info(f"✅ Processed {samples_processed:,} samples to {output_path}")
             
@@ -128,13 +185,25 @@ class DataProcessor:
         return samples_processed
     
     def _save_batch(self, batch_data: List[dict], output_path: Path, total_processed: int) -> None:
-        """Save a batch of data to disk"""
+        """Save a batch of data to disk with proper memory management"""
         # Create dataset from batch
         batch_dataset = Dataset.from_list(batch_data)
         
         # Save with appropriate naming
         batch_path = output_path / f"batch_{total_processed}"
         batch_dataset.save_to_disk(str(batch_path))
+
+        # Proper memory cleanup - delete before empty_cache
+        del batch_dataset
+        #del batch_data
+
+        # Force garbage collection
+        import gc
+        gc.collect()
+    
+        # Clear GPU cache if available
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     def get_language_pairs_from_config(self) -> List[tuple]:
         """
@@ -270,3 +339,9 @@ def merge_datasets(dataset_paths: List[Path], output_path: Path) -> None:
                         total_lines += 1
     
     logger.info(f"✅ Merged {len(dataset_paths)} files into {output_path} ({total_lines:,} lines)")
+
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+def safe_file_write(file_path: Path, content: str, mode: str = 'w') -> None:
+    """Write to file with retry logic"""
+    with open(file_path, mode, encoding='utf-8') as f:
+        f.write(content)

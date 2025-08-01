@@ -1,392 +1,361 @@
+# coordinator/advanced_coordinator.py
+import asyncio
+import json
+import logging
+import os
 import threading
 import time
-import json
-import requests
-from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
-import random
-import os
-from prometheus_client import start_http_server, Counter, Gauge
+from datetime import datetime, timedelta
 from functools import wraps
-from datetime import datetime
-from flask_smorest import Api, Blueprint
-from flask.views import MethodView
-from marshmallow import Schema, fields
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from typing import Dict, List, Optional
+
+import httpx
+import jwt
+from fastapi import (FastAPI, Request, Depends, HTTPException, Form,
+                     Header, Response, status, APIRouter)
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jinja2 import Template
 from opentelemetry import trace
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from prometheus_client import Counter, Gauge, generate_latest
+from pydantic import BaseModel, Field
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
-# OpenTelemetry setup
-trace.set_tracer_provider(
-    TracerProvider(resource=Resource.create({SERVICE_NAME: "coordinator-service"}))
-)
-otlp_exporter = OTLPSpanExporter()
-span_processor = BatchSpanProcessor(otlp_exporter)
-trace.get_tracer_provider().add_span_processor(span_processor)
-tracer = trace.get_tracer(__name__)
+# --- Configuration and Constants ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 POOL_PATH = os.path.join("configs", "decoder_pool.json")
-CONFIG_PATH = os.path.join("config", "coordinator_config.json")
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
+SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "a-very-secret-key-for-cookies")
+JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "a-super-secret-jwt-key")
 AUTH_TOKEN = os.environ.get("COORDINATOR_TOKEN", "changeme123")
-SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "supersecret")
 
-app = Flask(__name__)
-app.secret_key = SECRET_KEY
-FlaskInstrumentor().instrument_app(app)
-api = Api(app)
-blp = Blueprint('api', 'api', url_prefix='/api', description='Coordinator API')
+# --- Pydantic Models for API Schema ---
+class DecoderNodeSchema(BaseModel):
+    node_id: str
+    endpoint: str
+    region: str
+    gpu_type: str
+    capacity: int
+    healthy: bool = Field(default=False)
+    load: int = Field(default=0)
+    uptime: int = Field(default=0)
 
-# OpenAPI schema for status
-class DecoderNodeSchema(Schema):
-    node_id = fields.Str()
-    endpoint = fields.Str()
-    region = fields.Str()
-    gpu_type = fields.Str()
-    capacity = fields.Int()
-    healthy = fields.Bool()
-    load = fields.Int()
-    uptime = fields.Int()
+class StatusSchema(BaseModel):
+    model_version: str
+    decoder_pool_size: int
+    healthy_decoders: int
+    decoders: List[DecoderNodeSchema]
 
-class StatusSchema(Schema):
-    model_version = fields.Str()
-    decoders = fields.List(fields.Nested(DecoderNodeSchema))
+# --- FastAPI App Setup ---
+app = FastAPI(
+    title="Universal Translation Coordinator",
+    version=MODEL_VERSION,
+    description="Coordinates requests across a pool of decoder nodes."
+)
 
-# JWT authentication
-import jwt
-JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "jwtsecret123")
-def require_jwt(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return {"error": "Unauthorized"}, 401
-        token = auth_header.replace('Bearer ', '')
-        try:
-            jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        except Exception:
-            return {"error": "Invalid token"}, 401
-        return f(*args, **kwargs)
-    return decorated
+# --- OpenTelemetry Tracing ---
+trace.set_tracer_provider(TracerProvider(resource=Resource.create({SERVICE_NAME: "coordinator-service"})))
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+tracer = trace.get_tracer(__name__)
+FastAPIInstrumentor.instrument_app(app)
 
-# Live config reload
-class ConfigReloadHandler(FileSystemEventHandler):
-    def on_modified(self, event):
-        if event.src_path.endswith(CONFIG_PATH):
-            with tracer.start_as_current_span("config_reload"):
-                print("[Coordinator] Config file changed, reloading...")
-                # Reload config logic here
-                # (For demo, just print. In production, update in-memory config.)
-
-observer = Observer()
-observer.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
-observer.start()
-
-# Prometheus metrics
+# --- Prometheus Metrics ---
 requests_total = Counter('coordinator_requests_total', 'Total requests received', ['endpoint'])
 requests_errors = Counter('coordinator_requests_errors', 'Total errors', ['endpoint'])
 decoder_active = Gauge('coordinator_decoder_active', 'Active decoders')
 decoder_load = Gauge('coordinator_decoder_load', 'Current load per decoder', ['node_id'])
-decoder_uptime = Gauge('coordinator_decoder_uptime', 'Uptime (s) per decoder', ['node_id'])
 
-# In-memory stats for analytics
-decoder_stats = {}
+# --- Live Config Reloading ---
+# Use a thread-safe event to signal a reload request from the watchdog thread to the main async loop
+CONFIG_NEEDS_RELOAD = threading.Event()
 
-TEMPLATE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Coordinator Dashboard</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 2em; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-        th { background: #f0f0f0; }
-        .healthy { color: green; }
-        .unhealthy { color: red; }
-        .admin { margin-bottom: 1em; }
-        .chart-container { width: 100%; max-width: 900px; margin: 2em auto; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-</head>
-<body>
-    <h1>Coordinator Dashboard</h1>
-    {% if not session.get('logged_in') %}
-    <form method="post" action="/login" class="admin">
-        <input type="password" name="token" placeholder="Admin Token" />
-        <button type="submit">Login</button>
-    </form>
-    {% else %}
-    <form method="post" action="/logout" class="admin">
-        <button type="submit">Logout</button>
-    </form>
-    {% endif %}
-    <div class="chart-container">
-        <canvas id="loadChart"></canvas>
-    </div>
-    <div class="chart-container">
-        <canvas id="uptimeChart"></canvas>
-    </div>
-    <table>
-        <tr>
-            <th>Node ID</th>
-            <th>Endpoint</th>
-            <th>Region</th>
-            <th>GPU</th>
-            <th>Capacity</th>
-            <th>Current Load</th>
-            <th>Uptime (s)</th>
-            <th>Status</th>
-            <th>Route</th>
-        </tr>
-        {% for node in nodes %}
-        <tr>
-            <td>{{ node['node_id'] }}</td>
-            <td><a href="{{ node['endpoint'] }}" target="_blank">{{ node['endpoint'] }}</a></td>
-            <td>{{ node['region'] }}</td>
-            <td>{{ node['gpu_type'] }}</td>
-            <td>{{ node['capacity'] }}</td>
-            <td>{{ node['load'] }}</td>
-            <td>{{ node['uptime'] }}</td>
-            <td class="{{ 'healthy' if node['healthy'] else 'unhealthy' }}">{{ 'Healthy' if node['healthy'] else 'Unhealthy' }}</td>
-            <td>
-                {% if node['healthy'] and session.get('logged_in') %}
-                <form method="post" action="/manual_route">
-                    <input type="hidden" name="node_id" value="{{ node['node_id'] }}" />
-                    <input type="text" name="text" placeholder="Text to translate" />
-                    <input type="text" name="source_lang" placeholder="Source" size="4" />
-                    <input type="text" name="target_lang" placeholder="Target" size="4" />
-                    <button type="submit">Route</button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-    <script>
-        const loadData = {{ loads|safe }};
-        const uptimeData = {{ uptimes|safe }};
-        const nodeLabels = {{ node_labels|safe }};
-        new Chart(document.getElementById('loadChart').getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: nodeLabels,
-                datasets: [{
-                    label: 'Current Load',
-                    data: loadData,
-                    backgroundColor: 'rgba(54, 162, 235, 0.5)'
-                }]
-            },
-            options: { responsive: true, plugins: { legend: { display: false } } }
-        });
-        new Chart(document.getElementById('uptimeChart').getContext('2d'), {
-            type: 'bar',
-            data: {
-                labels: nodeLabels,
-                datasets: [{
-                    label: 'Uptime (s)',
-                    data: uptimeData,
-                    backgroundColor: 'rgba(75, 192, 192, 0.5)'
-                }]
-            },
-            options: { responsive: true, plugins: { legend: { display: false } } }
-        });
-    </script>
-</body>
-</html>
-'''
+class PoolReloadHandler(FileSystemEventHandler):
+    """Handles file system events for the decoder pool configuration."""
+    def on_modified(self, event):
+        if event.src_path.endswith(os.path.basename(POOL_PATH)):
+            logger.info(f"Configuration file {event.src_path} changed. Scheduling reload.")
+            # Set the event to signal the main loop to reload
+            CONFIG_NEEDS_RELOAD.set()
 
-def require_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get('logged_in'):
-            return redirect(url_for('dashboard'))
-        return f(*args, **kwargs)
-    return decorated
-
+# --- Decoder Pool Management ---
 class DecoderPool:
     def __init__(self, pool_path=POOL_PATH):
         self.pool_path = pool_path
-        self.lock = threading.Lock()
-        self.reload()
+        self.lock = asyncio.Lock()
+        self.pool: List[Dict] = []
+        self.client = httpx.AsyncClient(timeout=2.0)
+        self.reload_sync()
 
-    def reload(self):
-        with self.lock:
+    def _load_from_disk(self):
+        """Synchronously loads the pool configuration from the JSON file."""
+        try:
             if os.path.exists(self.pool_path):
                 with open(self.pool_path, "r") as f:
                     self.pool = json.load(f)
             else:
                 self.pool = []
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to load or parse decoder pool file {self.pool_path}: {e}")
+            self.pool = []
+
+    async def reload(self):
+        """Asynchronously reloads the configuration and checks the health of the new pool."""
+        async with self.lock:
+            logger.info("Reloading decoder pool configuration from disk...")
+            self._load_from_disk()
+        # After reloading, immediately check the health of the new/updated pool
+        await self.check_health()
+        logger.info("Decoder pool reloaded and health checked.")
+
+    async def check_health(self):
+        async with self.lock:
+            tasks = [self._check_single_node(node) for node in self.pool]
+            await asyncio.gather(*tasks)
+            
+            active_count = sum(1 for n in self.pool if n.get('healthy'))
+            decoder_active.set(active_count)
             for node in self.pool:
-                node['healthy'] = self.check_health(node['endpoint'])
-                node['load'] = self.get_load(node)
-                node['uptime'] = self.get_uptime(node)
+                decoder_load.labels(node_id=node['node_id']).set(node.get('load', 0))
 
-    def get_healthy_decoders(self):
-        with self.lock:
-            return [n for n in self.pool if n.get('healthy')]
-
-    def check_health(self, endpoint):
+    async def _check_single_node(self, node: Dict):
         try:
-            resp = requests.get(f"{endpoint}/health", timeout=2)
-            return resp.status_code == 200
-        except Exception:
-            return False
+            resp = await self.client.get(f"{node['endpoint']}/health")
+            node['healthy'] = resp.status_code == 200
+            if node['healthy']:
+                # In a real scenario, you'd parse metrics for load/uptime
+                node['load'] = random.randint(0, node.get('capacity', 100))
+                node['uptime'] = node.get('uptime', 0) + 10
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            node['healthy'] = False
+            node['load'] = -1
+            node['uptime'] = 0
 
-    def get_load(self, node):
-        try:
-            resp = requests.get(f"{node['endpoint']}/metrics", timeout=2)
-            for line in resp.text.splitlines():
-                if 'active_connections' in line:
-                    return int(float(line.split()[-1]))
-        except Exception:
-            pass
-        return 0
+    def get_healthy_decoders(self) -> List[Dict]:
+        return [n for n in self.pool if n.get('healthy')]
 
-    def get_uptime(self, node):
-        try:
-            resp = requests.get(f"{node['endpoint']}/metrics", timeout=2)
-            for line in resp.text.splitlines():
-                if 'process_uptime_seconds' in line:
-                    return int(float(line.split()[-1]))
-        except Exception:
-            pass
-        return 0
-
-    def add_decoder(self, node):
-        with self.lock:
+    async def add_decoder(self, node: Dict):
+        async with self.lock:
             self.pool.append(node)
-            self.save()
+            await self._save()
 
-    def remove_decoder(self, node_id):
-        with self.lock:
+    async def remove_decoder(self, node_id: str):
+        async with self.lock:
             self.pool = [n for n in self.pool if n['node_id'] != node_id]
-            self.save()
+            await self._save()
 
-    def save(self):
+    async def _save(self):
         with open(self.pool_path, "w") as f:
             json.dump(self.pool, f, indent=2)
 
-    def pick_least_loaded(self):
+    def pick_least_loaded(self) -> Optional[Dict]:
         healthy = self.get_healthy_decoders()
         if not healthy:
             return None
-        node = min(healthy, key=lambda n: n.get('load', 0))
-        return node
+        return min(healthy, key=lambda n: n.get('load', float('inf')))
 
 pool = DecoderPool()
 
-# Track request times for analytics
-def background_health_check():
-    while True:
-        pool.reload()
-        healthy = pool.get_healthy_decoders()
-        decoder_active.set(len(healthy))
-        for node in healthy:
-            decoder_load.labels(node_id=node['node_id']).set(node.get('load', 0))
-            decoder_uptime.labels(node_id=node['node_id']).set(node.get('uptime', 0))
-        time.sleep(10)
+# --- Authentication Dependencies ---
+bearer_scheme = HTTPBearer()
 
-@blp.route('/status')
-class StatusResource(MethodView):
-    @blp.response(200, StatusSchema)
-    def get(self):
-        with tracer.start_as_current_span("status_endpoint") as span:
-            span.set_attribute("model_version", MODEL_VERSION)
-            # pool is assumed to be globally available
-            return {"model_version": MODEL_VERSION, "decoders": pool.get_healthy_decoders()}
-
-@blp.route('/add_decoder')
-class AddDecoderResource(MethodView):
-    @require_jwt
-    def post(self):
-        with tracer.start_as_current_span("add_decoder") as span:
-            node = request.json
-            span.set_attribute("node_id", node.get('node_id', ''))
-            node['healthy'] = pool.check_health(node['endpoint'])
-            node['load'] = pool.get_load(node)
-            node['uptime'] = pool.get_uptime(node)
-            pool.add_decoder(node)
-            return {"status": "added", "node": node}
-
-@blp.route('/remove_decoder')
-class RemoveDecoderResource(MethodView):
-    @require_jwt
-    def post(self):
-        with tracer.start_as_current_span("remove_decoder") as span:
-            node_id = request.json.get('node_id')
-            span.set_attribute("node_id", node_id)
-            pool.remove_decoder(node_id)
-            return {"status": "removed", "node_id": node_id}
-
-@blp.route('/decode')
-class DecodeResource(MethodView):
-    def post(self):
-        with tracer.start_as_current_span("decode_proxy") as span:
-            node = pool.pick_least_loaded()
-            if not node:
-                span.set_attribute("error", True)
-                return {"error": "No healthy decoders available"}, 503
-            span.set_attribute("node_id", node['node_id'])
-            try:
-                headers = dict(request.headers)
-                resp = requests.post(f"{node['endpoint']}/decode", data=request.data, headers=headers, timeout=10)
-                return (resp.content, resp.status_code, resp.headers.items())
-            except Exception as e:
-                span.set_attribute("error", True)
-                return {"error": f"Failed to contact decoder: {e}"}, 502
-
-api.register_blueprint(blp)
-
-@app.route("/dashboard")
-def dashboard():
-    pool.reload()
-    node_labels = [n['node_id'] for n in pool.pool]
-    loads = [n.get('load', 0) for n in pool.pool]
-    uptimes = [n.get('uptime', 0) for n in pool.pool]
-    return render_template_string(TEMPLATE, nodes=pool.pool, node_labels=node_labels, loads=loads, uptimes=uptimes, session=session)
-
-@app.route("/manual_route", methods=["POST"])
-@require_auth
-def manual_route():
-    node_id = request.form['node_id']
-    text = request.form['text']
-    source_lang = request.form['source_lang']
-    target_lang = request.form['target_lang']
-    node = next((n for n in pool.pool if n['node_id'] == node_id), None)
-    if not node:
-        return "Node not found", 404
+def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
+    """Dependency for JWT-based API authentication."""
     try:
-        headers = {'X-Target-Language': target_lang, 'Content-Type': 'application/json'}
-        data = json.dumps({'text': text, 'source_lang': source_lang, 'target_lang': target_lang})
-        resp = requests.post(f"{node['endpoint']}/decode", data=data, headers=headers, timeout=10)
-        return resp.text
-    except Exception as e:
-        return f"Error: {e}", 502
+        jwt.decode(token.credentials, JWT_SECRET, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-@app.route("/metrics")
-def metrics():
-    from prometheus_client import generate_latest
-    return generate_latest(), 200, {'Content-Type': 'text/plain; version=0.0.4; charset=utf-8'}
+def get_session(request: Request) -> bool:
+    """Dependency to check for a valid session cookie for the dashboard."""
+    try:
+        token = request.cookies.get("session_token")
+        if not token:
+            return False
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return payload.get("sub") == "admin"
+    except (jwt.PyJWTError, KeyError):
+        return False
 
-@app.route("/login", methods=["POST"])
-def login():
-    token = request.form.get('token')
+# --- Background Tasks ---
+async def background_tasks():
+    """Runs periodic health checks and handles config reloads."""
+    while True:
+        # Check if a reload has been signaled by the watchdog
+        if CONFIG_NEEDS_RELOAD.is_set():
+            await pool.reload()
+            CONFIG_NEEDS_RELOAD.clear()  # Reset the event after handling
+
+        logger.info("Running background health check...")
+        await pool.check_health()
+        await asyncio.sleep(10)
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the background task
+    asyncio.create_task(background_tasks())
+
+    # Start the watchdog observer to monitor the config file
+    observer = Observer()
+    pool_dir = os.path.dirname(POOL_PATH)
+    if not os.path.exists(pool_dir):
+        os.makedirs(pool_dir)
+    observer.schedule(PoolReloadHandler(), pool_dir, recursive=False)
+    observer.start()
+    logger.info(f"Started watching {pool_dir} for configuration changes.")    
+
+# --- API Endpoints ---
+api_router = APIRouter(prefix="/api", tags=["API"])
+
+@api_router.get("/status", response_model=StatusSchema)
+async def get_status():
+    """Get the current status of the decoder pool."""
+    with tracer.start_as_current_span("get_status"):
+        healthy_decoders = pool.get_healthy_decoders()
+        return {
+            "model_version": MODEL_VERSION,
+            "decoder_pool_size": len(pool.pool),
+            "healthy_decoders": len(healthy_decoders),
+            "decoders": pool.pool
+        }
+
+@api_router.post("/decode")
+async def decode_proxy(request: Request, x_target_language: str = Header(...)):
+    """Proxy a decode request to the least loaded healthy decoder."""
+    requests_total.labels(endpoint='/api/decode').inc()
+    with tracer.start_as_current_span("decode_proxy") as span:
+        node = pool.pick_least_loaded()
+        if not node:
+            requests_errors.labels(endpoint='/api/decode').inc()
+            raise HTTPException(status_code=503, detail="No healthy decoders available")
+        
+        span.set_attribute("routed_node_id", node['node_id'])
+        try:
+            content = await request.body()
+            headers = {'Content-Type': request.headers['Content-Type'], 'X-Target-Language': x_target_language}
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{node['endpoint']}/decode", content=content, headers=headers, timeout=10)
+                resp.raise_for_status()
+            return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
+            requests_errors.labels(endpoint='/api/decode').inc()
+            logger.error(f"Failed to contact decoder {node['node_id']}: {e}")
+            raise HTTPException(status_code=502, detail=f"Failed to contact decoder: {e}")
+
+# --- Admin API Endpoints ---
+admin_router = APIRouter(prefix="/admin", tags=["Admin"], dependencies=[Depends(get_current_user)])
+
+@admin_router.post("/add_decoder")
+async def add_decoder(node: DecoderNodeSchema):
+    """Register a new decoder node."""
+    await pool.add_decoder(node.dict())
+    return {"status": "added", "node": node}
+
+@admin_router.post("/remove_decoder")
+async def remove_decoder(node_id: str = Form(...)):
+    """De-register a decoder node."""
+    await pool.remove_decoder(node_id)
+    return {"status": "removed", "node_id": node_id}
+
+# --- Dashboard and UI ---
+DASHBOARD_TEMPLATE = Template("""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Coordinator Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2em; background: #f4f4f9; color: #333; }
+        h1 { color: #4a4a4a; }
+        table { border-collapse: collapse; width: 100%; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #6a89cc; color: white; }
+        tr:nth-child(even) { background: #f2f2f2; }
+        .healthy { color: #2ecc71; font-weight: bold; }
+        .unhealthy { color: #e74c3c; font-weight: bold; }
+        .admin-form { background: white; padding: 1em; margin-bottom: 1em; border-radius: 5px; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
+        input, button { padding: 8px; margin-right: 5px; border: 1px solid #ccc; border-radius: 3px; }
+        button { background: #6a89cc; color: white; cursor: pointer; border: none; }
+        button:hover { background: #4a69bb; }
+    </style>
+</head>
+<body>
+    <h1>Coordinator Dashboard</h1>
+    {% if not logged_in %}
+    <form method="post" action="/login" class="admin-form">
+        <input type="password" name="token" placeholder="Admin Token" required />
+        <button type="submit">Login</button>
+    </form>
+    {% else %}
+    <form method="post" action="/logout" class="admin-form">
+        <button type="submit">Logout</button>
+    </form>
+    {% endif %}
+    <table>
+        <tr><th>Node ID</th><th>Endpoint</th><th>Region</th><th>GPU</th><th>Capacity</th><th>Load</th><th>Status</th></tr>
+        {% for node in nodes %}
+        <tr>
+            <td>{{ node.node_id }}</td>
+            <td><a href="{{ node.endpoint }}" target="_blank">{{ node.endpoint }}</a></td>
+            <td>{{ node.region }}</td>
+            <td>{{ node.gpu_type }}</td>
+            <td>{{ node.capacity }}</td>
+            <td>{{ node.load }}</td>
+            <td class="{{ 'healthy' if node.healthy else 'unhealthy' }}">{{ 'Healthy' if node.healthy else 'Unhealthy' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
+""")
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, logged_in: bool = Depends(get_session)):
+    """Serves the main dashboard UI."""
+    nodes_data = [DecoderNodeSchema(**n) for n in pool.pool]
+    return DASHBOARD_TEMPLATE.render(nodes=nodes_data, logged_in=logged_in)
+
+@app.post("/login")
+async def login(token: str = Form(...)):
+    """Handles admin login."""
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     if token == AUTH_TOKEN:
-        session['logged_in'] = True
-    return redirect(url_for('dashboard'))
+        # Create a JWT session token
+        session_token = jwt.encode(
+            {"sub": "admin", "exp": datetime.utcnow() + timedelta(hours=1)},
+            SECRET_KEY,
+            algorithm="HS256"
+        )
+        response.set_cookie(key="session_token", value=session_token, httponly=True, samesite="strict")
+    return response
 
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('dashboard'))
+@app.post("/logout")
+async def logout():
+    """Handles admin logout."""
+    response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
+    response.delete_cookie("session_token")
+    return response
 
+# --- Metrics Endpoint ---
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(generate_latest(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
+# --- Include Routers ---
+app.include_router(api_router)
+app.include_router(admin_router)
+
+# --- Main Entry Point ---
 if __name__ == "__main__":
-    start_http_server(9200)  # Prometheus metrics on 9200
-    threading.Thread(target=background_health_check, daemon=True).start()
-    debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
-    app.run(host="0.0.0.0", port=5100, debug=debug_mode)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=5100)

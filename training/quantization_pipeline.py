@@ -5,15 +5,24 @@ Includes A/B testing, profiling, and quality preservation techniques
 """
 
 import torch
-import torch.quantization as quant
+import torch.ao.quantization as quant
+from torch.ao.quantization import (
+    get_default_qconfig,
+    prepare_fx,
+    convert_fx,
+    QConfigMapping,
+)
+from torch.ao.quantization.quantize_fx import prepare_qat_fx, convert_to_reference_fx
 from typing import Dict, Any, Optional, Callable, List, Tuple
 import logging
 from pathlib import Path
+from utils.exceptions import TrainingError
 import time
 import numpy as np
 from dataclasses import dataclass
 from collections import defaultdict
 import json
+import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +34,19 @@ class QuantizationConfig:
     symmetric_quantization: bool = True
     per_channel_quantization: bool = True
     preserve_embeddings: bool = True  # Keep embeddings in higher precision
+
+    def __post_init__(self):
+        """Validate configuration"""
+        if self.backend not in ['fbgemm', 'qnnpack']:
+            raise TrainingError(f"Invalid backend: {self.backend}")
+        if self.calibration_samples < 100:
+            logger.warning("Low calibration samples may result in poor quantization")
+        if self.backend == 'qnnpack' and not self._is_arm():
+            logger.warning("qnnpack backend is optimized for ARM, using on x86")
+    
+    def _is_arm(self) -> bool:
+        import platform
+        return 'arm' in platform.machine().lower()
     
 @dataclass
 class QualityMetrics:
@@ -49,7 +71,7 @@ class EncoderQuantizer:
     def create_deployment_versions(self, master_model_path: str, 
                                  calibration_data_path: Optional[str] = None,
                                  test_data_path: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
-        """Create all deployment versions with quality metrics"""
+        """Create all deployment versions with quality metrics - Updated for modern PyTorch"""
         
         logger.info("🚀 Starting quantization pipeline...")
         
@@ -61,7 +83,7 @@ class EncoderQuantizer:
         
         # 1. Create INT8 (125MB) version
         logger.info("📦 Creating INT8 quantized model...")
-        int8_path, int8_metrics = self.quantize_dynamic(
+        int8_path, int8_metrics = self.quantize_dynamic_modern(
             master_model, 
             master_model_path.replace('.pt', '_int8.pt'),
             test_data_path
@@ -118,7 +140,7 @@ class EncoderQuantizer:
         
         return results
     
-    def quantize_dynamic(self, model: torch.nn.Module, output_path: str,
+    def quantize_dynamic_modern(self, model: torch.nn.Module, output_path: str,
                         test_data_path: Optional[str] = None) -> Tuple[str, QualityMetrics]:
         """Dynamic INT8 quantization with quality testing"""
         
@@ -127,21 +149,23 @@ class EncoderQuantizer:
             original_metrics = self.profiler.profile_model(model, test_data_path)
         
         # Configure for dynamic quantization
-        quantized_model = torch.quantization.quantize_dynamic(
+        quantized_model = torch.ao.quantization.quantize_dynamic(
             model,
             qconfig_spec={
-                torch.nn.Linear: torch.quantization.default_dynamic_qconfig,
-                torch.nn.LSTM: torch.quantization.default_dynamic_qconfig,
-                torch.nn.GRU: torch.quantization.default_dynamic_qconfig,
-                torch.nn.MultiheadAttention: torch.quantization.default_dynamic_qconfig,
+                torch.nn.Linear: torch.ao.quantization.default_dynamic_qconfig,
+                torch.nn.LSTM: torch.ao.quantization.default_dynamic_qconfig,
+                torch.nn.GRU: torch.ao.quantization.default_dynamic_qconfig,
+                torch.nn.MultiheadAttention: torch.ao.quantization.default_dynamic_qconfig,
             },
-            dtype=torch.qint8
+            dtype=torch.qint8,
+            mapping=None,
+            inplace=False
         )
         
         # Save quantized model
         torch.save(quantized_model.state_dict(), output_path)
         
-        # Profile quantized model
+        # Profile quantized model and return metrics
         metrics = None
         if test_data_path:
             metrics = self.profiler.profile_model(quantized_model, test_data_path)
@@ -150,56 +174,64 @@ class EncoderQuantizer:
             # Log quality comparison
             logger.info(f"✅ INT8 Quantization Results:")
             logger.info(f"   Memory: {original_metrics.memory_mb:.1f}MB → {metrics.memory_mb:.1f}MB")
-            logger.info(f"   Latency: {original_metrics.latency_ms:.1f}ms → {metrics.latency_ms:.1f}ms")
-            logger.info(f"   BLEU Score: {original_metrics.bleu_score:.2f} → {metrics.bleu_score:.2f}")
             logger.info(f"   Quality retention: {(metrics.bleu_score/original_metrics.bleu_score)*100:.1f}%")
         
         return output_path, metrics
     
-    def quantize_static(self, model: torch.nn.Module, 
+    def quantize_static_fx(self, model: torch.nn.Module, 
                        calibration_data_path: str,
                        output_path: str,
                        test_data_path: Optional[str] = None) -> Tuple[str, QualityMetrics]:
-        """Static INT8 quantization with calibration for better quality"""
+        """Static INT8 quantization with calibration for better quality with FX graph mode (modern approach)"""
         
         # Clone model for quantization
         model_to_quantize = self._clone_model(model)
+
+        # The model might be a tuple (encoder, decoder)
+        # Add handling:
+        if isinstance(model, tuple):
+            encoder, decoder = model
+            # Handle each separately
+            quantized_encoder = self._quantize_single_model(encoder, ...)
+            quantized_decoder = self._quantize_single_model(decoder, ...)
+            return (quantized_encoder, quantized_decoder), metrics
         
         # Load calibration data
         calibration_data = torch.load(calibration_data_path)
+
+        # Create example inputs
+        example_inputs = calibration_data[0]['input_ids'] if isinstance(calibration_data[0], dict) else calibration_data[0]
         
-        # Set quantization config
-        model_to_quantize.qconfig = torch.quantization.QConfig(
-            activation=torch.quantization.MinMaxObserver.with_args(
-                dtype=torch.quint8,
-                qscheme=torch.per_tensor_symmetric if self.config.symmetric_quantization 
-                        else torch.per_tensor_affine
-            ),
-            weight=torch.quantization.MinMaxObserver.with_args(
-                dtype=torch.qint8,
-                qscheme=torch.per_channel_symmetric if self.config.per_channel_quantization
-                        else torch.per_tensor_symmetric
-            )
+        # Configure quantization
+        qconfig_mapping = QConfigMapping().set_global(
+            get_default_qconfig('x86' if self.config.backend == 'fbgemm' else 'qnnpack')
         )
         
         # Prepare model
-        torch.quantization.prepare(model_to_quantize, inplace=True)
+        model_prepared = prepare_fx(
+            model_to_quantize,
+            qconfig_mapping,
+            example_inputs=example_inputs,
+            prepare_custom_config=None,
+            backend_config=None,
+        )
         
         # Calibrate on real translation data
         logger.info("🔄 Calibrating model on translation data...")
-        model_to_quantize.eval()
+        model_prepared.eval()
         with torch.no_grad():
             for i, batch in enumerate(calibration_data):
                 if i >= self.config.calibration_samples:
                     break
-                if isinstance(batch, dict):
-                    # Handle dictionary batch
-                    model_to_quantize(batch['input_ids'])
-                else:
-                    model_to_quantize(batch)
+                input_data = batch['input_ids'] if isinstance(batch, dict) else batch
+                model_prepared(input_data)
         
         # Convert to quantized model
-        quantized_model = torch.quantization.convert(model_to_quantize, inplace=True)
+        quantized_model = convert_fx(
+            model_prepared,
+            convert_custom_config=None,
+            backend_config=None,
+        )
         
         # Save
         torch.save(quantized_model.state_dict(), output_path)
@@ -319,9 +351,61 @@ class EncoderQuantizer:
         
         logger.info(f"📊 Comparison report saved to {report_path}")
 
+    def quantize_distributed(self, model: torch.nn.Module, world_size: int) -> torch.nn.Module:
+        """Quantize model for distributed inference"""
+        if world_size == 1:
+            return self.quantize_dynamic_modern(model, "model_int8.pt")
+    
+        # For distributed, use different quantization per rank
+        rank = dist.get_rank() if dist.is_initialized() else 0
+    
+        if rank == 0:
+            # Master gets full precision for quality
+            return model
+        else:
+            # Workers get quantized versions
+            return self.quantize_dynamic_modern(model, f"model_int8_rank{rank}.pt")
+
+    def _quantize_single_model(self, model: torch.nn.Module, 
+                          calibration_data: List[Dict[str, torch.Tensor]],
+                          config_mapping: Any,
+                          example_inputs: torch.Tensor) -> torch.nn.Module:
+        """Quantize a single model component"""
+        # Prepare model
+        model_prepared = prepare_fx(
+            model,
+            config_mapping,
+            example_inputs=example_inputs,
+        )
+    
+        # Calibrate
+        model_prepared.eval()
+        with torch.no_grad():
+            for i, batch in enumerate(calibration_data):
+                if i >= self.config.calibration_samples:
+                    break
+                input_data = batch['input_ids'] if isinstance(batch, dict) else batch
+                # Handle shape mismatches
+                if input_data.shape[0] != example_inputs.shape[0]:
+                    input_data = input_data[:example_inputs.shape[0]]
+                model_prepared(input_data)
+    
+        # Convert to quantized
+        quantized_model = convert_fx(model_prepared)
+    
+        return quantized_model           
+
 
 class QualityComparator:
     """A/B Testing for different quality levels"""
+
+    def __init__(self):
+        """Initialize with quantization_aware flag"""
+        self.quantization_aware = False  # Add this property
+    
+    def enable_quantization_aware_training(self):
+        """Enable QAT mode"""
+        self.quantization_aware = True
     
     def compare_models(self, text: str, source_lang: str, target_lang: str,
                       models: Dict[str, torch.nn.Module]) -> Dict[str, Dict[str, Any]]:
@@ -354,22 +438,110 @@ class QualityComparator:
                     )
         
         return results
+
+    def _translate(self, model: torch.nn.Module, text: str, 
+              source_lang: str, target_lang: str) -> str:
+        """Perform actual translation using the encoder/decoder pipeline"""
+        # Properly handle model structure
+        if isinstance(model, tuple):
+           encoder, decoder = model
+        elif hasattr(model, 'encoder') and hasattr(model, 'decoder'):
+            encoder = model.encoder
+            decoder = model.decoder
+        else:
+            logger.error("Model structure not recognized")
+            return ""
     
-    def _translate(self, model: torch.nn.Module, text: str, source_lang: str, target_lang: str) -> str:
-        """Perform translation using the actual encoder/decoder pipeline."""
-        # Example: assumes model is a tuple (encoder, decoder)
-        encoder, decoder = model
-        import torch
-        # Tokenize input (replace with production tokenizer)
-        input_ids = torch.tensor([[3, 4, 5, 6, 7]])  # Replace with real tokenization
-        encoder_output = encoder(input_ids)
-        decoder_input_ids = torch.tensor([[3, 4, 5, 6, 7]])  # Replace with real start tokens
-        output = decoder.forward(
-            decoder_input_ids=decoder_input_ids,
-            encoder_hidden_states=encoder_output
-        )
-        # Detokenize output (replace with production detokenizer)
-        return ' '.join([str(int(x)) for x in output[0].tolist()])
+        # Import vocabulary manager
+        from vocabulary.vocabulary_manager import VocabularyManager
+        vocab_manager = VocabularyManager()
+        vocab_pack = vocab_manager.get_vocab_for_pair(source_lang, target_lang)
+    
+        # Tokenize input
+        tokens = []
+        tokens.append(vocab_pack.special_tokens.get('<s>', 2))
+    
+        # Simple tokenization (replace with production tokenizer)
+        for word in text.lower().split():
+            if word in vocab_pack.tokens:
+               tokens.append(vocab_pack.tokens[word])
+            else:
+                # Handle unknown words with subwords or UNK
+                tokens.append(vocab_pack.special_tokens.get('<unk>', 1))
+    
+        tokens.append(vocab_pack.special_tokens.get('</s>', 3))
+    
+        # Convert to tensor
+        input_ids = torch.tensor([tokens], dtype=torch.long)
+        attention_mask = torch.ones_like(input_ids)
+    
+        # Forward pass
+        with torch.no_grad():
+            encoder_output = encoder(input_ids, attention_mask)
+        
+            # Simple greedy decoding (replace with beam search in production)
+            decoder_input = torch.tensor([[vocab_pack.special_tokens.get('<s>', 2)]], dtype=torch.long)
+            max_length = 128
+        
+            generated_tokens = []
+            for _ in range(max_length):
+                decoder_output = decoder(
+                    decoder_input,
+                    encoder_output,
+                    encoder_attention_mask=attention_mask
+                )
+            
+                # Get next token
+                next_token = decoder_output[:, -1, :].argmax(dim=-1)
+                generated_tokens.append(next_token.item())
+            
+                # Stop if EOS
+                if next_token.item() == vocab_pack.special_tokens.get('</s>', 3):
+                    break
+            
+                # Append to decoder input
+                decoder_input = torch.cat([decoder_input, next_token.unsqueeze(0)], dim=1)
+    
+        # Detokenize
+        id_to_token = {v: k for k, v in vocab_pack.tokens.items()}
+        id_to_token.update({v: k for k, v in vocab_pack.special_tokens.items()})
+    
+        translation_tokens = []
+        for token_id in generated_tokens:
+            if token_id in id_to_token:
+                token = id_to_token[token_id]
+                if not token.startswith('<') and not token.endswith('>'):
+                    translation_tokens.append(token)
+    
+        return ' '.join(translation_tokens)
+
+    # Implementing the fake_quantize method properly:
+    def fake_quantize(self, tensor: torch.Tensor, num_bits: int = 8) -> torch.Tensor:
+        """Implement fake quantization for QAT"""
+        if not self.quantization_aware:
+            return tensor
+        
+        # Calculate quantization parameters
+        qmin = -(2 ** (num_bits - 1))
+        qmax = (2 ** (num_bits - 1)) - 1
+    
+        # Get min and max values
+        min_val = tensor.min()
+        max_val = tensor.max()
+    
+        # Calculate scale and zero point
+        scale = (max_val - min_val) / (qmax - qmin)
+        scale = max(scale, torch.tensor(1e-8))  # Prevent division by zero
+        zero_point = qmin - torch.round(min_val / scale)
+        zero_point = torch.clamp(zero_point, qmin, qmax)
+    
+        # Quantize and dequantize
+        tensor_q = torch.round(tensor / scale + zero_point)
+        tensor_q = torch.clamp(tensor_q, qmin, qmax)
+        tensor_dq = (tensor_q - zero_point) * scale
+    
+        # Straight-through estimator for gradients
+        return tensor + (tensor_dq - tensor).detach()
 
     def _calculate_bleu(self, references, translations):
         import sacrebleu
@@ -495,8 +667,8 @@ class QualityPreservingQuantizer:
     """Advanced quantization with quality preservation techniques"""
     
     def quantize_with_calibration(self, model: torch.nn.Module, 
-                                calibration_data: List[torch.Tensor],
-                                target_quality: float = 0.97) -> torch.nn.Module:
+                                  calibration_data: List[torch.Tensor],
+                                  target_quality: float = 0.97) -> torch.nn.Module:
         """Quantize while preserving target quality level"""
         
         # 1. Collect statistics on actual usage

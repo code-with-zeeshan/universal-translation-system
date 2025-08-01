@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import logging
 
 from encoder.language_adapters import AdapterUniversalEncoder
@@ -179,13 +179,29 @@ class AdapterTrainer:
     
     def _compute_loss(self, outputs, labels, attention_mask):
         """Compute task-specific loss (production)."""
-        # For MLM or sequence-to-sequence, use CrossEntropyLoss
-        vocab_size = outputs.size(-1)
+        # Get vocabulary size from model config
+        if hasattr(self.model.base_encoder, 'embedding_layer'):
+            vocab_size = self.model.base_encoder.embedding_layer.num_embeddings
+        else:
+            vocab_size = 50000  # Default fallback
+    
+        # Reshape outputs if needed
+        if outputs.dim() == 3:  # [batch, seq, hidden]
+            # Add projection layer if not exists
+            if not hasattr(self, 'lm_head'):
+                self.lm_head = nn.Linear(outputs.size(-1), vocab_size).to(outputs.device)
+            outputs = self.lm_head(outputs)
+    
+        # Standard cross-entropy loss
         loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-        logits = outputs.view(-1, vocab_size)
-        labels_flat = labels.view(-1)
-        masked_lm_loss = loss_fct(logits, labels_flat)
-        return masked_lm_loss
+    
+        # Mask out padding tokens
+        active_loss = attention_mask.view(-1) == 1
+        active_logits = outputs.view(-1, vocab_size)[active_loss]
+        active_labels = labels.view(-1)[active_loss]
+    
+        loss = loss_fct(active_logits, active_labels)
+        return loss
     
     def _get_linear_schedule_with_warmup(self, optimizer, num_warmup_steps, num_training_steps):
         """Create a schedule with a learning rate that decreases linearly after warmup"""

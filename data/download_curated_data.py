@@ -7,6 +7,7 @@ Maintains backwards compatibility for standalone execution
 import datasets
 from datasets import load_dataset
 from pathlib import Path
+from utils.security import validate_model_source, safe_load_model
 from typing import Dict, List, Optional
 import requests
 from requests.adapters import HTTPAdapter
@@ -55,8 +56,7 @@ class CuratedDataDownloader:
             self.data_processor = DataProcessor(self.logger)
         else:
             # Fallback configuration for standalone mode
-            self.languages = ['en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru', 
-                              'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv']
+            self.languages = ['en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru', 'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv']
         
         # Data source configuration
         self.data_sources: Dict[str, Dict] = {
@@ -161,7 +161,8 @@ class CuratedDataDownloader:
                 dataset = self.dataset_loader.load_dataset_safely(
                     self.data_sources['flores200']['dataset_name'],
                     config_name=self.data_sources['flores200']['config_name'],
-                    split=self.data_sources['flores200']['split']
+                    split=self.data_sources['flores200']['split'],
+                    trust_remote_code=False  # Always False for security
                 )
                 
                 if dataset:
@@ -175,7 +176,7 @@ class CuratedDataDownloader:
                     self.data_sources['flores200']['dataset_name'],
                     name=self.data_sources['flores200']['config_name'],
                     split=self.data_sources['flores200']['split'],
-                    trust_remote_code=True
+                    trust_remote_code=False
                 )
                 save_path = output_dir / 'flores200'
                 flores.save_to_disk(str(save_path))
@@ -198,7 +199,8 @@ class CuratedDataDownloader:
                         self.data_sources['tatoeba']['dataset_name'],
                         lang1='eng',
                         lang2=target_lang,
-                        split='train'
+                        split='train',
+                        trust_remote_code=False  # Always False for security
                     )
                     
                     if dataset:
@@ -217,7 +219,7 @@ class CuratedDataDownloader:
                         lang1='eng',
                         lang2=target_lang,
                         split='train',
-                        trust_remote_code=True
+                        trust_remote_code=False
                     )
                     
                     # Limit to 100k sentences

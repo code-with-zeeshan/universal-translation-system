@@ -29,8 +29,12 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/lz4/lz4.git
     GIT_TAG v1.9.4
 )
-
-FetchContent_MakeAvailable(json lz4)
+FetchContent_Declare(
+    msgpack
+    GIT_REPOSITORY https://github.com/msgpack/msgpack-c.git
+    GIT_TAG cpp-6.1.0
+)
+FetchContent_MakeAvailable(json lz4 msgpack)
 
 # ONNX Runtime
 if(NOT USE_SYSTEM_ONNXRUNTIME)
@@ -75,6 +79,7 @@ target_link_libraries(universal_encoder_core
     PUBLIC
         nlohmann_json::nlohmann_json
         lz4_static
+        msgpackc-cxx
         Threads::Threads
 )
 

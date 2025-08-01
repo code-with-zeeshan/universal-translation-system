@@ -1,0 +1,28 @@
+# config/training_l4.yaml
+
+# L4-specific configuration (24GB memory, Ada Lovelace Architecture)
+# Inherits from base.yaml. Optimized for efficiency, not raw training speed.
+
+_base_: base.yaml
+
+# Has more memory than a T4, allowing a larger batch size.
+training:
+  batch_size: 16
+  gradient_accumulation: 8
+  effective_batch_size: 128
+
+# Use a conservative learning rate for stability.
+optimization:
+  learning_rate: 2e-4
+
+# Has enough memory to avoid CPU offloading, but checkpointing is still wise.
+memory:
+  gradient_checkpointing: true
+  cpu_offload: false
+  activation_offload: false
+  compile_mode: "default" # A safe compilation mode for this efficiency-focused GPU.
+  dtype: bfloat16         # Ada architecture supports bfloat16.
+  max_split_size: 256
+
+distributed:
+  gradient_as_bucket_view: false

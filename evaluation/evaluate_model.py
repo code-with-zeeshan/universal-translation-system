@@ -13,6 +13,12 @@ import json
 import logging
 from dataclasses import dataclass
 from collections import defaultdict
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    print("Warning: pandas not available. Install with: pip install pandas")
 
 # Metrics imports
 try:
@@ -117,43 +123,331 @@ class TranslationEvaluator:
             return translation
     
     def _tokenize(self, text: str, language: str, vocab_pack) -> List[int]:
-        """Tokenize text using vocabulary pack"""
-        # Simple whitespace tokenization - replace with proper tokenizer
-        tokens = [vocab_pack.special_tokens.get('<s>', 2)]  # Start token
-        
-        for word in text.lower().split():
-            if word in vocab_pack.tokens:
-                tokens.append(vocab_pack.tokens[word])
-            else:
-                # Handle unknown words with subwords
-                tokens.append(vocab_pack.special_tokens.get('<unk>', 1))
-        
-        tokens.append(vocab_pack.special_tokens.get('</s>', 3))  # End token
-        return tokens
+        """Tokenize text using vocabulary pack with proper subword and better error handling"""
+        try:
+            # Check if vocab pack has a tokenize method
+            if hasattr(vocab_pack, 'tokenize'):
+                return vocab_pack.tokenize(text, language)
+
+            # Otherwise, implement proper tokenization
+            tokens = []
+    
+            # Add start token
+            start_token = vocab_pack.special_tokens.get(f'<{language}>', vocab_pack.special_tokens.get('<s>', 2))
+            tokens.append(start_token)
+    
+            # Tokenize text
+            words = text.lower().split()
+    
+            for word in words:
+                if word in vocab_pack.tokens:
+                    # Word exists in vocabulary
+                    tokens.append(vocab_pack.tokens[word])
+                else:
+                    # Try subword tokenization
+                    subword_tokens = self._subword_tokenize(word, vocab_pack)
+                    tokens.extend(subword_tokens)
+
+            # Add end token 
+            end_token = vocab_pack.special_tokens.get('</s>', 3)
+            tokens.append(end_token)
+
+            return tokens        
+
+        except Exception as e:
+            logger.error(f"Tokenization failed for '{text[:50]}...': {e}")
+            # Return UNK tokens as fallback
+            return [
+                vocab_pack.special_tokens.get('<s>', 2),
+                vocab_pack.special_tokens.get('<unk>', 1),
+                vocab_pack.special_tokens.get('</s>', 3)
+            ]
+
+    def _subword_tokenize(self, word: str, vocab_pack) -> List[int]:
+        """Subword tokenization for OOV words"""
+        subword_tokens = []
+    
+        # First, check if the word with ## prefix exists
+        if hasattr(vocab_pack, 'subwords'):
+            # Try progressively smaller subwords
+            for i in range(len(word)):
+                for j in range(len(word), i, -1):
+                    subword = word[i:j]
+                
+                    # First subword doesn't need ##
+                    if i == 0:
+                        if subword in vocab_pack.tokens:
+                            subword_tokens.append(vocab_pack.tokens[subword])
+                            i = j - 1
+                            break
+                    else:
+                        # Subsequent subwords need ## prefix
+                        subword_with_prefix = f"##{subword}"
+                        if subword_with_prefix in vocab_pack.subwords:
+                            subword_tokens.append(vocab_pack.subwords[subword_with_prefix])
+                            i = j - 1
+                            break
+    
+        # If no subwords found, use UNK token
+        if not subword_tokens:
+            subword_tokens.append(vocab_pack.special_tokens.get('<unk>', 1))
+    
+        return subword_tokens
     
     def _detokenize(self, token_ids: np.ndarray, vocab_pack) -> str:
-        """Convert token IDs back to text"""
+        """Convert token IDs back to text with proper subword handling"""
         # Create reverse mapping
-        id_to_token = {v: k for k, v in vocab_pack.tokens.items()}
-        id_to_token.update({v: k for k, v in vocab_pack.special_tokens.items()})
-        
+        id_to_token = {}
+    
+        # Add all token mappings
+        for mapping_dict in [vocab_pack.tokens, vocab_pack.special_tokens]:
+            id_to_token.update({v: k for k, v in mapping_dict.items()})
+    
+        if hasattr(vocab_pack, 'subwords'):
+            id_to_token.update({v: k for k, v in vocab_pack.subwords.items()})
+    
         tokens = []
         for token_id in token_ids:
-            if token_id == vocab_pack.special_tokens.get('</s>', 3):
-                break
+            # Skip padding
             if token_id == vocab_pack.special_tokens.get('<pad>', 0):
                 continue
             
+            # Stop at end token
+            if token_id == vocab_pack.special_tokens.get('</s>', 3):
+                break
+        
             token = id_to_token.get(int(token_id), '<unk>')
-            if not token.startswith('<'):  # Skip special tokens
-                tokens.append(token)
         
-        # Join and clean up
-        text = ' '.join(tokens)
-        text = text.replace(' ##', '')  # Handle subwords
-        text = text.replace('▁', ' ')   # Handle sentencepiece tokens
-        
+            # Skip special tokens
+            if token.startswith('<') and token.endswith('>'):
+                continue
+            
+            tokens.append(token)
+    
+        # Join tokens and handle subwords
+        text = ''
+        for i, token in enumerate(tokens):
+            if token.startswith('##'):
+                # Append subword without space
+                text += token[2:]
+            elif token.startswith('▁'):
+                # SentencePiece style
+                if i > 0:
+                    text += ' '
+                text += token[1:]
+            else:
+                # Regular token
+                if i > 0 and not tokens[i-1].startswith('##'):
+                    text += ' '
+                text += token
+    
         return text.strip()
+
+    def evaluate_dataset_streaming(self, 
+                                test_data_iterator,
+                                max_samples: Optional[int] = None,
+                                batch_size: int = 32,
+                                cache_translations: bool = True) -> Dict[str, Any]:
+        """
+        Evaluate with streaming to handle large datasets efficiently
+    
+        Args:
+            test_data_iterator: Iterator that yields TranslationPair objects
+            max_samples: Maximum number of samples to evaluate
+            batch_size: Batch size for processing
+            cache_translations: Whether to cache translations
+        
+        Returns:
+            Dictionary with evaluation metrics
+        """
+        logger.info(f"📊 Starting streaming evaluation...")
+    
+        predictions = []
+        references = []
+        source_texts = []
+    
+        # Streaming cache
+        cache = {} if cache_translations else None
+    
+        # Batch accumulator
+        batch_buffer = []
+        sample_count = 0
+    
+        # Metrics accumulators for streaming calculation
+        running_metrics = {
+            'total_loss': 0.0,
+            'total_correct': 0,
+            'total_chars': 0,
+            'correct_chars': 0
+        }
+    
+        try:
+            for pair in test_data_iterator:
+                batch_buffer.append(pair)
+            
+                # Process when batch is full
+                if len(batch_buffer) >= batch_size:
+                    batch_results = self._process_batch(batch_buffer, cache)
+                
+                    # Update running metrics
+                    self._update_streaming_metrics(batch_results, running_metrics)
+                
+                    # Store results for final calculation
+                    predictions.extend(batch_results['predictions'])
+                    references.extend(batch_results['references'])
+                    source_texts.extend(batch_results['sources'])
+                    
+                    # Clear batch buffer
+                    batch_buffer = []
+                    sample_count += batch_size
+                
+                    # Log progress periodically
+                    if sample_count % 1000 == 0:
+                        interim_bleu = self._calculate_interim_bleu(
+                            predictions[-1000:], 
+                            references[-1000:]
+                        )
+                        logger.info(f"Processed {sample_count} samples, "
+                                  f"recent BLEU: {interim_bleu:.2f}")
+                
+                    # Memory management
+                    if sample_count % 5000 == 0:
+                        import gc
+                        gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                
+                    # Check max samples
+                    if max_samples and sample_count >= max_samples:
+                        break
+        
+            # Process remaining batch
+            if batch_buffer:
+                batch_results = self._process_batch(batch_buffer, cache)
+                self._update_streaming_metrics(batch_results, running_metrics)
+                predictions.extend(batch_results['predictions'])
+                references.extend(batch_results['references'])
+                source_texts.extend(batch_results['sources'])
+                sample_count += len(batch_buffer)
+        
+            # Calculate final metrics
+            logger.info(f"📊 Calculating final metrics on {sample_count} samples...")
+        
+            # For streaming, we might want to calculate metrics on a subset
+            # to avoid memory issues with very large datasets
+            if len(predictions) > 10000:
+                # Sample for final metric calculation
+                logger.info("Dataset too large, sampling 10000 examples for final metrics")
+                indices = np.random.choice(len(predictions), 10000, replace=False)
+                sampled_predictions = [predictions[i] for i in indices]
+                sampled_references = [references[i] for i in indices]
+                sampled_sources = [source_texts[i] for i in indices]
+            else:
+                sampled_predictions = predictions
+                sampled_references = references
+                sampled_sources = source_texts
+        
+            metrics = self._calculate_metrics(sampled_predictions, sampled_references, sampled_sources)
+        
+            # Add streaming-specific metrics
+            metrics['streaming_metrics'] = {
+                'total_samples': sample_count,
+                'avg_char_accuracy': running_metrics['correct_chars'] / max(running_metrics['total_chars'], 1)
+            }
+        
+            # Save cache if enabled
+            if cache and cache_translations:
+                cache_file = Path("streaming_evaluation_cache.json")
+                with open(cache_file, 'w') as f:
+                    json.dump(cache, f, ensure_ascii=False, indent=2)
+                logger.info(f"💾 Saved translation cache to {cache_file}")
+        
+            return metrics
+        
+        except Exception as e:
+            logger.error(f"❌ Streaming evaluation failed: {e}")
+            raise
+
+    def _process_batch(self, batch: List[TranslationPair], cache: Optional[Dict] = None) -> Dict[str, List]:
+        """Process a batch of translation pairs"""
+        predictions = []
+        references = []
+        sources = []
+    
+        for pair in batch:
+            # Check cache
+            cache_key = f"{pair.source_lang}-{pair.target_lang}:{pair.source}"
+        
+            if cache and cache_key in cache:
+                translation = cache[cache_key]
+            else:
+                # Translate
+                translation = self.translate(
+                    pair.source, 
+                    pair.source_lang, 
+                    pair.target_lang
+                )
+            
+                if cache is not None:
+                    cache[cache_key] = translation
+        
+            predictions.append(translation)
+            references.append(pair.target)
+            sources.append(pair.source)
+    
+        return {
+            'predictions': predictions,
+            'references': references,
+            'sources': sources
+        }
+
+    def _update_streaming_metrics(self, batch_results: Dict, running_metrics: Dict):
+        """Update running metrics for streaming evaluation"""
+        for pred, ref in zip(batch_results['predictions'], batch_results['references']):
+            # Character-level accuracy
+            for c1, c2 in zip(pred, ref):
+                running_metrics['total_chars'] += 1
+                if c1 == c2:
+                    running_metrics['correct_chars'] += 1
+
+    def _calculate_interim_bleu(self, predictions: List[str], references: List[str]) -> float:
+        """Calculate BLEU score for interim results"""
+        if SACREBLEU_AVAILABLE:
+            try:
+                bleu = corpus_bleu(predictions, [references])
+                return bleu.score
+            except:
+                return 0.0
+        return 0.0
+
+    # Adding streaming support to file evaluation:
+    def evaluate_file_streaming(self, test_file: str, 
+                               file_format: str = 'tsv',
+                               chunk_size: int = 1000) -> Dict[str, Any]:
+        """Evaluate from a test file using streaming"""
+    
+        def file_iterator():
+            """Generator that yields TranslationPair objects from file"""
+            with open(test_file, 'r', encoding='utf-8') as f:
+                for line_no, line in enumerate(f, 1):
+                    if file_format == 'tsv':
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 4:
+                            yield TranslationPair(
+                                source=parts[0],
+                                target=parts[1],
+                                source_lang=parts[2],
+                                target_lang=parts[3]
+                            )
+                    elif file_format == 'json':
+                        data = json.loads(line)
+                        yield TranslationPair(**data)
+                
+                    # Log progress
+                    if line_no % 10000 == 0:
+                        logger.info(f"Read {line_no} lines from {test_file}")
+    
+        return self.evaluate_dataset_streaming(file_iterator())
     
     def evaluate_dataset(self, 
                         test_data: List[TranslationPair],
@@ -397,6 +691,59 @@ class TranslationEvaluator:
         
         return report
 
+    def compare_models(self, 
+                       models: List[Tuple[torch.nn.Module, torch.nn.Module, str]],
+                       test_data: List[TranslationPair]) -> Optional['pd.DataFrame']:
+        """Compare multiple models on the same test set"""
+        if not PANDAS_AVAILABLE:
+            logger.warning("pandas not available for model comparison")
+            return None
+            
+        import pandas as pd
+    
+        results = []
+    
+        for encoder, decoder, model_name in models:
+            # Temporarily swap models
+            old_encoder, old_decoder = self.encoder, self.decoder
+            self.encoder, self.decoder = encoder, decoder
+        
+            # Evaluate
+            metrics = self.evaluate_dataset(test_data)
+            metrics['model'] = model_name
+            results.append(metrics)
+        
+            # Restore original models
+            self.encoder, self.decoder = old_encoder, old_decoder
+    
+        # Create comparison dataframe
+        df = pd.DataFrame(results)
+        return df 
+
+    def profile_memory_usage(self, test_data: List[TranslationPair]) -> Dict[str, float]:
+        """Profile memory usage during evaluation"""
+        import tracemalloc
+        import gc
+    
+        gc.collect()
+        tracemalloc.start()
+    
+        # Get baseline
+        baseline = tracemalloc.get_traced_memory()[0]
+    
+        # Run evaluation
+        metrics = self.evaluate_dataset(test_data[:100])  # Small sample
+    
+        # Get peak memory
+        current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+    
+        return {
+            'baseline_mb': baseline / 1024 / 1024,
+            'peak_mb': peak / 1024 / 1024,
+            'increase_mb': (peak - baseline) / 1024 / 1024,
+            'per_sample_kb': (peak - baseline) / 1024 / len(test_data[:100])
+        }    
 
 # Standalone evaluation function
 def evaluate_translation_quality(encoder_model, decoder_model, vocab_manager, test_data_path: str) -> Dict[str, Any]:

@@ -1,0 +1,26 @@
+# config/training_rtx3060.yaml
+
+# RTX 3060-specific configuration (12GB memory, Ampere Architecture)
+# Inherits from base.yaml. Heavily optimized for memory constraints.
+
+_base_: base.yaml
+
+# Very small batch size is necessary for the 12GB VRAM.
+training:
+  batch_size: 8
+  accumulation_steps: 16 # Heavy accumulation to reach the target batch size.
+  effective_batch_size: 128
+
+  lr: 2e-4 # A lower, more stable learning rate.
+
+  # Maximum memory saving techniques are enabled.
+  gradient_checkpointing: true
+  cpu_offload: true             # Essential to offload optimizer states.
+  activation_offload: true      # Offload activations to CPU to save more VRAM.
+  compile_mode: "reduce-overhead"
+  dtype: bfloat16               # Ampere architecture supports bfloat16.
+  max_split_size: 128           # Use smaller memory blocks to reduce fragmentation.
+  empty_cache_freq: 50          # Clean up GPU memory more often.
+
+distributed:
+  gradient_as_bucket_view: false

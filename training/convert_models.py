@@ -25,19 +25,48 @@ class ModelConverter:
             model = torch.load(model_path, map_location='cpu')
             model.eval()
             
-            # Apply torch.compile if available
-            if hasattr(torch, 'compile') and use_dynamo:
-                logger.info("Using torch.compile for optimization...")
-                model = torch.compile(model)
-            
-            # Modern ONNX export with dynamo
-            if use_dynamo and hasattr(torch.onnx, 'export') and torch.__version__ >= "2.5":
-                logger.info("Using modern dynamo-based ONNX export...")
+            # Check PyTorch version and use appropriate export
+            pytorch_version = tuple(map(int, torch.__version__.split('.')[:2]))
+        
+            if pytorch_version >= (2, 1) and use_dynamo:
+                # Use new torch.onnx.dynamo_export for PyTorch 2.1+
+                try:
+                    logger.info("Using torch.onnx.dynamo_export (PyTorch 2.1+)...")
+                
+                    # Create export program
+                    export_program = torch.export.export(
+                        model,
+                        (dummy_input,),
+                        dynamic_shapes={"input_ids": {0: "batch", 1: "sequence"}}
+                    )
+                
+                    # Convert to ONNX
+                    import torch.onnx._dynamo as dynamo_onnx
+                
+                    dynamo_onnx.export(
+                       export_program,
+                       dummy_input,
+                       output_path,
+                       opset_version=opset_version,
+                       input_names=['input_ids'],
+                       output_names=['encoder_output'],
+                       dynamic_axes={
+                           'input_ids': {0: 'batch', 1: 'sequence'},
+                           'encoder_output': {0: 'batch', 1: 'sequence'}
+                        }
+                    )
+                
+                except Exception as e:
+                    logger.warning(f"New export failed: {e}, falling back to legacy export")
+                    use_dynamo = False
+        
+            if not use_dynamo or pytorch_version < (2, 1):
+                # Use legacy export without deprecated parameters
+                logger.info("Using legacy ONNX export...")
                 torch.onnx.export(
                     model,
                     dummy_input,
                     output_path,
-                    dynamo=True,  # Use new exporter
                     opset_version=opset_version,
                     do_constant_folding=True,
                     input_names=['input_ids'],
@@ -46,26 +75,15 @@ class ModelConverter:
                         'input_ids': {0: 'batch', 1: 'sequence'},
                         'encoder_output': {0: 'batch', 1: 'sequence'}
                     },
-                    report=True,  # Generate analysis report
-                    verify=True   # Verify the export
+                    # Removed deprecated parameters:
+                    # operator_export_type - removed
+                    # enable_onnx_checker - removed
+                    # keep_initializers_as_inputs - removed
+                    export_params=True,
+                    verbose=False
                 )
-            else:
-                # Fallback to legacy export (without deprecated parameters)
-                logger.warning("Using legacy ONNX export (consider upgrading PyTorch)")
-                torch.onnx.export(
-                    model,
-                    dummy_input,
-                    output_path,
-                    opset_version=opset_version,
-                    do_constant_folding=True,
-                    input_names=['input_ids'],
-                    output_names=['encoder_output'],
-                    dynamic_axes={
-                        'input_ids': {0: 'batch', 1: 'sequence'},
-                        'encoder_output': {0: 'batch', 1: 'sequence'}
-                    }
-                    # Removed deprecated operator_export_type
-                )
+        
+            logger.info(f"✅ ONNX model exported to {output_path}")
             
             # Optimize with onnx-simplifier if available
             try:
@@ -79,7 +97,7 @@ class ModelConverter:
                     onnx.save(model_sim, output_path)
                     logger.info("ONNX model optimized successfully")
                 else:
-                    logger.warning("ONNX optimization failed validation")
+                    logger.warning("⚠️ ONNX optimization failed validation")
                     
             except ImportError:
                 logger.warning("onnx-simplifier not available, skipping optimization")
@@ -87,7 +105,9 @@ class ModelConverter:
             return True
             
         except Exception as e:
-            logger.error(f"ONNX export failed: {e}")
+            logger.error(f"❌ ONNX export failed: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     @staticmethod

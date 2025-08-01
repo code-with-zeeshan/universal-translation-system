@@ -36,6 +36,15 @@ UniversalEncoder::UniversalEncoder(const std::string& model_path) {
                 OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags)
             );
         #endif
+
+        // Add proper platform detection
+        #ifdef __ANDROID__
+            #include <android/log.h>
+            #define LOG_TAG "UniversalEncoder"
+            #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+        #else
+            #define LOGI(...) std::cout << __VA_ARGS__ << std::endl
+        #endif
         
         // Create session
         session = std::make_unique<Ort::Session>(env, model_path.c_str(), session_options);

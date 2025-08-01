@@ -1,0 +1,29 @@
+# config/training_rtx4090.yaml
+
+# RTX 4090-specific configuration (24GB memory, Ada Lovelace Architecture)
+# Inherits from base.yaml. More efficient than the 3090.
+
+_base_: base.yaml
+
+# The 4090's efficiency allows for a larger batch size than the 3090.
+training:
+  batch_size: 24
+  gradient_accumulation: 5 # Effective batch size of 120 (close to 128)
+  effective_batch_size: 120
+
+# Can handle a slightly higher learning rate due to architecture improvements.
+optimization:
+  learning_rate: 4e-4
+
+# 24GB is still limited for large models, so keep gradient checkpointing.
+# CPU offload is not necessary due to the fast VRAM.
+memory:
+  gradient_checkpointing: true
+  cpu_offload: false
+  activation_offload: false
+  compile_mode: "reduce-overhead" # A good balance for high-end consumer cards.
+  dtype: bfloat16                # Excellent bfloat16 support.
+  max_split_size: 256
+
+distributed:
+  gradient_as_bucket_view: false

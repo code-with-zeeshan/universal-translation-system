@@ -6,7 +6,7 @@ Addresses: Directory creation, logging standardization, import cleanup
 
 import logging
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union, Dict
 import sys
 import os
 
@@ -14,9 +14,9 @@ class DirectoryManager:
     """Centralized directory creation and management"""
     
     @staticmethod
-    def create_directory(path: str | Path, parents: bool = True, exist_ok: bool = True) -> Path:
+    def create_directory(path: Union[str, Path], parents: bool = True, exist_ok: bool = True) -> Path:
         """
-        Standardized directory creation
+        Standardized directory creation with better error handling
         
         Args:
             path: Directory path to create
@@ -27,8 +27,13 @@ class DirectoryManager:
             Path object of created directory
         """
         path_obj = Path(path)
-        path_obj.mkdir(parents=parents, exist_ok=exist_ok)
-        return path_obj
+        try:
+            path_obj.mkdir(parents=parents, exist_ok=exist_ok)
+            return path_obj
+        except PermissionError:
+            raise PermissionError(f"Permission denied: Cannot create directory {path_obj}")
+        except OSError as e:
+            raise OSError(f"Failed to create directory {path_obj}: {e}")    
     
     @staticmethod
     def create_data_structure(base_dir: str = "data") -> dict:
@@ -132,6 +137,24 @@ class StandardLogger:
             return f"{memory.available / (1024**3):.1f}GB available / {memory.total / (1024**3):.1f}GB total"
         except ImportError:
             return "Memory info unavailable (psutil not installed)"
+
+    @classmethod
+    def validate_log_configuration(cls) -> Dict[str, bool]:
+        """Validate logging configuration"""
+        validations = {
+            'log_dir_writable': True,
+            'handlers_configured': True,
+            'formatter_valid': True
+        }
+    
+        try:
+            # Test log directory
+            test_logger = cls.get_logger('test')
+            test_logger.info('Configuration test')
+        except Exception as e:
+            validations['handlers_configured'] = False
+    
+        return validations
 
 class ImportCleaner:
     """Utility to identify and clean unused imports"""

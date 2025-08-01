@@ -12,7 +12,7 @@ setup(
     description="High-performance translation decoder service for Universal Translation System",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/universal-decoder-node",
+    url="https://github.com/code-with-zeeshan/universal-decoder-node",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",

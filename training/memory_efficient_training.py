@@ -49,6 +49,11 @@ class MemoryOptimizedTrainer:
         self.model = model
         self.config = config or MemoryConfig()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # Apply GPU optimizations
+        from utils.gpu_utils import optimize_gpu_memory
+        optimize_gpu_memory()
+
         self.step = 0
         self.memory_tracker = MemoryTracker() if self.config.profile_memory else None
         
@@ -68,20 +73,10 @@ class MemoryOptimizedTrainer:
         
         # 1. CUDA memory management
         if torch.cuda.is_available():
-            # Enable memory pool and set fraction
-            torch.cuda.set_per_process_memory_fraction(0.95)
-            
-            # Set memory split size to reduce fragmentation
-            os.environ['PYTORCH_CUDA_ALLOC_CONF'] = (
-                f'max_split_size_mb:{self.config.max_split_size},'
-                f'expandable_segments:True,'
-                f'roundup_power2_divisions:16'
-            )
-            
             # Enable expandable segments (PyTorch 2.0+)
-            torch.cuda.empty_cache()
+            torch.cuda.empty_cache() # Clear cache after GPU optimization
             
-            # Set memory allocator backend
+            # Set memory allocator backend if available
             if hasattr(torch.cuda, 'CUDAPluggableAllocator'):
                 torch.cuda.set_allocator_settings('expandable_segments:True')
         
@@ -170,13 +165,138 @@ class MemoryOptimizedTrainer:
             logger.warning(f"⚠️ Could not compile model: {e}")
     
     def _enable_nested_tensors(self):
-        """Enable nested tensor support for variable length sequences"""
+        """Enable nested tensor support for variable length sequences with full implementation"""
         try:
-            if hasattr(torch, 'nested'):
-                torch.nested.set_use_nested_tensor(True)
-                logger.info("✅ Nested tensor support enabled")
+            # Check PyTorch version
+            pytorch_version = tuple(map(int, torch.__version__.split('.')[:2]))
+        
+            if pytorch_version >= (2, 0):
+                # Modern nested tensor support
+                if hasattr(torch, '_nested_tensor_from_mask'):
+                   # Enable nested tensors globally
+                   torch._C._set_nested_tensor_enabled(True)
+                
+                   # Patch model forward to use nested tensors
+                   self._patch_model_for_nested_tensors()
+                
+                   logger.info("✅ Nested tensor support enabled (PyTorch 2.0+)")
+                else:
+                    logger.warning("⚠️ Nested tensor API not found in this PyTorch version")
+        
+            elif pytorch_version >= (1, 13):
+                # Legacy nested tensor support
+                try:
+                    import torch.nested
+                    torch.nested.nested_tensor_from_mask = True
+                    logger.info("✅ Legacy nested tensor support enabled (PyTorch 1.13+)")
+                except ImportError:
+                    logger.warning("⚠️ Nested tensor module not available")
+            else:
+                logger.warning(f"⚠️ PyTorch {torch.__version__} doesn't support nested tensors")
+            
         except Exception as e:
             logger.warning(f"⚠️ Could not enable nested tensors: {e}")
+
+    def _patch_model_for_nested_tensors(self):
+        """Patch model to use nested tensors for variable-length sequences"""
+    
+        original_forward = self.model.forward
+    
+        def nested_forward(input_ids, attention_mask=None, **kwargs):
+            """Forward pass with nested tensor conversion"""
+        
+            # Convert to nested tensor if we have variable lengths
+            if attention_mask is not None and self.config.enable_nested_tensor:
+                try:
+                    # Get actual sequence lengths
+                    seq_lengths = attention_mask.sum(dim=1)
+                
+                    # Check if sequences have variable lengths
+                    if seq_lengths.min() != seq_lengths.max():
+                        # Convert to nested tensor
+                        nested_input = self._create_nested_tensor(input_ids, seq_lengths)
+                    
+                        # Call original forward with nested tensor
+                        # Note: Model needs to support nested tensors
+                        return original_forward(nested_input, attention_mask=None, **kwargs)
+                except Exception as e:
+                    logger.debug(f"Nested tensor conversion failed: {e}, using regular tensors")
+        
+            # Fallback to regular forward
+            return original_forward(input_ids, attention_mask=attention_mask, **kwargs)
+    
+        self.model.forward = nested_forward
+        logger.info("✅ Model patched for nested tensor support")
+
+    def _create_nested_tensor(self, padded_tensor: torch.Tensor, lengths: torch.Tensor) -> torch.Tensor:
+        """Create nested tensor from padded tensor and lengths"""
+    
+        batch_size = padded_tensor.size(0)
+        device = padded_tensor.device
+    
+        # Create list of unpadded tensors
+        tensor_list = []
+        for i in range(batch_size):
+            length = lengths[i].item()
+            unpadded = padded_tensor[i, :length]
+            tensor_list.append(unpadded)
+    
+        # Create nested tensor
+        if hasattr(torch, 'nested_tensor'):
+            # Modern API
+            nested = torch.nested_tensor(tensor_list, device=device)
+        else:
+            # Legacy API
+            nested = torch._nested_tensor_from_tensor_list(
+                tensor_list,
+                dtype=padded_tensor.dtype,
+                device=device
+            )
+    
+        return nested
+
+    # Add this utility method for converting back:
+    def _nested_to_padded(self, nested_tensor: torch.Tensor, 
+                     padding_value: int = 0,
+                     max_length: Optional[int] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Convert nested tensor back to padded tensor with mask"""
+    
+        if not hasattr(nested_tensor, 'to_padded_tensor'):
+            # Manual conversion for older versions
+            tensors = nested_tensor.unbind()
+        
+            # Find max length
+            if max_length is None:
+                max_length = max(t.size(0) for t in tensors)
+        
+            # Create padded tensor
+            batch_size = len(tensors)
+            padded_shape = (batch_size, max_length) + tensors[0].shape[1:]
+            padded = torch.full(padded_shape, padding_value, 
+                               dtype=tensors[0].dtype, device=tensors[0].device)
+        
+            # Create mask
+            mask = torch.zeros(batch_size, max_length, dtype=torch.bool, device=tensors[0].device)
+        
+            # Fill in values
+            for i, t in enumerate(tensors):
+                length = t.size(0)
+                padded[i, :length] = t
+                mask[i, :length] = True
+        
+            return padded, mask
+        else:
+            # Modern API
+            padded = nested_tensor.to_padded_tensor(padding_value, max_length)
+        
+            # Create mask from nested tensor lengths
+            lengths = nested_tensor.tensor_lengths()
+            batch_size = padded.size(0)
+            max_len = padded.size(1)
+        
+            mask = torch.arange(max_len, device=padded.device).expand(batch_size, max_len) < lengths.unsqueeze(1)
+        
+            return padded, mask
     
     def create_optimized_dataloader(self, dataset, batch_size: int, shuffle: bool = True,
                                   num_workers: int = None) -> DataLoader:
@@ -220,11 +340,15 @@ class MemoryOptimizedTrainer:
     def train_step(self, batch: Dict[str, torch.Tensor], 
                    model: nn.Module, optimizer: torch.optim.Optimizer,
                    loss_fn: Callable) -> float:
-        """Optimized training step with all modern techniques"""
+        """Optimized training step with nested tensor support"""
         
         # Memory profiling
         if self.memory_tracker:
             self.memory_tracker.start_step()
+
+        # Convert batch to nested tensors if enabled
+        if self.config.enable_nested_tensor and 'attention_mask' in batch:
+            batch = self._convert_batch_to_nested(batch)
         
         # Move batch to device with non_blocking
         batch = {k: v.to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v 
@@ -269,6 +393,29 @@ class MemoryOptimizedTrainer:
             self.memory_tracker.end_step()
         
         return loss.item()
+
+    def _convert_batch_to_nested(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        """Convert batch to use nested tensors where applicable"""
+    
+        converted_batch = batch.copy()
+    
+        # Check if we have variable length sequences
+        if 'attention_mask' in batch:
+            seq_lengths = batch['attention_mask'].sum(dim=1)
+        
+            if seq_lengths.min() != seq_lengths.max():
+                # Convert input_ids to nested tensor
+                for key in ['input_ids', 'labels', 'decoder_input_ids']:
+                    if key in batch:
+                        converted_batch[key] = self._create_nested_tensor(batch[key], seq_lengths)
+
+                # Remove attention mask as it's encoded in nested tensor
+                if 'attention_mask' in converted_batch:
+                    del converted_batch['attention_mask']
+            
+                logger.debug("Converted batch to nested tensors")
+    
+        return converted_batch       
     
     @torch.inference_mode()  # Modern replacement for torch.no_grad()
     def validation_step(self, batch: Dict[str, torch.Tensor],
@@ -392,6 +539,25 @@ class MemoryOptimizedTrainer:
                 self.memory_tracker.stop_profiling()
         else:
             yield
+
+    # In MemoryOptimizedTrainer
+    def _select_amp_dtype(self) -> torch.dtype:
+        """Automatically select best AMP dtype"""
+        if not torch.cuda.is_available():
+            return torch.float32
+        
+        # Check GPU capabilities
+        device_capability = torch.cuda.get_device_capability()
+    
+        # Use BF16 for newer GPUs (A100, H100)
+        if device_capability[0] >= 8:
+            if torch.cuda.is_bf16_supported():
+                logger.info("Using BFloat16 for AMP (Ampere or newer GPU)")
+                return torch.bfloat16
+    
+        # Use FP16 for older GPUs
+        logger.info("Using Float16 for AMP")
+        return torch.float16        
 
 
 class MemoryTracker:

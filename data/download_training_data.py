@@ -7,6 +7,7 @@ Maintains backwards compatibility for standalone execution
 from pathlib import Path
 from typing import List, Dict
 from concurrent.futures import ProcessPoolExecutor
+from utils.security import validate_model_source, safe_load_model
 import torch
 from tqdm import tqdm
 
@@ -113,17 +114,24 @@ class MultilingualDataCollector:
         return stats
     
     def _download_huggingface_data(self, output_dir: Path) -> int:
-        """Download from HuggingFace with streaming"""
+        """Download from HuggingFace with streaming and security validation"""
         self.logger.info("📥 Downloading HuggingFace datasets...")
         downloaded_count = 0
+
+        # Validate model sources first
+        for dataset_name in ['facebook/flores', 'facebook/nllb-seed']:
+            if not self.validate_model_source(dataset_name):
+                self.logger.warning(f"Skipping untrusted dataset: {dataset_name}")
+                continue
         
-        # FLORES-200
+        # FLORES-200 with security check
         if INTEGRATED_MODE:
             dataset = self.dataset_loader.load_dataset_safely(
                 'facebook/flores',
                 config_name='flores200_sacrebleu_tokenized_xlm_roberta_base',
                 split='dev',
-                streaming=True
+                streaming=True,
+                trust_remote_code=False  # Explicitly set to False
             )
             if dataset:
                 self.data_processor.process_streaming_dataset(
@@ -139,7 +147,7 @@ class MultilingualDataCollector:
                     name='flores200_sacrebleu_tokenized_xlm_roberta_base',
                     split='dev',
                     streaming=True,
-                    trust_remote_code=True
+                    trust_remote_code=False
                 )
                 self._process_streaming_dataset_fallback(flores, output_dir / 'flores200')
                 downloaded_count += 1
@@ -160,7 +168,8 @@ class MultilingualDataCollector:
                     dataset = self.dataset_loader.load_dataset_safely(
                         'facebook/nllb-seed',
                         config_name=pair_str,
-                        streaming=True
+                        streaming=True,
+                        trust_remote_code=False  # Explicitly set to False
                     )
                     if dataset:
                         target_size = self.training_distribution.get(pair_str, 100000)
@@ -177,7 +186,7 @@ class MultilingualDataCollector:
                         'facebook/nllb-seed',
                         pair_str,
                         streaming=True,
-                        trust_remote_code=True
+                        trust_remote_code=False
                     )
                     self._process_streaming_dataset_fallback(
                         dataset, output_dir / f'nllb_{pair_str}'
@@ -192,7 +201,8 @@ class MultilingualDataCollector:
                 dataset = self.dataset_loader.load_dataset_safely(
                     'yhavinga/ccmatrix',
                     config_name='multilingual',
-                    streaming=True
+                    streaming=True,
+                    trust_remote_code=False  # Explicitly set to False
                 )
                 if dataset:
                     self.data_processor.process_streaming_dataset(
@@ -202,7 +212,9 @@ class MultilingualDataCollector:
             else:
                 from datasets import load_dataset
                 ccmatrix = load_dataset(
-                    'yhavinga/ccmatrix', 'multilingual', streaming=True, trust_remote_code=True
+                    'yhavinga/ccmatrix', 'multilingual', 
+                    streaming=True, 
+                    trust_remote_code=False
                 )
                 self._process_streaming_dataset_fallback(ccmatrix, output_dir / 'ccmatrix')
                 downloaded_count += 1
@@ -221,7 +233,8 @@ class MultilingualDataCollector:
                 if INTEGRATED_MODE:
                     dataset = self.dataset_loader.load_dataset_safely(
                         dataset_name,
-                        streaming=True
+                        streaming=True,
+                        trust_remote_code=False  # Explicitly set to False
                     )
                     if dataset:
                         self.data_processor.process_streaming_dataset(
@@ -231,7 +244,7 @@ class MultilingualDataCollector:
                         downloaded_count += 1
                 else:
                     from datasets import load_dataset
-                    dataset = load_dataset(dataset_name, streaming=True, trust_remote_code=True)
+                    dataset = load_dataset(dataset_name, streaming=True, trust_remote_code=False)
                     self._process_streaming_dataset_fallback(
                         dataset, opus_dir / dataset_name.split('/')[-1]
                     )
@@ -251,7 +264,8 @@ class MultilingualDataCollector:
                 if INTEGRATED_MODE:
                     dataset = self.dataset_loader.load_dataset_safely(
                         dataset_name,
-                        streaming=True
+                        streaming=True,
+                        trust_remote_code=False  # Explicitly set to False
                     )
                     if dataset:
                         self.data_processor.process_streaming_dataset(
@@ -261,7 +275,7 @@ class MultilingualDataCollector:
                         downloaded_count += 1
                 else:
                     from datasets import load_dataset
-                    dataset = load_dataset(dataset_name, streaming=True, trust_remote_code=True)
+                    dataset = load_dataset(dataset_name, streaming=True, trust_remote_code=False)
                     self._process_streaming_dataset_fallback(
                         dataset, wmt_dir / dataset_name
                     )
@@ -287,7 +301,8 @@ class MultilingualDataCollector:
                 )
                 batch_data = []
                 if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                    del batch_data  # Delete tensors first
+                    torch.cuda.empty_cache()  # Then clear cache
         
         # Save remaining data
         if batch_data:
@@ -339,7 +354,8 @@ class MultilingualDataCollector:
                     dataset = self.dataset_loader.load_dataset_safely(
                         dataset_name,
                         config_name=pair_str,
-                        streaming=True
+                        streaming=True,
+                        trust_remote_code=False  # Explicitly set to False
                     )
                     if dataset:
                         self.data_processor.process_streaming_dataset(
@@ -354,7 +370,7 @@ class MultilingualDataCollector:
                         dataset_name,
                         pair_str,
                         streaming=True,
-                        trust_remote_code=True
+                        trust_remote_code=False
                     )
                     self._process_streaming_dataset_fallback(
                         dataset,

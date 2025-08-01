@@ -5,7 +5,7 @@ setup(
     name='universal-translation-system',
     version='0.1.0',
     description='Universal Translation System: Edge encoding, cloud decoding, multi-platform SDKs',
-    author='Your Name',
+    author='Mohammad Zeeshan',
     author_email='your.email@example.com',
     url='https://github.com/code-with-zeeshan/universal-translation-system',
     packages=find_packages(),

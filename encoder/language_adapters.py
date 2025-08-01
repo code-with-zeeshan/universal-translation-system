@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 from typing import Dict, Optional, List
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 class LanguageAdapter(nn.Module):
     """Lightweight language-specific adapter (2MB each)"""
@@ -66,6 +69,12 @@ class AdapterUniversalEncoder(nn.Module):
         # Adapter configuration
         self.adapter_dim = 64
         self.hidden_dim = 1024
+
+        if hasattr(self.base_encoder, 'hidden_dim'):
+            self.hidden_dim = self.base_encoder.hidden_dim
+        else:
+            self.hidden_dim = 1024  # Default
+            logger.warning("Base encoder missing hidden_dim attribute, using default 1024")
         
         # Track loaded adapters
         self.loaded_adapters = set()
@@ -167,7 +176,7 @@ class AdapterUniversalEncoder(nn.Module):
                 'num_layers': 6,
                 'vocab_size': 50000,
                 'quantization': quantization_mode,
-                'model_size_mb': sum_mb
+                'model_size_mb': size_mb
             }
         }, model_path)
         

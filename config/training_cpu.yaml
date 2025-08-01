@@ -1,0 +1,31 @@
+# config/training_cpu.yaml
+
+# CPU-only training configuration.
+# Inherits from base.yaml. For debugging, testing, and no-GPU environments.
+
+_base_: base.yaml
+
+# Small batch size to fit in system RAM.
+training:
+  batch_size: 4
+  gradient_accumulation: 1 # Accumulation is less relevant on CPU.
+  effective_batch_size: 4
+
+# Low learning rate for stable CPU training.
+optimization:
+  learning_rate: 1e-4
+
+# All GPU-specific memory optimizations are disabled.
+memory:
+  gradient_checkpointing: false # Not effective on CPU.
+  cpu_offload: false            # Irrelevant.
+  activation_offload: false     # Irrelevant.
+  compile_model: false          # torch.compile is primarily for GPUs.
+  dtype: float32                # CPU training must use float32.
+  use_flash_attention: false    # GPU-only feature.
+  use_fused_optimizer: false    # GPU-only feature.
+
+# Distributed training on CPU uses the 'gloo' backend.
+distributed:
+  backend: gloo # This must be changed from 'nccl' for CPU distributed training.
+  gradient_as_bucket_view: false

@@ -59,3 +59,15 @@ vocabulary_strategy:
 training:
   dynamic_vocabulary: true
   vocab_switch_penalty: 0.001  # Small penalty for switching
+
+data_version: "1.0.0"
+pipeline_version: "1.0.0"
+
+security:
+  trusted_model_sources:
+    - facebook/
+    - microsoft/
+    - google/
+    - Helsinki-NLP/
+  enable_path_validation: true
+  max_file_size_gb: 10

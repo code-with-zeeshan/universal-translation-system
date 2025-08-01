@@ -1,3 +1,4 @@
+# tools/register_decoder_node.py
 import json
 import requests
 import uuid

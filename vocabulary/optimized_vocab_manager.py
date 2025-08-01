@@ -7,6 +7,8 @@ import threading
 from typing import Dict, Optional, Tuple, List
 import numpy as np
 from utils.common_utils import StandardLogger
+from utils.exceptions import VocabularyError
+import zstandard as zstd
 
 class OptimizedVocabularyManager:
     """Memory-efficient vocabulary management for edge devices"""
@@ -93,14 +95,73 @@ class OptimizedVocabularyManager:
                 self.logger.info(f"Evicted {evict_pack} from cache")
             
             return pack
+
+    def _safe_unpack_msgpack(self, data: bytes, max_size: int = 50 * 1024 * 1024) -> dict:
+        """
+        Safely unpack MessagePack data with validation.
+    
+        Args:
+            data: MessagePack bytes to unpack
+            max_size: Maximum allowed size in bytes (default 50MB)
+        
+        Returns:
+            Unpacked dictionary
+        
+        Raises:
+            VocabularyError: If data is invalid or too large
+        """
+        import msgpack
+    
+        # Check data size
+        if len(data) > max_size:
+            raise VocabularyError(f"MessagePack data too large: {len(data)} bytes (max: {max_size})")
+    
+        try:
+            # Unpack with safety limits
+            unpacked = msgpack.unpackb(
+               data, 
+               raw=False,
+               strict_map_key=False,  # Allow non-string keys for compatibility
+               max_str_len=1024 * 1024,      # 1MB max string length
+               max_bin_len=10 * 1024 * 1024,  # 10MB max binary length
+               max_array_len=1000000,          # 1M max array length
+               max_map_len=1000000,            # 1M max map length
+               max_ext_len=1024 * 1024         # 1MB max extension type
+            )
+        
+            # Validate structure
+            if not isinstance(unpacked, dict):
+                raise VocabularyError(f"Expected dict, got {type(unpacked)}")
+        
+            # Validate required fields
+            required_fields = ['name', 'tokens', 'special_tokens']
+            missing_fields = [field for field in required_fields if field not in unpacked]
+            if missing_fields:
+                raise VocabularyError(f"Missing required fields: {missing_fields}")
+        
+            # Validate data types
+            if not isinstance(unpacked.get('tokens', {}), dict):
+                raise VocabularyError("'tokens' must be a dictionary")
+        
+            if not isinstance(unpacked.get('special_tokens', {}), dict):
+                raise VocabularyError("'special_tokens' must be a dictionary")
+        
+            return unpacked
+        
+        except msgpack.exceptions.UnpackException as e:
+            raise VocabularyError(f"Invalid MessagePack data: {e}")
+        except Exception as e:
+            logger.error(f"Failed to unpack MessagePack data: {e}")
+            raise
     
     def _load_pack_from_file(self, pack_name: str) -> 'EdgeVocabularyPack':
-        """Load vocabulary pack optimized for edge"""
+        """Load vocabulary pack optimized for edge with validation"""
         pack_file = self.pack_metadata[pack_name]['file']
         
         # For edge devices, load only essential tokens
         with open(pack_file, 'rb') as f:
-            full_data = msgpack.unpackb(f.read(), raw=False)
+            # Use safe unpacking
+            full_data = self._safe_unpack_msgpack(f.read())
         
         # Create edge-optimized version
         edge_pack = EdgeVocabularyPack(
@@ -169,6 +230,26 @@ class EdgeVocabularyPack:
         
         # Quick lookup structures
         self._build_lookup_structures()
+
+        # Add bloom filter for O(1) negative lookups
+        self._init_bloom_filter()
+
+    def _init_bloom_filter(self):
+        """Initialize bloom filter for fast token existence checks"""
+        try:
+            from pybloom_live import BloomFilter
+            self.bloom = BloomFilter(capacity=len(self.all_tokens) * 2, error_rate=0.001)
+            for token in self.all_tokens:
+                self.bloom.add(token)
+        except ImportError:
+            self.bloom = None  # Fallback to regular lookup
+    
+    def has_token(self, token: str) -> bool:
+        """Fast token existence check"""
+        if self.bloom:
+            if token not in self.bloom:
+                return False  # Definitely not present
+        return token in self.all_tokens
     
     def _build_lookup_structures(self):
         """Build efficient lookup structures"""
@@ -227,3 +308,23 @@ class EdgeVocabularyPack:
                 i += 1
         
         return subwords if subwords else [self.special_tokens['<unk>']]
+
+class CompressedVocabularyPack:
+    """Compressed vocabulary pack for ultra-low memory devices"""
+    
+    def __init__(self, pack: EdgeVocabularyPack):
+        # Compress token dictionary
+        self.compressed_tokens = zstd.compress(
+            msgpack.packb(pack.tokens),
+            level=3
+        )
+        self.special_tokens = pack.special_tokens  # Keep these uncompressed
+        self._decompressor = zstd.ZstdDecompressor()
+        self._tokens_cache = None
+    
+    @property
+    def tokens(self):
+        if self._tokens_cache is None:
+            compressed_data = self._decompressor.decompress(self.compressed_tokens)
+            self._tokens_cache = msgpack.unpackb(compressed_data)
+        return self._tokens_cache

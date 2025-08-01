@@ -8,6 +8,11 @@ from transformers import (
 )
 import warnings
 from typing import Optional, Dict, Any
+import logging
+from utils.security import validate_model_source, safe_load_model
+from utils.exceptions import TrainingError
+
+logger = logging.getLogger(__name__)
 
 class PretrainedModelBootstrapper:
     """Bootstrap our models from existing pretrained models - Updated for 2024/2025"""
@@ -19,28 +24,51 @@ class PretrainedModelBootstrapper:
         """Get appropriate device with proper error handling"""
         if device == "auto":
             if torch.cuda.is_available():
-                return torch.device("cuda")
-            elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                return torch.device("mps")
-            else:
-                return torch.device("cpu")
-        return torch.device(device)
+                # Check if CUDA is actually functional
+                try:
+                   torch.cuda.init()
+                   return torch.device("cuda")
+                except Exception as e:
+                    logger.warning(f"CUDA available but initialization failed: {e}")
+
+            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                try:
+                    # Test MPS functionality
+                    test_tensor = torch.ones(1).to('mps')
+                    return torch.device("mps")
+                except Exception as e:
+                    logger.warning(f"MPS available but test failed: {e}")
+            
+            return torch.device("cpu")
+        
+        # Validate requested device
+        try:
+            torch.zeros(1).to(device)
+            return torch.device(device)
+        except Exception as e:
+            logger.warning(f"Requested device '{device}' not available: {e}")
+            return torch.device("cpu")
     
     def create_encoder_from_pretrained(self, 
-                                     model_name: str = 'xlm-roberta-base',
-                                     output_path: str = 'models/universal_encoder_initial.pt') -> nn.Module:
-        """Create encoder using modern AutoModel patterns"""
+                                    model_name: str = 'xlm-roberta-base',
+                                    output_path: str = 'models/universal_encoder_initial.pt',
+                                    target_hidden_dim: int = 1024) -> nn.Module:
+        """Create encoder using modern AutoModel patterns with dimension adaptation"""
         
         print(f"🔄 Loading {model_name} with AutoModel...")
         
-        # Use AutoModel and AutoTokenizer for consistency
+        # Use safe loading with security validation
         try:
-            model = AutoModel.from_pretrained(
+            if not validate_model_source(model_name):
+                raise TrainingError(f"Untrusted model source: {model_name}")
+
+            model = safe_load_model(
                 model_name,
+                model_class=AutoModel,
                 torch_dtype=torch.float16 if self.device.type == "cuda" else torch.float32,
-                device_map="auto" if self.device.type == "cuda" else None,
-                trust_remote_code=False  # Security best practice
+                device_map="auto" if self.device.type == "cuda" else None
             )
+            
             tokenizer = AutoTokenizer.from_pretrained(
                 model_name,
                 use_fast=True,  # Use fast tokenizers
@@ -57,22 +85,33 @@ class PretrainedModelBootstrapper:
             pretrained_embeddings = model.embeddings.word_embeddings.weight.data
             vocab_size = tokenizer.vocab_size
             hidden_size = model.config.hidden_size
+            source_hidden_size = hidden_size
             
-            print(f"  - Embeddings: {pretrained_embeddings.shape}")
+            print(f"  - Source embeddings: {pretrained_embeddings.shape}")
             print(f"  - Vocab size: {vocab_size}")
-            print(f"  - Hidden size: {hidden_size}")
+            print(f"  - Source hidden size: {source_hidden_size}")
+            print(f"  - Target hidden size: {target_hidden_dim}")
             
         except AttributeError as e:
             print(f"❌ Error extracting embeddings: {e}")
             raise
+
+        # Adapt embeddings if dimensions don't match
+        if source_hidden_size != target_hidden_dim:
+            print(f"📏 Adapting embeddings from {source_hidden_size} to {target_hidden_dim}")
+            pretrained_embeddings = self._adapt_pretrained_embeddings(
+                pretrained_embeddings, source_hidden_size, target_hidden_dim
+            )
         
         # Create encoder with proper initialization
         from encoder.universal_encoder import UniversalEncoder
         
         our_encoder = UniversalEncoder(
             max_vocab_size=min(50000, vocab_size),
-            hidden_dim=hidden_size,
+            hidden_dim=target_hidden_dim,  # Use target dimension
             num_layers=6,
+            num_heads=16 if target_hidden_dim >= 768 else 8,  # Adjust heads based on dim
+            dropout=0.1,
             device=self.device
         )
         
@@ -86,18 +125,28 @@ class PretrainedModelBootstrapper:
             if hasattr(our_encoder, 'embedding_layer'):
                 our_encoder.embedding_layer = nn.Embedding(
                     num_tokens_to_copy, 
-                    hidden_size,
+                    target_hidden_dim,
                     device=self.device
                 )
                 our_encoder.embedding_layer.weight.data[:num_tokens_to_copy] = \
                     pretrained_embeddings[:num_tokens_to_copy].to(self.device)
 
-                if hidden_size != 1024:  # My target dimension
-                    logger.info(f"Adapting embeddings from {hidden_size} to 1024 dimensions")
-                    pretrained_embeddings = self._adapt_pretrained_embeddings(
-                        pretrained_embeddings, hidden_size, 1024
-                    )
-                    hidden_size = 1024  # Update for encoder creation   
+            # Also try to copy transformer weights if dimensions match
+            if source_hidden_size == target_hidden_dim and hasattr(model, 'encoder'):
+                try:
+                    # Copy layer weights where possible
+                    for i, layer in enumerate(model.encoder.layer[:6]):  # First 6 layers
+                        if hasattr(our_encoder, f'layer_{i}'):
+                            our_layer = getattr(our_encoder, f'layer_{i}')
+                            # Copy attention weights
+                            if hasattr(layer, 'attention') and hasattr(our_layer, 'attention'):
+                                our_layer.attention.load_state_dict(layer.attention.state_dict())
+                            # Copy FFN weights
+                            if hasattr(layer, 'intermediate') and hasattr(our_layer, 'intermediate'):
+                                our_layer.intermediate.load_state_dict(layer.intermediate.state_dict())
+                    print("✅ Transferred transformer layer weights")
+                except Exception as e:
+                    print(f"⚠️  Could not transfer transformer weights: {e}")  
         
         # Apply torch.compile for better performance (PyTorch 2.0+)
         if hasattr(torch, 'compile'):
@@ -111,42 +160,133 @@ class PretrainedModelBootstrapper:
             'model_state_dict': our_encoder.state_dict(),
             'config': {
                 'base_model': model_name,
-                'hidden_dim': hidden_size,
+                'source_hidden_dim': source_hidden_size,
+                'target_hidden_dim': target_hidden_dim,
                 'num_layers': 6,
                 'vocab_size': num_tokens_to_copy,
                 'device': str(self.device),
                 'torch_version': torch.__version__,
-                'transformers_version': __import__('transformers').__version__
+                'transformers_version': __import__('transformers').__version__,
+                'adaptation_applied': source_hidden_size != target_hidden_dim
             },
             'tokenizer_config': tokenizer.init_kwargs if hasattr(tokenizer, 'init_kwargs') else {}
         }
         
         torch.save(checkpoint, output_path)
+        print(f"💾 Saved encoder to {output_path}")
+        
         return our_encoder
 
-    def _adapt_pretrained_embeddings(self, pretrained_embeddings, source_dim, target_dim):
-        """Adapt pretrained embeddings to different dimensions"""
+    def _adapt_pretrained_embeddings(self, pretrained_embeddings: torch.Tensor, 
+                                source_dim: int, target_dim: int) -> torch.Tensor:
+        """
+        Adapt pretrained embeddings to different dimensions with multiple strategies
+    
+        Args:
+            pretrained_embeddings: Original embeddings tensor
+            source_dim: Original dimension
+            target_dim: Target dimension
+        
+        Returns:
+            Adapted embeddings tensor
+        """
         if source_dim == target_dim:
             return pretrained_embeddings
     
-        # Create projection layer
-        projection = nn.Linear(source_dim, target_dim)
+        logger.info(f"Adapting embeddings from {source_dim} to {target_dim} dimensions")
     
-        # Initialize projection intelligently
+        vocab_size = pretrained_embeddings.shape[0]
+        device = pretrained_embeddings.device
+        dtype = pretrained_embeddings.dtype
+    
         if source_dim > target_dim:
-            # Use PCA-like initialization for dimension reduction
-            nn.init.xavier_uniform_(projection.weight)
+            # Dimension reduction - use PCA-like approach
+            logger.info("Using PCA-inspired dimension reduction")
+        
+            # Option 1: Linear projection (most common)
+            projection = nn.Linear(source_dim, target_dim, bias=False).to(device)
+        
+            # Initialize with PCA-like weights if possible
+            if vocab_size >= source_dim:
+                # Compute covariance matrix on a subset
+                subset_size = min(5000, vocab_size)
+                subset_embeddings = pretrained_embeddings[:subset_size].float()
+            
+                # Center the embeddings
+                mean = subset_embeddings.mean(dim=0, keepdim=True)
+                centered = subset_embeddings - mean
+            
+                # Compute covariance
+                cov = torch.mm(centered.t(), centered) / (subset_size - 1)
+            
+                # Get top eigenvectors
+                try:
+                    eigenvalues, eigenvectors = torch.linalg.eigh(cov)
+                    # Select top target_dim eigenvectors
+                    top_eigenvectors = eigenvectors[:, -target_dim:]
+                    projection.weight.data = top_eigenvectors.t().to(dtype)
+                except Exception as e:
+                    logger.warning(f"PCA initialization failed: {e}, using Xavier init")
+                    nn.init.xavier_uniform_(projection.weight)
+            else:
+                # Fallback to Xavier initialization
+                nn.init.xavier_uniform_(projection.weight)
+        
+            # Project embeddings
+            with torch.no_grad():
+                adapted = projection(pretrained_embeddings.float()).to(dtype)
+            
+                # Preserve relative norms
+                original_norms = pretrained_embeddings.norm(dim=1, keepdim=True)
+                adapted_norms = adapted.norm(dim=1, keepdim=True)
+                scale = original_norms / (adapted_norms + 1e-8)
+                adapted = adapted * scale
+    
         else:
-            # Use identity + noise for dimension expansion
-            nn.init.eye_(projection.weight[:source_dim, :])
-            nn.init.normal_(projection.weight[source_dim:, :], 0, 0.02)
+            # Dimension expansion - use structured initialization
+            logger.info("Using structured dimension expansion")
+        
+            adapted = torch.zeros(vocab_size, target_dim, device=device, dtype=dtype)
+        
+            # Copy original dimensions
+            adapted[:, :source_dim] = pretrained_embeddings
+        
+            # Initialize extra dimensions
+            extra_dims = target_dim - source_dim
+        
+            # Strategy 1: Use linear combinations of existing dimensions
+            if extra_dims <= source_dim:
+                # Create mixing matrix
+                mixing = torch.randn(extra_dims, source_dim, device=device) * 0.1
+                extra_features = torch.mm(pretrained_embeddings, mixing.t())
+                adapted[:, source_dim:] = extra_features
+        
+            # Strategy 2: Use noise with structure
+            else:
+                # Initialize with structured noise
+                for i in range(source_dim, target_dim):
+                    if i < 2 * source_dim:
+                        # Mirror with noise
+                        source_idx = i - source_dim
+                        adapted[:, i] = pretrained_embeddings[:, source_idx] * 0.1 + \
+                                    torch.randn(vocab_size, device=device) * 0.02
+                    else:
+                        # Random initialization with small magnitude
+                        adapted[:, i] = torch.randn(vocab_size, device=device) * 0.02
+        
+            # Normalize to maintain stable training
+            adapted = adapted / adapted.norm(dim=1, keepdim=True) * \
+                    pretrained_embeddings.norm(dim=1, keepdim=True)
     
-        # Project embeddings
-        with torch.no_grad():
-            adapted = projection(pretrained_embeddings.float())
+        logger.info(f"✅ Adapted embeddings shape: {adapted.shape}")
     
-        return adapted    
+        # Validate adaptation
+        if torch.isnan(adapted).any() or torch.isinf(adapted).any():
+            logger.error("❌ Adaptation produced NaN or Inf values!")
+            raise TrainingError("Invalid values in adapted embeddings")
     
+        return adapted
+
     def create_decoder_from_mbart(self, 
                                 model_name: str = 'facebook/mbart-large-50',
                                 output_path: str = 'models/universal_decoder_initial.pt') -> nn.Module:
@@ -199,9 +339,18 @@ class PretrainedModelBootstrapper:
         print("💉 Transferring knowledge with dimension adaptation...")
         
         with torch.no_grad():
-            # Implement proper weight transfer logic here
-            # This is a simplified version - real implementation needs careful mapping
-            pass
+            # Transfer embeddings
+            if hasattr(decoder, 'embed_tokens') and hasattr(our_decoder, 'embed_tokens'):
+                pretrained_embeddings = decoder.embed_tokens.weight
+                our_vocab_size = min(our_decoder.embed_tokens.num_embeddings, pretrained_embeddings.size(0))
+                our_decoder.embed_tokens.weight.data[:our_vocab_size] = pretrained_embeddings[:our_vocab_size]
+    
+            # Transfer decoder layers
+            for i in range(min(len(decoder.layers), len(our_decoder.layers))):
+                try:
+                    our_decoder.layers[i].load_state_dict(decoder.layers[i].state_dict())
+                except Exception as e:
+                    logger.warning(f"Could not transfer layer {i}: {e}")
         
         # Apply modern optimizations
         if hasattr(torch, 'compile'):

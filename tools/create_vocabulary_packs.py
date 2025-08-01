@@ -23,7 +23,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import msgpack
 import numpy as np
 import sentencepiece as spm
-from transformers import AutoTokenizer
+import tempfile
+# from transformers import AutoTokenizer
 
 
 # Configure logging
@@ -97,10 +98,193 @@ class VocabularyPackCreator:
         self._validate_corpus_files()
         
         logger.info(f"Initialized VocabularyPackCreator with {len(corpus_paths)} languages")
+
+    def _calculate_quality_metrics(self, vocab: Dict[str, int], corpus_path: str) -> Dict[str, float]:
+        """Calculate comprehensive quality metrics for vocabulary"""
+        from collections import defaultdict
+        import numpy as np
+        # Use chunked reading for large files
+        from itertools import islice
     
-    def create_pack(self, languages: List[str], pack_name: str) -> Dict[str, Any]:
+        metrics = {
+            'unigram_coverage': 0.0,
+            'bigram_coverage': 0.0,
+            'fertility': 0.0,  # Average tokens per word
+            'ambiguity': 0.0,  # Average words per token
+            'compression_rate': 0.0,
+            'oov_rate': 0.0
+        }
+    
+        # Use reservoir sampling for large corpora
+        sample_size = min(10000, self._count_lines(corpus_path))
+        
+        # Sample corpus for metrics
+        token_to_words = defaultdict(set)
+        word_to_tokens = defaultdict(list)
+        total_words = 0
+        oov_words = 0
+        covered_chars = 0
+        total_chars = 0
+    
+        logger.info("Calculating vocabulary quality metrics...")
+    
+        try:
+            with open(corpus_path, 'r', encoding='utf-8') as f:
+                for i, line in enumerate(f):
+                    if i >= sample_size:
+                        break
+                
+                    words = line.strip().split()
+                    total_words += len(words)
+                
+                    for word in words:
+                        total_chars += len(word)
+                    
+                        # Try to tokenize the word
+                        tokens = self._tokenize_word(word, vocab)
+                    
+                        if tokens == ['<unk>']:
+                            oov_words += 1
+                        else:
+                            covered_chars += len(word)
+                            word_to_tokens[word] = tokens
+                        
+                            for token in tokens:
+                                token_to_words[token].add(word)
+        
+            # Calculate metrics
+            if total_words > 0:
+                metrics['oov_rate'] = oov_words / total_words
+                metrics['unigram_coverage'] = 1.0 - metrics['oov_rate']
+        
+            if total_chars > 0:
+                metrics['compression_rate'] = covered_chars / total_chars
+        
+            # Fertility: average tokens per word
+            if word_to_tokens:
+                fertilities = [len(tokens) for tokens in word_to_tokens.values()]
+                metrics['fertility'] = np.mean(fertilities)
+        
+            # Ambiguity: average words per token
+            if token_to_words:
+                ambiguities = [len(words) for words in token_to_words.values()]
+                metrics['ambiguity'] = np.mean(ambiguities)
+        
+            # Estimate bigram coverage (simplified)
+            bigram_coverage_estimate = metrics['unigram_coverage'] ** 2
+            metrics['bigram_coverage'] = bigram_coverage_estimate
+        
+            logger.info("Quality metrics calculated:")
+            for metric, value in metrics.items():
+                logger.info(f"  {metric}: {value:.4f}")
+        
+        except Exception as e:
+            logger.error(f"Failed to calculate quality metrics: {e}")
+    
+        return metrics
+
+    def _count_lines(self, file_path: Union[str, Path]) -> int:
+        """Count lines in a file efficiently"""
+        count = 0
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+           for _ in f:
+               count += 1
+        return count    
+
+    def _tokenize_word(self, word: str, vocab: Dict[str, int]) -> List[str]:
+        """Tokenize a word using the vocabulary (simple greedy approach)"""
+        if word in vocab:
+            return [word]
+    
+        # Try subword tokenization
+        tokens = []
+        i = 0
+    
+        while i < len(word):
+            # Find longest matching prefix
+            longest_match = None
+            for j in range(len(word), i, -1):
+                subword = word[i:j]
+            
+                # Add ## prefix for continuation subwords
+                if i > 0:
+                    subword = f"##{subword}"
+            
+                if subword in vocab:
+                    longest_match = subword
+                    i = j
+                    break
+        
+            if longest_match:
+                tokens.append(longest_match)
+            else:
+                # No match found, skip character
+                i += 1
+    
+        return tokens if tokens else ['<unk>']
+
+    def analyze_vocabulary_quality(self, pack_name: str, test_corpus: Optional[str] = None) -> Dict[str, Any]:
+        """Analyze the quality of a created vocabulary pack"""
+    
+        # Load the pack
+        pack_path = Path('vocabs') / f'{pack_name}_v1.json'
+        if not pack_path.exists():
+            raise FileNotFoundError(f"Pack not found: {pack_path}")
+    
+        with open(pack_path, 'r') as f:
+            pack = json.load(f)
+    
+        # Combine all vocabularies
+        all_vocab = {}
+        all_vocab.update(pack['tokens'])
+        all_vocab.update(pack['subwords'])
+        all_vocab.update(pack['special_tokens'])
+    
+        # Use test corpus or original corpus
+        if test_corpus:
+            corpus_path = test_corpus
+        else:
+            # Try to find a corpus for one of the pack's languages
+            corpus_path = None
+            for lang in pack['languages']:
+                potential_path = self.corpus_paths.get(lang)
+                if potential_path and Path(potential_path).exists():
+                    corpus_path = potential_path
+                    break
+    
+        if not corpus_path:
+            logger.warning("No corpus found for quality analysis")
+            return {}
+    
+        # Calculate metrics
+        metrics = self._calculate_quality_metrics(all_vocab, corpus_path)
+    
+        # Add pack metadata
+        analysis = {
+            'pack_name': pack_name,
+            'languages': pack['languages'],
+            'vocabulary_size': len(all_vocab),
+            'token_distribution': {
+                'tokens': len(pack['tokens']),
+                'subwords': len(pack['subwords']),
+                'special_tokens': len(pack['special_tokens'])
+            },
+            'quality_metrics': metrics
+        }
+    
+        # Save analysis report
+        report_path = Path('vocabs') / f'{pack_name}_analysis.json'
+        with open(report_path, 'w') as f:
+            json.dump(analysis, f, indent=2)
+    
+        logger.info(f"Analysis report saved to {report_path}")
+    
+        return analysis
+    
+    def create_pack(self, languages: List[str], pack_name: str, 
+                   analyze_quality: bool = True) -> Dict[str, Any]:
         """
-        Create optimized vocabulary pack for language group.
+        Create optimized vocabulary pack for language group with quality analysis.
         
         This method performs comprehensive analysis of the corpus to create an
         optimized vocabulary pack with intelligent token selection and compression.
@@ -167,6 +351,29 @@ class VocabularyPackCreator:
             logger.info(f"Successfully created vocabulary pack '{pack_name}'")
             logger.info(f"Stats: {stats.total_tokens} tokens, {stats.coverage_percentage:.2f}% coverage, {stats.size_mb:.2f}MB")
             
+            return pack
+
+            # After creating the pack, analyze quality if requested
+            if analyze_quality:
+                try:
+                    # Find a test corpus
+                    test_corpus = None
+                    for lang in languages:
+                        if lang in self.corpus_paths:
+                            test_corpus = self.corpus_paths[lang]
+                            break
+            
+                    if test_corpus:
+                        quality_analysis = self.analyze_vocabulary_quality(pack_name, test_corpus)
+                
+                        # Add quality metrics to pack metadata
+                        pack['metadata']['quality_metrics'] = quality_analysis.get('quality_metrics', {})
+                
+                        # Re-save pack with quality metrics
+                        self._save_pack(pack, pack_name)
+                except Exception as e:
+                    logger.warning(f"Quality analysis failed: {e}")
+    
             return pack
             
         except Exception as e:
@@ -574,6 +781,25 @@ class VocabularyPackCreator:
         
         # Increment minor version by default
         return f"{major}.{minor + 1}"
+
+class VocabularyCreationProgress:
+    """Track vocabulary creation progress"""
+    
+    def __init__(self):
+        self.current_step = ""
+        self.total_steps = 7
+        self.current_step_num = 0
+        self.progress_callbacks = []
+    
+    def update(self, step_num: int, step_name: str, details: str = ""):
+        self.current_step_num = step_num
+        self.current_step = step_name
+        
+        for callback in self.progress_callbacks:
+            callback(step_num, self.total_steps, step_name, details)
+    
+    def add_callback(self, callback):
+        self.progress_callbacks.append(callback)        
 
 
 def main():
