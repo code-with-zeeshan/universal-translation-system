@@ -73,7 +73,8 @@ class VocabularyPackCreator:
     
     def __init__(
         self, 
-        corpus_paths: Dict[str, str], 
+        # The corpus_paths now becomes optional, as we can specify domain paths
+        corpus_paths: Optional[Dict[str, str]] = None, 
         config: Optional[VocabConfig] = None
     ) -> None:
         """
@@ -87,17 +88,15 @@ class VocabularyPackCreator:
             FileNotFoundError: If any corpus file doesn't exist
             ValueError: If corpus_paths is empty
         """
-        if not corpus_paths:
-            raise ValueError("corpus_paths cannot be empty")
-            
-        self.corpus_paths = corpus_paths
+        # Allow initialization without default paths for domain-specific runs
+        self.corpus_paths = corpus_paths or {}
         self.config = config or VocabConfig()
         self.tokenizer = spm.SentencePieceProcessor()
         
-        # Validate corpus files exist
-        self._validate_corpus_files()
+        if self.corpus_paths:
+            self._validate_corpus_files()
         
-        logger.info(f"Initialized VocabularyPackCreator with {len(corpus_paths)} languages")
+        logger.info(f"Initialized VocabularyPackCreator.")
 
     def _calculate_quality_metrics(self, vocab: Dict[str, int], corpus_path: str) -> Dict[str, float]:
         """Calculate comprehensive quality metrics for vocabulary"""
@@ -281,17 +280,25 @@ class VocabularyPackCreator:
     
         return analysis
     
-    def create_pack(self, languages: List[str], pack_name: str, 
-                   analyze_quality: bool = True) -> Dict[str, Any]:
+    def create_pack(
+        self, 
+        languages: List[str], 
+        pack_name: str, 
+        analyze_quality: bool = True,
+        domain: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Create optimized vocabulary pack for language group with quality analysis.
+        Can be general or domain-specific.
         
         This method performs comprehensive analysis of the corpus to create an
         optimized vocabulary pack with intelligent token selection and compression.
         
         Args:
             languages: List of language codes (e.g., ['en', 'es', 'fr'])
-            pack_name: Name for the vocabulary pack
+            pack_name: Name for the vocabulary pack (e.g., 'latin_medical').
+            analyze_quality: Whether to run quality analysis.
+            domain: The specific domain (e.g., 'medical') to build the vocab for.
             
         Returns:
             Dictionary containing the vocabulary pack data with metadata
@@ -300,9 +307,20 @@ class VocabularyPackCreator:
             ValueError: If invalid language codes provided
             RuntimeError: If vocabulary creation fails
         """
-        logger.info(f"Creating vocabulary pack '{pack_name}' for languages: {languages}")
+        domain_str = f" for domain '{domain}'" if domain else ""
+        logger.info(f"Creating vocabulary pack '{pack_name}'{domain_str} for languages: {languages}")
         
         try:
+            # --- MODIFIED ---
+            # Use domain-specific corpus paths if a domain is provided
+            if domain:
+                # Construct paths like 'data/processed/en_medical_corpus.txt'
+                domain_corpus_paths = {
+                    lang: f"data/processed/{lang}_{domain}_corpus.txt" for lang in languages
+                }
+                # Use these paths for analysis, overriding the default ones
+                self.corpus_paths = domain_corpus_paths
+            
             # Validate languages
             self._validate_languages(languages)
             
@@ -341,7 +359,8 @@ class VocabularyPackCreator:
                     'size_mb': stats.size_mb,
                     'compression_ratio': stats.compression_ratio,
                     'oov_rate': stats.oov_rate,
-                    'config': self.config.__dict__
+                    'config': self.config.__dict__,
+                    'domain': domain
                 }
             }
             

@@ -22,7 +22,6 @@ import json
 import logging
 import os
 from utils.exceptions import DataError , VocabularyError
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
@@ -77,6 +76,7 @@ class PackStats:
 class VocabularyPackCreator:
     """
     Production-ready vocabulary pack creator using SentencePiece.
+    Can create new packs or evolve existing ones.
     
     This class provides a robust solution for creating vocabulary packs using
     Google's SentencePiece library with comprehensive error handling and logging.
@@ -155,9 +155,17 @@ class VocabularyPackCreator:
         
         return created_packs
     
-    def create_pack(self, pack_name: str, languages: List[str]) -> Dict[str, Any]:
+    def create_pack(
+        self, 
+        pack_name: str, 
+        languages: List[str],
+        base_pack_path: Optional[str] = None,
+        tokens_to_add: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """
-        Create vocabulary pack for specified languages.
+        Create or evolve a vocabulary pack.
+        - If base_pack_path is provided, it evolves the existing pack.
+        - Otherwise, it creates a new one from scratch.
         
         Args:
             pack_name: Name for the vocabulary pack
@@ -172,39 +180,78 @@ class VocabularyPackCreator:
         """
         if not pack_name:
             raise VocabularyError("pack_name cannot be empty")
-        if not languages:
-            raise VocabularyError("languages list cannot be empty")
-        
-        logger.info(f"Creating vocabulary pack: {pack_name}")
-        logger.info(f"Languages: {languages}")
-        
+
         try:
-            # 1. Validate and merge corpora
-            merged_corpus = self._merge_corpora(languages, pack_name)
+            if base_pack_path:
+                # --- EVOLUTION MODE ---
+                logger.info(f"Evolving existing pack '{pack_name}' from: {base_pack_path}")
+                with open(base_pack_path, 'rb') as f:
+                    # Use strict_map_key=False for compatibility
+                    base_pack = msgpack.unpackb(f.read(), raw=False, strict_map_key=False)
+                
+                # Inherit properties from the base pack
+                vocab_data = {
+                    'tokens': base_pack.get('tokens', {}),
+                    'subwords': base_pack.get('subwords', {}),
+                    'special_tokens': base_pack.get('special_tokens', {})
+                }
+                languages = base_pack.get('languages', languages)
+                
+                # Add new tokens if provided
+                if tokens_to_add:
+                    # Find the next available token ID
+                    all_ids = [id_ for d in vocab_data.values() for id_ in d.values()]
+                    max_id = max(all_ids) if all_ids else -1
+                    
+                    newly_added_count = 0
+                    for token in tokens_to_add:
+                        # Ensure the token doesn't already exist in any category
+                        if token not in vocab_data['tokens'] and \
+                           token not in vocab_data['subwords'] and \
+                           token not in vocab_data['special_tokens']:
+                            max_id += 1
+                            vocab_data['tokens'][token] = max_id
+                            newly_added_count += 1
+                    logger.info(f"Promoted {newly_added_count} new tokens to the vocabulary.")
+
+            else:
+                # --- CREATION MODE (existing logic) ---
+                logger.info(f"Creating new vocabulary pack: {pack_name}")
+                if not languages:
+                    raise VocabularyError("languages list cannot be empty for new pack creation")
+        
+                
+                logger.info(f"Languages: {languages}")
+                logger.info(f"Base pack path: {base_pack_path}")
+                logger.info(f"Tokens to add: {tokens_to_add}")
+        
+        
+                # 1. Validate and merge corpora
+                merged_corpus = self._merge_corpora(languages, pack_name)
             
-            # 2. Train SentencePiece model
-            model_path = self._train_sentencepiece_model(merged_corpus, pack_name)
+                # 2. Train SentencePiece model
+                model_path = self._train_sentencepiece_model(merged_corpus, pack_name)
             
-            # 3. Create vocabulary mappings
-            vocab_data = self._create_vocabulary_mappings(model_path, languages)
+                # 3. Create vocabulary mappings
+                vocab_data = self._create_vocabulary_mappings(model_path, languages)
+
+                # 4. Cleanup temporary files
+                self._cleanup_temp_files(merged_corpus, model_path)
             
-            # 4. Create pack structure
+            # 5. Create pack structure
             pack = self._create_pack_structure(pack_name, languages, vocab_data)
             
-            # 5. Save pack
+            # 6. Save pack
             self._save_pack(pack, pack_name)
             
-            # 6. Cleanup temporary files
-            self._cleanup_temp_files(merged_corpus, model_path)
-            
-            logger.info(f"✅ Successfully created {pack_name} pack")
-            logger.info(f"📊 {len(vocab_data['tokens'])} tokens, {pack['metadata']['size_mb']:.1f}MB")
+            logger.info(f"✅ Successfully created/evolved pack '{pack_name}' (version {pack['version']})")
+            logger.info(f"📊 Total tokens: {pack['metadata']['total_tokens']:,}, Size: {pack['metadata']['size_mb']:.1f}MB")
             
             return pack
             
         except Exception as e:
-            logger.error(f"Failed to create vocabulary pack {pack_name}: {e}")
-            raise VocabularyError(f"Pack creation failed: {e}") from e
+            logger.error(f"Failed to create/evolve vocabulary pack {pack_name}: {e}")
+            raise VocabularyError(f"Pack operation failed: {e}") from e
     
     def _define_language_groups(self) -> Dict[str, LanguageGroup]:
         """Define predefined language groups."""

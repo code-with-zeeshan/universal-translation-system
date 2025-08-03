@@ -1,1 +1,38 @@
-[] 
+{
+  "nodes": [
+    {
+      "node_id": "prod-us-east-1a",
+      "endpoint": "https://prod-decoder-a.your-domain.com",
+      "region": "us-east-1",
+      "gpu_type": "T4",
+      "capacity": 100,
+      "tags": ["production", "stable"]
+    },
+    {
+      "node_id": "prod-us-east-1b",
+      "endpoint": "https://prod-decoder-b.your-domain.com",
+      "region": "us-east-1",
+      "gpu_type": "T4",
+      "capacity": 100,
+      "tags": ["production", "stable"]
+    },
+    {
+      "node_id": "exp-us-east-1c-new-adapter",
+      "endpoint": "https://exp-decoder-c.your-domain.com",
+      "region": "us-east-1",
+      "gpu_type": "L4",
+      "capacity": 150,
+      "tags": ["experimental", "es_v2_adapter"]
+    }
+  ],
+  "ab_tests": [
+    {
+      "name": "Spanish_V2_Adapter_Test",
+      "is_active": true,
+      "language_pair": "en-es",
+      "traffic_percentage": 10,
+      "control_group_tags": ["production", "stable"],
+      "experiment_group_tags": ["es_v2_adapter"]
+    }
+  ]
+}

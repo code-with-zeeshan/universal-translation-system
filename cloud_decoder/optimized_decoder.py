@@ -27,7 +27,7 @@ from monitoring.metrics_collector import (
     active_connections,
     gpu_utilization
 )
-
+from collections import OrderedDict
 # Import vocabulary manager
 from vocabulary.vocabulary_manager import VocabularyManager
 
@@ -53,6 +53,85 @@ JWT_SECRET = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 
 logger = logging.getLogger(__name__)
+
+# AdapterManager Class 
+class AdapterManager:
+    """
+    Manages dynamic loading and LRU caching of language adapters on a decoder node.
+    """
+    def __init__(self, model: nn.Module, max_cache_size: int = 5, adapter_dir: str = "models/adapters"):
+        self.model = model  # The AdapterUniversalEncoder instance
+        self.adapter_dir = Path(adapter_dir)
+        self.max_cache_size = max_cache_size
+        
+        # Use an OrderedDict for a simple and effective LRU cache
+        # Maps adapter_name -> loaded adapter module
+        self.cache = OrderedDict()
+        self.lock = threading.Lock() # Ensure thread-safety
+        
+        logger.info(f"AdapterManager initialized with cache size: {self.max_cache_size}")
+
+    def get_adapter(self, adapter_name: str):
+        """
+        Retrieves a language adapter, loading it from disk if not in the cache.
+        """
+        with self.lock:
+            if adapter_name in self.cache:
+                # Move to the end to mark as recently used
+                self.cache.move_to_end(adapter_name)
+                logger.debug(f"Adapter cache hit for '{adapter_name}'")
+                return
+
+            # --- Cache Miss ---
+            adapter_path = self.adapter_dir / f"best_{adapter_name}_adapter.pt"
+
+            # +++ ADD THIS LOGIC +++
+            if not adapter_path.exists():
+                logger.info(f"Adapter '{adapter_name}' not in local cache. Downloading from central storage...")
+            try:
+                # Simulate download from cloud storage
+                # In practice, this would be an actual download operation
+                # e.g., using boto3 for AWS S3, or requests for HTTP
+                logger.info(f"Downloading adapter '{adapter_name}' from cloud storage...")
+                # self.download_from_s3(f"adapters/{adapter_name}.pt", adapter_path)
+                # You would implement the download_from_s3 method.
+                pass # Placeholder for your download logic
+                # time.sleep(2)  # Simulate download delay
+                # Create a dummy file for this example
+                adapter_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(adapter_path, 'w') as f:
+                    f.write("dummy adapter data")
+            except Exception as e:
+                logger.error(f"Failed to download adapter '{adapter_name}': {e}")
+                return # Abort if download fails
+            logger.info(f"Adapter cache miss for '{adapter_name}'. Loading from disk...")
+            
+            # Evict the least recently used adapter if the cache is full
+            if len(self.cache) >= self.max_cache_size:
+                oldest_adapter_name, _ = self.cache.popitem(last=False)
+                # Remove from the model's ModuleDict to free memory
+                if oldest_adapter_name in self.model.language_adapters:
+                    del self.model.language_adapters[oldest_adapter_name]
+                logger.info(f"Evicted adapter '{oldest_adapter_name}' from cache.")
+
+            # Load the new adapter
+            adapter_path = self.adapter_dir / f"best_{adapter_name}_adapter.pt"
+            if not adapter_path.exists():
+                logger.error(f"Adapter file not found: {adapter_path}")
+                # Don't add to cache if not found
+                return
+
+            # Use the model's own method to add and load the adapter
+            self.model.load_language_adapter(adapter_name, str(adapter_path))
+            
+            # Add the newly loaded adapter module to our cache
+            self.cache[adapter_name] = self.model.language_adapters[adapter_name]
+            logger.info(f"Successfully loaded and cached adapter '{adapter_name}'.")
+
+    def get_loaded_adapters(self) -> List[str]:
+        """Returns a list of adapters currently hot in the cache."""
+        with self.lock:
+            return list(self.cache.keys())
 
 class OptimizedUniversalDecoder(nn.Module):
     """
@@ -293,6 +372,12 @@ class OptimizedDecoderLayer(nn.Module):
         return x
 
 
+# Pydantic model for the request body
+class CompositionRequest(BaseModel):
+    source_adapter: str
+    target_adapter: str
+    strategy: str = "average"
+
 # FastAPI application for serving
 app = FastAPI(title="Cloud Decoder API", version=MODEL_VERSION, openapi_url="/openapi.json")
 FastAPIInstrumentor.instrument_app(app)
@@ -398,6 +483,8 @@ def reload_model(credentials: HTTPAuthorizationCredentials = Depends(require_jwt
 # All endpoints are traced, and admin endpoints require JWT
 
 # Global model and optimization
+model: Optional[AdapterUniversalEncoder] = None # We will use the adapter-aware encoder
+adapter_manager: Optional[AdapterManager] = None # Add a global manager
 model: Optional[OptimizedUniversalDecoder] = None
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vocabulary_manager = VocabularyManager()
@@ -448,17 +535,22 @@ class ContinuousBatcher:
                     for future in futures:
                         future.set_exception(e)
 
-
 batcher = ContinuousBatcher()
-
 
 @app.on_event("startup")
 async def startup():
-    global model
+    global model, adapter_manager
     
     # Load model
     model = OptimizedUniversalDecoder().to(device)
+    # Load the base model (without any specific adapters loaded initially)
+    # This assumes your production decoder is saved here
+    base_model_path = "models/production/decoder.pt" 
+    model = AdapterUniversalEncoder(base_model_path=base_model_path).to(device)
     model.eval()
+
+    # Initialize the adapter manager with the model instance
+    adapter_manager = AdapterManager(model=model, max_cache_size=5)
     
     # Compile with torch.compile for faster inference
     if torch.__version__ >= "2.0.0":
@@ -467,7 +559,7 @@ async def startup():
     # Start batch processor
     asyncio.create_task(batcher.process_batches())
     
-    logger.info(f"✅ Decoder ready on {device}")
+    logger.info(f"✅ Decoder with Dynamic Adapter Loading is ready on {device}")
     if torch.cuda.is_available():
         logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
 
@@ -498,8 +590,46 @@ async def health(request):
     """Health check endpoint"""
     return {"status": "healthy", "device": str(device)}
 
+# +++ ADDED: New endpoint for the coordinator +++
+@app.get("/loaded_adapters", response_model=List[str])
+async def get_loaded_adapters_endpoint():
+    """Returns a list of adapters currently loaded in the GPU cache."""
+    if not adapter_manager:
+        raise HTTPException(status_code=503, detail="Adapter manager not initialized")
+    return adapter_manager.get_loaded_adapters()    
+
 async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
-    """Process batch on GPU with maximum efficiency"""
+    """Process batch on GPU with maximum efficiency and dynamic adapter loading"""
+
+    # Group requests by target language to minimize adapter swapping
+    requests_by_lang = defaultdict(list)
+    for i, item in enumerate(batch):
+        # Determine the adapter needed (e.g., 'es' or 'es_medical')
+        target_lang = item.get('target_lang', 'en')
+        domain = item.get('domain')
+        adapter_name = f"{target_lang}_{domain}" if domain else target_lang
+        requests_by_lang[adapter_name].append({'original_index': i, 'data': item})
+
+    all_results = [None] * len(batch)
+
+    for adapter_name, requests in requests_by_lang.items():
+        # --- DYNAMIC LOADING HAPPENS HERE ---
+        adapter_manager.get_adapter(adapter_name)
+
+        # Prepare the sub-batch for this language/adapter
+        # ... (your existing batch preparation logic: decompress, stack tensors) ...
+
+        with torch.no_grad(), torch.cuda.amp.autocast():
+            # Pass the adapter name to the forward pass
+            encoder_output = model(encoder_hidden, attention_mask, language=adapter_name)
+            # ... (your existing generation and decoding logic) ...
+
+        # Place results back in the correct order
+        for i, result in enumerate(sub_batch_results):
+            original_index = requests[i]['original_index']
+            all_results[original_index] = result
+            
+    return all_results    
     
     with torch.cuda.amp.autocast():  # Mixed precision for speed
         # Prepare batch tensors
@@ -610,6 +740,30 @@ def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
     text = text.replace('▁', ' ')
     return text.strip()
 
+#Endpoint for adapter composition 
+@app.post("/compose_adapter", status_code=201)
+async def compose_adapter_endpoint(request: CompositionRequest, credentials: HTTPAuthorizationCredentials = Depends(require_jwt)):
+    """
+    Triggers the on-the-fly creation of a composed adapter for zero-shot pairs.
+    """
+    if not model or not isinstance(model, AdapterUniversalEncoder):
+        raise HTTPException(status_code=503, detail="Model not initialized or does not support adapters.")
+    
+    try:
+        # Ensure the base adapters are loaded first
+        adapter_manager.get_adapter(request.source_adapter)
+        adapter_manager.get_adapter(request.target_adapter)
+        
+        # Perform the composition
+        composed_name = model.compose_adapters(
+            source_adapter_name=request.source_adapter,
+            target_adapter_name=request.target_adapter,
+            composition_strategy=request.strategy
+        )
+        return {"status": "success", "composed_adapter_name": composed_name}
+    except Exception as e:
+        logger.error(f"Adapter composition failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compose adapters: {str(e)}")
 
 # Deployment configuration for Kubernetes
 """

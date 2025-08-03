@@ -1,0 +1,16 @@
+# Inherits from the base A100 config but overrides for large scale
+_base_: 'training_a100.yaml'
+
+training:
+  use_fsdp: true
+  sharding_strategy: "HYBRID_SHARD" # Better for large models
+  mixed_precision: true
+  dtype: "bfloat16"
+  compile_model: true
+  compile_mode: "max-autotune"
+  
+memory:
+  gradient_checkpointing: true
+  
+# Larger batch size for powerful GPUs
+batch_size: 128 

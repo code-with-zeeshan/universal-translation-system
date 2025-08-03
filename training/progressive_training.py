@@ -1,4 +1,4 @@
-# training/progressive_training.py
+# training/progressive_training.py (tier-based)
 import torch
 from torch.utils.data import DataLoader, Subset
 from typing import Dict, List, Optional

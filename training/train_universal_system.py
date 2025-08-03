@@ -1,4 +1,4 @@
-# training/train_universal_system.py
+# training/train_universal_system.py (main)
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -11,7 +11,7 @@ from pathlib import Path
 import json
 import time
 from contextlib import contextmanager
-
+from data.custom_samplers import TemperatureSampler
 from vocabulary.vocabulary_manager import VocabularyManager
 import yaml
 from torch.profiler import profile, ProfilerActivity, tensorboard_trace_handler
@@ -26,10 +26,10 @@ from utils.resource_monitor import resource_monitor
 from utils.shutdown_handler import GracefulShutdown
 from utils.model_versioning import ModelVersion
 
- # Initialize GPU optimization
+# Initialize GPU optimization
 optimize_gpu_memory()
 
- # Define checkpoint version constant
+# Define checkpoint version constant
 CHECKPOINT_VERSION = "2.0"
 
 try:
@@ -65,9 +65,13 @@ GPU_CONFIG_MAP = [
     ("K80", "config/training_colab_free.yaml"),
 ]
 
-def auto_select_config() -> str:
+def auto_select_config(
+    languages: Optional[List[str]] = None,
+    data_info: Optional[Dict[str, int]] = None
+) -> str:
     """
-    Automatically selects the best training configuration file based on the detected hardware.
+    Automatically selects the best training configuration file based on the detected
+    hardware, language count, and data size.
     Handles NVIDIA CUDA, AMD ROCm, and CPU-only environments.
     """
     # Check for AMD ROCm environment first
@@ -85,21 +89,39 @@ def auto_select_config() -> str:
         pass
 
     # Check for NVIDIA CUDA environment
+    gpu_name = None
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
         print(f"Detected NVIDIA CUDA GPU: {gpu_name}")
-        for key, config_path in GPU_CONFIG_MAP:
-            if key in gpu_name:
-                print(f"Using config: {config_path}")
-                return config_path
-        
-        # Fallback for unknown NVIDIA GPUs
-        print(f"Unknown NVIDIA GPU: {gpu_name}. Using default T4 config as a safe fallback.")
-        return "config/training_t4.yaml"
+    else:
+        # CPU-only configuration
+        print("No compatible GPU detected. Using CPU-only configuration.")
+        return "config/training_cpu.yaml"    
 
-    # Fallback to CPU-only configuration
-    print("No compatible GPU detected. Using CPU-only configuration.")
-    return "config/training_cpu.yaml"
+    # Smart logic based on task complexity 
+    num_languages = len(languages) if languages else 0
+    total_sentences = sum(data_info.values()) if data_info else 0
+    
+    # Rule 1: Large-scale multilingual training on high-end GPUs
+    if num_languages > 20 and total_sentences > 50_000_000:
+        if "H100" in gpu_name or "A100" in gpu_name:
+            print("INFO: High language count and data size on A100/H100. Selecting FSDP-optimized config.")
+            return "config/training_a100_fsdp.yaml" # Assumes you create this config
+            
+    # Rule 2: Fine-tuning a few languages
+    if 1 < num_languages <= 5:
+        if "V100" in gpu_name or "RTX 3090" in gpu_name or "RTX 4090" in gpu_name:
+            print("INFO: Small language set. Selecting fine-tuning optimized config.")
+            return "config/training_v100_finetune.yaml" # Assumes you create this config
+
+    for key, config_path in GPU_CONFIG_MAP:
+        if key in gpu_name:
+            print(f"Using default config for {key}: {config_path}")
+            return config_path
+        
+    # Fallback for unknown NVIDIA GPUs
+    print(f"Unknown NVIDIA GPU: {gpu_name}. Using default T4 config as a safe fallback.")
+    return "config/training_t4.yaml"
 
 def load_config(config_path: str) -> dict:
     """
@@ -300,16 +322,27 @@ class ModernUniversalSystemTrainer:
             pass
     
     def train(self, num_epochs: int = 10, save_every: int = 1, 
-              validate_every: int = 1, log_every: int = 100, shutdown_handler=None):
+              validate_every: int = 1, log_every: int = 100, shutdown_handler=None, temperature: float = 1.0):
         """Complete modern training loop"""
         
-        # Create optimized dataloaders
+        # --- MODIFIED DataLoader creation ---
         current_batch_size = self.batch_sizer.current_batch_size
-        train_loader = self.trainer.create_optimized_dataloader(
+        
+        # Create our custom temperature sampler
+        train_sampler = TemperatureSampler(
             self.train_dataset, 
             batch_size=current_batch_size,
-            shuffle=True,
-            num_workers=8
+            temperature=temperature
+        )
+        
+        # The DataLoader now uses our custom sampler instead of its own shuffle
+        train_loader = DataLoader(
+            self.train_dataset,
+            batch_size=current_batch_size,
+            sampler=train_sampler, # Use the custom sampler
+            num_workers=8,
+            pin_memory=True,
+            # Note: shuffle must be False when using a custom sampler
         )
         
         # Modern schedulers with warm restarts
@@ -1170,7 +1203,7 @@ class ProfileGuidedTrainer:
         """Restore saved configuration"""
         self._apply_config(config)
 
-# Add real-time training dashboard
+# Real-time training dashboard
 class TrainingDashboard:
     """Real-time training metrics visualization"""
     
@@ -1215,7 +1248,7 @@ class TrainingDashboard:
         plt.savefig('training_dashboard.png')
         plt.close()  
 
-# Add to train_universal_system.py
+
 class ExperimentComparator:
     """Compare multiple training runs"""
     
@@ -1252,6 +1285,17 @@ def main():
     setup_logging(log_dir="logs/training", log_level="INFO")
     import torch
     from pathlib import Path
+    from data.data_utils import ConfigManager
+
+    data_config = ConfigManager.load_config()
+    languages = data_config.get('languages')
+    training_distribution = data_config.get('training_distribution')
+
+    # Pass the context to the auto-selector
+    config_path = auto_select_config(
+        languages=languages,
+        data_info=training_distribution
+    )
 
     # Check if models exist, if not create them
     try:

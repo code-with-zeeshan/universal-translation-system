@@ -401,8 +401,8 @@ class UniversalTranslationSystem:
         tasks = [translate_with_semaphore(text) for text in texts]
         return await asyncio.gather(*tasks)
 
-    def translate(self, text: str, source_lang: str, target_lang: str) -> str:
-        """Translate text with input validation"""
+    def translate(self, text: str, source_lang: str, target_lang: str,domain: Optional[str] = None) -> str:
+        """Translate text with input validation and optional domain-specific expertise."""
         # Validation:
         text = InputValidator.validate_text_input(text, max_length=5000)
     
@@ -415,14 +415,37 @@ class UniversalTranslationSystem:
         if not self.encoder or not self.decoder:
             raise RuntimeError("Models not initialized")
     
-        if not self.vocab_manager:
-            raise RuntimeError("Vocabulary manager not initialized")
-    
-        # Get vocabulary pack
-        vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
-    
-        # Use evaluator's translate method if available
+        # --- MODIFIED ---
+        # 1. Determine which vocabulary and adapter to use
+        if domain:
+            # Construct domain-specific names
+            vocab_pack_name = f"latin_{domain}" # e.g., 'latin_medical'
+            adapter_name = f"{source_lang}_{domain}" # e.g., 'es_medical'
+        else:
+            # Fallback to general-purpose packs
+            vocab_pack_name = self.vocab_manager.language_to_pack.get(source_lang, 'latin')
+            adapter_name = source_lang
+
+        # 2. Load the correct vocabulary pack
+        try:
+            vocab_pack = self.vocab_manager._load_pack(vocab_pack_name)
+        except VocabularyError:
+            if domain:
+                logger.warning(f"Domain vocab '{vocab_pack_name}' not found. Falling back to general vocab.")
+                general_pack_name = self.vocab_manager.language_to_pack.get(source_lang, 'latin')
+                vocab_pack = self.vocab_manager._load_pack(general_pack_name)
+                # Also fallback the adapter name
+                adapter_name = source_lang
+            else:
+                raise # Re-raise if general vocab is not found
+
+        # 3. Load the correct adapter
+        # This assumes your AdapterUniversalEncoder can load adapters by a unique name
+        self.encoder.load_language_adapter(adapter_name, adapter_path=f"models/adapters/best_{adapter_name}_adapter.pt")
+
+        # 4. Translate
         if self.evaluator:
+            # The evaluator will now use the loaded domain-specific adapter and vocab
             return self.evaluator.translate(text, source_lang, target_lang)
         else:
             raise RuntimeError("Translation system not fully initialized")

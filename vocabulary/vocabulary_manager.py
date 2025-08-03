@@ -11,6 +11,7 @@ import logging
 from functools import lru_cache
 import json
 from utils.exceptions import VocabularyError
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -427,23 +428,49 @@ class VocabularyAnalytics:
     """Track vocabulary usage patterns"""
     
     def __init__(self):
-        self.token_usage = {}
-        self.unknown_tokens = []
-        self.language_pair_usage = {}
+        # --- MODIFIED ---
+        # Use Counters for efficient frequency tracking
+        self.token_usage = Counter()
+        self.unknown_token_usage = Counter() # Track specific unknown tokens
+        self.language_pair_usage = Counter()
     
-    def record_tokenization(self, text: str, tokens: List[int], language_pair: str):
+    def record_tokenization(self, text: str, tokens: List[int], language_pair: str,vocab_pack: 'VocabularyPack'):
         """Record tokenization event for analytics"""
-        self.language_pair_usage[language_pair] = self.language_pair_usage.get(language_pair, 0) + 1
+        self.language_pair_usage[language_pair] += 1
         
-        for token_id in tokens:
-            self.token_usage[token_id] = self.token_usage.get(token_id, 0) + 1
+        # Get the ID for the <unk> token from the specific pack used
+        unk_token_id = vocab_pack.special_tokens.get('<unk>', 1)
+        
+        # --- MODIFIED ---
+        # Find original unknown words and record them
+        original_words = text.lower().split()
+        token_idx = 0 # Keep track of position in the token list
+        
+        for word in original_words:
+            # A simple heuristic: if the word isn't in the main vocab,
+            # and the corresponding token is <unk>, we count it.
+            # A more robust method would involve aligning tokens back to words.
+            if word not in vocab_pack.tokens:
+                # Check if the next token is an <unk> token
+                # This is an approximation but good enough for analytics
+                if token_idx < len(tokens) and tokens[token_idx] == unk_token_id:
+                    self.unknown_token_usage[word] += 1
+
+            # This is a simplified way to advance token_idx. A real implementation
+            # might need to account for subwording.
+            token_idx += 1 
+
+        # Record usage for all tokens
+        self.token_usage.update(tokens)
     
     def get_usage_report(self) -> Dict[str, Any]:
         """Generate usage report"""
         return {
             'total_tokenizations': sum(self.language_pair_usage.values()),
             'unique_tokens_used': len(self.token_usage),
-            'most_used_tokens': sorted(self.token_usage.items(), key=lambda x: x[1], reverse=True)[:100],
+            'most_used_tokens': self.token_usage.most_common(100),
+            # +++ ADDED +++
+            'most_common_unknowns': self.unknown_token_usage.most_common(100),
             'language_pair_distribution': self.language_pair_usage,
             'unknown_token_samples': self.unknown_tokens[-100:]
         } 

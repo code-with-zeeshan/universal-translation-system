@@ -4,6 +4,7 @@ import torch.nn as nn
 from typing import Dict, Optional, List
 from pathlib import Path
 import logging
+from .adapter_composition import AdapterComposition
 
 logger = logging.getLogger(__name__)
 
@@ -194,3 +195,44 @@ class AdapterUniversalEncoder(nn.Module):
             adapter_params = sum(p.numel() for p in adapter.parameters())
             adapter_size_mb = (adapter_params * 4) / (1024 * 1024)
             print(f"✅ Saved {lang} adapter: {adapter_size_mb:.2f}MB")
+
+    def compose_adapters(self, source_adapter_name: str, target_adapter_name: str, composition_strategy: str = 'average') -> str:
+        """
+        Creates a temporary, composed adapter for zero-shot translation.
+
+        Args:
+            source_adapter_name: The adapter for the source language (e.g., 'es').
+            target_adapter_name: The adapter for the target language (e.g., 'de').
+            composition_strategy: The method to use for composition.
+
+        Returns:
+            The name of the newly created temporary adapter (e.g., 'es->de_composed').
+        """
+        if source_adapter_name not in self.language_adapters or \
+           target_adapter_name not in self.language_adapters:
+            raise ValueError("Both source and target adapters must be loaded before composition.")
+
+        composed_name = f"{source_adapter_name}->{target_adapter_name}_composed"
+        
+        # Avoid re-creating if it already exists
+        if composed_name in self.language_adapters:
+            return composed_name
+
+        source_adapter = self.language_adapters[source_adapter_name]
+        target_adapter = self.language_adapters[target_adapter_name]
+
+        if composition_strategy == 'average':
+            # For a pivot-based approach (Source -> English -> Target), we might
+            # conceptually "subtract" the source and "add" the target. A simple
+            # average is a good starting point.
+            composed_state_dict = AdapterComposition.average_weights([source_adapter, target_adapter])
+        else:
+            raise NotImplementedError(f"Composition strategy '{composition_strategy}' not implemented.")
+
+        # Create a new adapter and load the composed weights
+        self.add_language_adapter(composed_name)
+        self.language_adapters[composed_name].load_state_dict(composed_state_dict)
+        
+        logger.info(f"Created composed adapter '{composed_name}' using '{composition_strategy}' strategy.")
+        
+        return composed_name        

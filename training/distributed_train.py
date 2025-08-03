@@ -1,4 +1,4 @@
-# training/distributed_train.py
+# training/distributed_train.py (multi-GPU)
 import torch
 import argparse
 import torch.multiprocessing as mp

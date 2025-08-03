@@ -1,15 +1,24 @@
 # encoder/universal_encoder.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
 import os
 from opentelemetry import trace
+
+# --- MODIFIED ---
+# Import our new custom layers
+from .custom_layers import RotaryEmbedding, CustomTransformerEncoderLayer
+
 tracer = trace.get_tracer(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 
 class UniversalEncoder(nn.Module):
-    """PyTorch implementation of the Universal Encoder for training"""
+    """
+    PyTorch implementation of the Universal Encoder for training
+    --- UPDATED WITH RoPE and SwiGLU ---
+    """
     
     @property
     def model_version(self):
@@ -21,7 +30,7 @@ class UniversalEncoder(nn.Module):
         hidden_dim: int = 1024,
         num_layers: int = 6,
         num_heads: int = 16,
-        max_positions: int = 128,  
+        max_positions: int = 2048, # Increased for better RoPE generalization (eg. from 128 to 2024) 
         dropout: float = 0.1,
         device: torch.device = None
     ):
@@ -36,24 +45,30 @@ class UniversalEncoder(nn.Module):
             
             # Embeddings 
             self.embedding_layer = nn.Embedding(max_vocab_size, hidden_dim)
-            self.position_embedding = nn.Embedding(max_positions, hidden_dim)
+
+            # --- REMOVED ---
+            # self.position_embedding = nn.Embedding(max_positions, hidden_dim)
+        
+            # +++ ADDED +++
+            # Add the Rotary Embedding module
+            self.rotary_embeddings = RotaryEmbedding(dim=hidden_dim, max_position_embeddings=max_positions)
             
-            # Transformer encoder layers 
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=hidden_dim,
-                nhead=num_heads,
-                dim_feedforward=hidden_dim * 4,  # 4096 for FFN
-                dropout=dropout,
-                activation='gelu',
-                batch_first=True
-            )
+            # --- REPLACED ---
+            # Replace the standard TransformerEncoder with a ModuleList of our custom layers
+            self.transformer_layers = nn.ModuleList([
+                CustomTransformerEncoderLayer(
+                    d_model=hidden_dim,
+                    nhead=num_heads,
+                    dim_feedforward=hidden_dim * 4, # Standard FFN hidden dim
+                    dropout=dropout
+                ) for _ in range(num_layers)
+            ])
             
-            self.transformer = nn.TransformerEncoder(
-                encoder_layer,
-                num_layers=num_layers
-            )
+            # --- REMOVED ---
+            # self.transformer = nn.TransformerEncoder(...)
             
-            self.layer_norm = nn.LayerNorm(hidden_dim)
+            # --- RENAMED for clarity ---
+            self.output_norm = nn.LayerNorm(hidden_dim)
             self.dropout = nn.Dropout(dropout)
             
             # For vocabulary management
@@ -103,32 +118,34 @@ class UniversalEncoder(nn.Module):
             batch_size, seq_len = input_ids.shape
             
             # Token embeddings
-            token_embeddings = self.embedding_layer(input_ids)
+            hidden_states = self.embedding_layer(input_ids)
             
-            # Position embeddings
-            positions = torch.arange(seq_len, device=input_ids.device).expand(batch_size, -1)
-            position_embeddings = self.position_embedding(positions)
+            # --- REMOVED ---
+            # The old position embedding logic is gone.
             
-            # Combine embeddings
-            embeddings = token_embeddings + position_embeddings
-            embeddings = self.dropout(embeddings)
+            # Apply dropout to the token embeddings
+            hidden_states = self.dropout(hidden_states)
+            
+            # +++ ADDED +++
+            # Get the rotary frequencies for the current sequence length
+            freqs_cis = self.rotary_embeddings(seq_len)
             
             # Convert attention mask for transformer
-            if attention_mask is not None:
-                # PyTorch transformer expects True for masked positions
-                attention_mask = attention_mask == 0
+            # PyTorch transformer expects True for masked positions
+            src_key_padding_mask = (attention_mask == 0) if attention_mask is not None else None
             
-            # Pass through transformer
-            hidden_states = self.transformer(
-                embeddings,
-                src_key_padding_mask=attention_mask
-            )
+            # --- REPLACED ---
+            # Pass through our custom transformer layers
+            for layer in self.transformer_layers:
+                hidden_states = layer(hidden_states, freqs_cis, src_key_padding_mask)
             
             # Final layer norm
-            hidden_states = self.layer_norm(hidden_states)
+            hidden_states = self.output_norm(hidden_states)
 
             # Apply adapter if available (maintains quality!)
             if language and language in self.adapters:
+                # Ensure adapter is on the correct device
+                self.adapters[language].to(hidden_states.device)
                 hidden_states = self.adapters[language](hidden_states)
             
             return hidden_states  # [batch, seq, 1024]
@@ -165,9 +182,11 @@ class UniversalEncoder(nn.Module):
                 else:
                     # If embeddings are stored as tensor
                     self.embedding_layer.weight.data = torch.tensor(vocab_pack.embeddings)
-                    # Initialize with random embeddings
-                    nn.init.normal_(self.embedding_layer.weight, mean=0.0, std=0.02)
-                    logger.warning(f"No pre-computed embeddings in vocab pack {vocab_pack.name}, using random initialization")
+            else:        
+                # Initialize with random embeddings
+                nn.init.normal_(self.embedding_layer.weight, mean=0.0, std=0.02)
+                # Using logger from the global scope if available
+                logger.warning(f"No pre-computed embeddings in vocab pack {vocab_pack.name}, using random initialization")
         
             # Re-apply quantization if model was quantized
             if self.is_quantized:

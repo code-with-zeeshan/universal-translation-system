@@ -1,4 +1,4 @@
-# training/memory_efficient_training.py
+# training/memory_efficient_training.py (memory-optimized)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

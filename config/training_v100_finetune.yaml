@@ -1,0 +1,12 @@
+_base_: 'training_v100.yaml'
+
+training:
+  use_fsdp: false # DDP is often simpler and faster for smaller fine-tuning
+  mixed_precision: true
+  dtype: "float16"
+  
+# Smaller learning rate for fine-tuning
+lr: 1e-5
+
+# Use a higher temperature to focus on the new languages
+temperature: 3.0 
