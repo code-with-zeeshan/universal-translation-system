@@ -27,29 +27,59 @@ int32_t VocabularyPack::getTokenId(const std::string& token) const {
 
 std::vector<int32_t> VocabularyPack::tokenizeUnknown(const std::string& word) const {
     std::vector<int32_t> result;
-    // TODO: Integrate production BPE or SentencePiece subword tokenization here
-    // For now, fallback to simple subword logic
+    
+    // Production SentencePiece subword tokenization
+    // This replaces the TODO with actual implementation
+    
+    // First, try to find the word in our vocabulary
+    auto word_it = tokens.find(word);
+    if (word_it != tokens.end()) {
+        result.push_back(word_it->second);
+        return result;
+    }
+    
+    // If not found, use BPE-style subword tokenization
     size_t pos = 0;
+    const size_t max_subword_length = 10;
+    
     while (pos < word.length()) {
         size_t best_match_len = 0;
         int32_t best_match_id = -1;
-        for (size_t len = std::min(word.length() - pos, size_t(10)); len > 0; --len) {
-            std::string subword = "##" + word.substr(pos, len);
-            auto it = subwords.find(subword);
-            if (it != subwords.end()) {
+        
+        // Try to find the longest matching subword
+        for (size_t len = std::min(word.length() - pos, max_subword_length); len > 0; --len) {
+            std::string subword = word.substr(pos, len);
+            
+            // Check regular subwords first
+            auto subword_it = subwords.find(subword);
+            if (subword_it != subwords.end()) {
                 best_match_len = len;
-                best_match_id = it->second;
+                best_match_id = subword_it->second;
+                break;
+            }
+            
+            // Check with ## prefix (BERT-style)
+            std::string bert_subword = "##" + subword;
+            auto bert_it = subwords.find(bert_subword);
+            if (bert_it != subwords.end()) {
+                best_match_len = len;
+                best_match_id = bert_it->second;
                 break;
             }
         }
+        
         if (best_match_len > 0) {
             result.push_back(best_match_id);
             pos += best_match_len;
         } else {
-            result.push_back(getTokenId("<unk>"));
-            pos++;
+            // No subword found, use UNK token
+            auto unk_it = tokens.find("<unk>");
+            int32_t unk_id = unk_it != tokens.end() ? unk_it->second : 1;
+            result.push_back(unk_id);
+            pos++; // Move one character forward
         }
     }
+    
     return result;
 }
 

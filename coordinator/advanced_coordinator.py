@@ -27,6 +27,11 @@ from pydantic import BaseModel, Field
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+# Import utility modules
+from utils.auth import APIKeyManager
+from utils.rate_limiter import RateLimiter
+from utils.security import validate_model_source, safe_load_model
+
 # --- Configuration and Constants ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -36,6 +41,10 @@ MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "a-very-secret-key-for-cookies")
 JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "a-super-secret-jwt-key")
 AUTH_TOKEN = os.environ.get("COORDINATOR_TOKEN", "changeme123")
+
+# Initialize utilities
+api_key_manager = APIKeyManager()
+rate_limiter = RateLimiter(requests_per_minute=60, requests_per_hour=1000)
 
 # --- Pydantic Models for API Schema ---
 class DecoderNodeSchema(BaseModel):
@@ -335,6 +344,11 @@ async def decode_proxy(
     x_domain: Optional[str] = Header(None)
 ):
     """Proxy a decode request to the least loaded healthy decoder."""
+    # Add API key validation
+    api_key = request.headers.get('X-API-Key')
+    if not api_key_manager.validate_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+    
     requests_total.labels(endpoint='/api/decode', group='standard').inc()
     with tracer.start_as_current_span("decode_proxy") as span:
 

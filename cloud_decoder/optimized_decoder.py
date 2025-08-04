@@ -1,6 +1,7 @@
 # cloud_decoder/optimized_decoder.py
 import torch
 import torch.nn as nn
+from pathlib import Path
 import struct
 import numpy as np
 import litserve as ls
@@ -9,7 +10,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 import asyncio
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any, Union
 import time
 import triton_python_backend_utils as pb_utils
 import msgpack
@@ -30,6 +31,11 @@ from monitoring.metrics_collector import (
 from collections import OrderedDict
 # Import vocabulary manager
 from vocabulary.vocabulary_manager import VocabularyManager
+
+# Import utility modules
+from utils.auth import APIKeyManager
+from utils.rate_limiter import RateLimiter
+from utils.security import validate_model_source, safe_load_model
 
 # OpenTelemetry imports
 from opentelemetry import trace
@@ -53,6 +59,10 @@ JWT_SECRET = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 
 logger = logging.getLogger(__name__)
+
+# Initialize utilities
+api_key_manager = APIKeyManager()
+rate_limiter = RateLimiter(requests_per_minute=60, requests_per_hour=1000)
 
 # AdapterManager Class 
 class AdapterManager:
@@ -431,19 +441,56 @@ async def status():
 
 @app.post("/decode")
 async def decode(request: Request, x_target_language: str = Header(None)):
+    client_id = request.headers.get('X-Client-ID', 'default')
+    allowed, message = rate_limiter.is_allowed(client_id)
+    if not allowed:
+        raise HTTPException(status_code=429, detail=message)
     start_time = time.time()
     active_connections.inc()  # Increment active connections
 
     try:
         with tracer.start_as_current_span("decode_request") as span:
             span.set_attribute("target_language", x_target_language or "unknown")
-            # ... actual decode logic ...
-            return {"translation": "TODO: implement decode logic"}
+            
+            # Get request data
+            compressed_data = await request.body()
+            
+            # Decompress encoder output
+            decompressed_data = decompress_encoder_output(compressed_data)
+            
+            # Get vocabulary pack for target language
+            target_lang = x_target_language or "en"
+            vocab_pack = vocabulary_manager.get_vocab_for_pair("en", target_lang)
+            
+            # Run decoder inference
+            if model is None:
+                raise HTTPException(status_code=503, detail="Model not loaded")
+            
+            # Prepare input tensors
+            encoder_hidden_states = torch.tensor(decompressed_data['hidden_states'], device=device)
+            encoder_attention_mask = torch.tensor(decompressed_data['attention_mask'], device=device)
+            
+            # Generate translation
+            with torch.no_grad():
+                output_tokens, _ = model.generate(
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    target_lang_id=vocab_pack.getTokenId(f"<{target_lang}>"),
+                    max_length=128,
+                    temperature=0.7,
+                    top_k=50,
+                    top_p=0.9
+                )
+            
+            # Decode tokens to text
+            translation = decode_tokens_to_text(output_tokens.cpu().numpy(), vocab_pack)
+            
+            result = {"translation": translation, "target_language": target_lang}
 
         # Track successful request
         latency = time.time() - start_time
         track_translation_request(
-            source_lang=source_lang,
+            source_lang="unknown",  # Will be extracted from encoder data
             target_lang=target_lang,
             status='success',
             latency=latency
@@ -454,11 +501,12 @@ async def decode(request: Request, x_target_language: str = Header(None)):
     except Exception as e:
         # Track failed request
         track_translation_request(
-            source_lang=source_lang,
-            target_lang=target_lang,
+            source_lang="unknown",
+            target_lang=x_target_language or "unknown",
             status='error'
         )
-        raise
+        logger.error(f"Decode error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         active_connections.dec()  # Decrement active connections
 

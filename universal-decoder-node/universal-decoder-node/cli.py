@@ -180,8 +180,50 @@ def test(text: str, source_lang: str, target_lang: str, endpoint: str, encoder_e
         if encoder_endpoint:
             # Use remote encoder
             click.echo(f"📡 Using remote encoder: {encoder_endpoint}")
-            # TODO: Implement remote encoder call
-            click.echo("❌ Remote encoder not yet implemented")
+            
+            # Implement remote encoder call
+            try:
+                # Prepare request data
+                encoder_data = {
+                    "text": text,
+                    "source_lang": source_lang,
+                    "target_lang": target_lang
+                }
+                
+                # Call remote encoder
+                encoder_resp = requests.post(
+                    f"{encoder_endpoint}/encode",
+                    json=encoder_data,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=30
+                )
+                
+                if encoder_resp.status_code == 200:
+                    encoder_result = encoder_resp.json()
+                    compressed_data = encoder_result.get('encoded_data')
+                    
+                    if compressed_data:
+                        # Send compressed data to decoder
+                        resp = requests.post(
+                            f"{endpoint}/decode",
+                            data=compressed_data,
+                            headers={'X-Target-Language': target_lang}
+                        )
+                        
+                        if resp.status_code == 200:
+                            result = resp.json()
+                            click.echo(f"✅ Translation: {result.get('translation', 'N/A')}")
+                        else:
+                            click.echo(f"❌ Decoder failed: {resp.text}")
+                    else:
+                        click.echo("❌ Encoder returned no data")
+                else:
+                    click.echo(f"❌ Encoder failed: {encoder_resp.text}")
+                    
+            except requests.exceptions.RequestException as e:
+                click.echo(f"❌ Network error: {e}")
+            except Exception as e:
+                click.echo(f"❌ Encoder error: {e}")
         else:
             # For testing, create dummy compressed data
             import numpy as np
@@ -235,7 +277,7 @@ def init(output: str):
             'batch_timeout_ms': 10
         },
         'security': {
-            'jwt_secret': 'change-me-in-production',
+            'jwt_secret': os.environ.get('JWT_SECRET', 'change-me-in-production'),
             'enable_auth': True
         },
         'monitoring': {

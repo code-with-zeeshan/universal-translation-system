@@ -22,7 +22,16 @@ import uvicorn
 # Import vocabulary manager (we'll create a minimal version)
 from .vocabulary import VocabularyManager
 
+# Import utility modules
+from utils.auth import APIKeyManager
+from utils.rate_limiter import RateLimiter
+from utils.security import validate_model_source, safe_load_model
+
 logger = logging.getLogger(__name__)
+
+# Initialize utilities
+api_key_manager = APIKeyManager()
+rate_limiter = RateLimiter(requests_per_minute=60, requests_per_hour=1000)
 
 
 class OptimizedUniversalDecoder(nn.Module):

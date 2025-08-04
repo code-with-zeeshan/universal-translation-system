@@ -3,7 +3,7 @@ import msgpack
 import os
 from utils.security import validate_path_component
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Any
 from dataclasses import dataclass
 import asyncio
 import aiofiles
@@ -12,6 +12,7 @@ from functools import lru_cache
 import json
 from utils.exceptions import VocabularyError
 from collections import Counter
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +112,14 @@ class VocabularyManager:
                 with open(manifest_path, 'r') as f:
                     self._version_cache = json.load(f)
                 logger.info(f"Loaded version manifest with {len(self._version_cache)} entries")
+            except FileNotFoundError:
+                logger.warning(f"Version manifest not found: {manifest_path}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in version manifest: {e}")
+            except PermissionError as e:
+                logger.error(f"Permission denied reading manifest: {e}")
             except Exception as e:
-                logger.warning(f"Failed to load version manifest: {e}")
+                logger.error(f"Unexpected error loading manifest: {e}")
         
         # Scan directory for pack files
         for pack_file in self.vocab_dir.glob('*_v*.msgpack'):
@@ -357,36 +364,26 @@ class VocabularyManager:
         
         return None
 
-    # explicit cleanup
     def __del__(self):
-        """Cleanup resources on deletion"""
+        """Cleanup method to prevent memory leaks"""
         try:
-            self.clear_cache()
-            # Close any open file handles
-            for pack_name, pack in self.loaded_packs.items():
-                if hasattr(pack, '_file_handle') and pack._file_handle:
-                    pack._file_handle.close()
-            # Clear references
+            # Clear loaded packs cache
             self.loaded_packs.clear()
+            
+            # Clear version cache
             self._version_cache.clear()
-        except:
-            pass  # Ignore errors during cleanup
-
-    # Periodic cleanup method:
-    def cleanup_old_cache(self, max_age_hours: int = 24):
-        """Remove old cached packs not used recently"""
-        current_time = time.time()
-        to_remove = []
+            
+            # Clear language mapping
+            self.language_to_pack.clear()
+            
+            logger.info("VocabularyManager cleanup completed")
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}")
     
-        for pack_name, pack in self.loaded_packs.items():
-            if hasattr(pack, '_last_access_time'):
-                age_hours = (current_time - pack._last_access_time) / 3600
-                if age_hours > max_age_hours:
-                    to_remove.append(pack_name)
-    
-        for pack_name in to_remove:
-            del self.loaded_packs[pack_name]
-            logger.info(f"Removed old cached pack: {pack_name}")
+    def cleanup_cache(self):
+        """Explicitly cleanup cache to free memory"""
+        self.loaded_packs.clear()
+        logger.info("Vocabulary cache cleared")
 
 class VocabularyMigrator:
     """Handle vocabulary pack version migrations"""
