@@ -6,7 +6,7 @@ from pathlib import Path
 import threading
 from typing import Dict, Optional, Tuple, List
 import numpy as np
-from utils.common_utils import StandardLogger
+import logging
 from utils.exceptions import VocabularyError
 import zstandard as zstd
 
@@ -17,7 +17,7 @@ class OptimizedVocabularyManager:
         self.vocab_dir = Path(vocab_dir)
         self.cache_size = cache_size
         self._lock = threading.Lock()
-        self.logger = StandardLogger.get_logger(__name__)
+        self.logger = logging.getLogger(__name__)
         
         # Memory-mapped files
         self.mmap_files = {}
@@ -50,13 +50,10 @@ class OptimizedVocabularyManager:
             # Read just the header (first 1KB)
             with open(pack_file, 'rb') as f:
                 header_data = f.read(1024)
-                # Simple parsing - in production use proper msgpack streaming
-                if b'"languages"' in header_data:
-                    # Extract language list from header
-                    self.pack_metadata[pack_name] = {
-                        'file': pack_file,
-                        'size': pack_file.stat().st_size
-                    }
+                self.pack_metadata[pack_name] = {
+                    'file': pack_file,
+                    'size': pack_file.stat().st_size
+                }
     
     def get_vocabulary_for_edge(self, source_lang: str, target_lang: str) -> 'EdgeVocabularyPack':
         """Get minimal vocabulary for edge device"""
@@ -151,7 +148,7 @@ class OptimizedVocabularyManager:
         except msgpack.exceptions.UnpackException as e:
             raise VocabularyError(f"Invalid MessagePack data: {e}")
         except Exception as e:
-            logger.error(f"Failed to unpack MessagePack data: {e}")
+            self.logger.error(f"Failed to unpack MessagePack data: {e}")
             raise
     
     def _load_pack_from_file(self, pack_name: str) -> 'EdgeVocabularyPack':

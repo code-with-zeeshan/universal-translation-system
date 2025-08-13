@@ -45,17 +45,14 @@ spec:
           mountPath: /app/models
         - name: vocabs
           mountPath: /app/vocabs
-        - name: logs
-          mountPath: /app/logs
       volumes:
       - name: models
-        hostPath:
-          path: /app/models
+        persistentVolumeClaim:
+          # This PVC should be created separately and point to your model storage
+          claimName: model-storage-pvc
       - name: vocabs
-        hostPath:
-          path: /app/vocabs
-      - name: logs
-        hostPath:
-          path: /app/logs
+        persistentVolumeClaim:
+          # This PVC should point to your vocabulary storage
+          claimName: vocab-storage-pvc
       nodeSelector:
         kubernetes.io/hostname: gpu-node

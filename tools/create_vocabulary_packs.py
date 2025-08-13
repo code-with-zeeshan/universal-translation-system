@@ -575,7 +575,7 @@ class VocabularyPackCreator:
     
     def _calculate_stats(
         self, 
-        optimized_vocab: Dict[str, Any], 
+        optimized_vocab: Dict[str, Any],
         languages: List[str]
     ) -> VocabStats:
         """
@@ -845,30 +845,30 @@ def main():
         # Create Latin language pack
         pack = creator.create_pack(['en', 'es', 'fr', 'de'], 'latin_optimized')
         
-        print(f"Created pack: {pack['name']}")
-        print(f"Version: {pack['version']}")
-        print(f"Languages: {pack['languages']}")
-        print(f"Total tokens: {pack['metadata']['total_tokens']}")
-        print(f"Coverage: {pack['metadata']['coverage_percentage']:.2f}%")
-        print(f"Size: {pack['metadata']['size_mb']:.2f}MB")
+        logging.info(f"Created pack: {pack['name']}")
+        logging.info(f"Version: {pack['version']}")
+        logging.info(f"Languages: {pack['languages']}")
+        logging.info(f"Total tokens: {pack['metadata']['total_tokens']}")
+        logging.info(f"Coverage: {pack['metadata']['coverage_percentage']:.2f}%")
+        logging.info(f"Size: {pack['metadata']['size_mb']:.2f}MB")
 
         # Validate the created pack
-        print("\nValidating pack...")
+        logging.info("\nValidating pack...")
         pack_path = f"vocabs/{pack['name']}_v{pack['version']}.json"
         is_valid, errors = creator.validate_pack(pack_path)
         if is_valid:
-            print("✅ Pack is valid")
+            logging.info("✅ Pack is valid")
         else:
-            print(f"⚠️  Pack validation errors: {errors}")
+            logging.warning(f"⚠️  Pack validation errors: {errors}")
         
         # List all available packs
-        print("\nAvailable packs:")
+        logging.info("\nAvailable packs:")
         available_packs = creator.list_available_packs()
         for pack_name in available_packs:
-            print(f"  - {pack_name}")
+            logging.info(f"  - {pack_name}")
         
     except Exception as e:
-        logger.error(f"Failed to create vocabulary pack: {e}")
+        logging.error(f"Failed to create vocabulary pack: {e}")
 
 
 if __name__ == "__main__":

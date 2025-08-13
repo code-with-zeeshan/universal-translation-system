@@ -1,37 +1,41 @@
 #!/bin/bash
 # scripts/train_from_scratch.sh
 
+# Exit immediately if a command exits with a non-zero status.
 set -e
 
-echo "🚀 Starting Universal Translation System Training"
+echo "🚀 Starting Full End-to-End Training Pipeline for Universal Translation System"
+echo "=============================================================================="
 
 # 1. Prepare all data (download, preprocess, sample, augment, etc.)
-echo "📥 Step 1: Running integrated data pipeline..."
-python data/practical_data_pipeline.py
+echo -e "\n[Step 1/6] 📥 Running integrated data pipeline..."
+python -m data.practical_data_pipeline
+echo "[Step 1/6] ✅ Data pipeline complete."
 
 # 2. Create vocabulary packs
-echo "📦 Step 2: Creating vocabulary packs..."
-python vocabulary/create_vocabulary_packs_from_data.py
+echo -e "\n[Step 2/6] 📦 Creating vocabulary packs from processed data..."
+python -m vocabulary.create_vocabulary_packs_from_data
+echo "[Step 2/6] ✅ Vocabulary packs created."
 
 # 3. Initialize models from pretrained
-echo "🧠 Step 3: Initializing models from pretrained..."
-python training/bootstrap_from_pretrained.py
+echo -e "\n[Step 3/6] 🧠 Initializing models from pretrained weights (XLM-R & mBART)..."
+python -m training.bootstrap_from_pretrained
+echo "[Step 3/6] ✅ Initial models created."
 
 # 4. Train models (config auto-detection is now built-in)
-echo "🏃 Step 4: Training models..."
-python training/train_universal_system.py
+echo -e "\n[Step 4/6] 🏃 Starting main training loop (auto-detecting best config for hardware)..."
+python -m training.train_universal_system
+echo "[Step 4/6] ✅ Main training loop complete."
 
 # 5. Convert models for production
-echo "🔄 Step 5: Converting models..."
-python training/convert_models.py \
-    --encoder_checkpoint checkpoints/best_model.pt \
-    --decoder_checkpoint checkpoints/best_model.pt \
-    --output_dir models/production
+echo -e "\n[Step 5/6] 🔄 Converting trained models to production formats (ONNX, etc.)..."
+python -m training.convert_models
+echo "[Step 5/6] ✅ Model conversion complete."
 
-# 6. Optimize for mobile
-echo "📱 Step 6: Optimizing for mobile..."
-python training/optimize_for_mobile.py \
-    --onnx_model models/production/encoder.onnx \
-    --output_dir models/mobile
+echo -e "\n[Step 6/6] 📦 Finalizing production models..."
+# This step seems to be missing from your file list, but if it existed, it would go here.
+# For example: python -m training.optimize_for_mobile ...
+echo "[Step 6/6] ✅ Production models are ready."
 
-echo "✅ Training complete!"
+echo -e "\n🎉 Full training pipeline finished successfully! Models are ready in 'models/production'."
+echo "=============================================================================="

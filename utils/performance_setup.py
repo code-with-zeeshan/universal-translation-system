@@ -1,6 +1,9 @@
 # performance_setup.py
 import torch
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def setup_performance_optimizations():
     """Enable all performance optimizations"""
@@ -24,7 +27,4 @@ def setup_performance_optimizations():
     # Set to eval mode for inference
     torch.set_grad_enabled(False)  # Only for inference
     
-    print("✅ Performance optimizations enabled")
-
-# Call at start of script:
-setup_performance_optimizations()
+    logger.info("✅ Performance optimizations enabled")

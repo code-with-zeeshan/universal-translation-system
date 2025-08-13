@@ -5,24 +5,18 @@
 
 _base_: base.yaml
 
-# Absolute minimum batch size.
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 4
-  gradient_accumulation: 32 # Maximum accumulation.
+  accumulation_steps: 32 # Maximum accumulation.
   effective_batch_size: 128
-
-# Very low learning rate for training stability on older hardware.
-optimization:
-  learning_rate: 1e-4
-
-# All possible memory saving features are turned on.
-memory:
+  lr: 1e-4 # Very low learning rate for training stability on older hardware.
   gradient_checkpointing: true
   cpu_offload: true
   activation_offload: true
   compile_model: false          # Compiling can be slow or fail on older GPUs.
-  dtype: float16                # float16 is the only safe option (K80 doesn't support bfloat16).
-  use_flash_attention: false    # K80 does not support Flash Attention.
+  dtype: "float16"              # float16 is the only safe option (K80 doesn't support bfloat16).
+  flash_attention: false        # K80 does not support Flash Attention.
   max_split_size: 64            # Tiny memory splits.
   empty_cache_freq: 25          # Very frequent memory cleanup.
 

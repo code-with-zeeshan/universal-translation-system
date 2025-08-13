@@ -1,4 +1,7 @@
 # utils/rate_limiter.py
+# IMPORTANT: This is a simple in-memory rate limiter suitable only for single-process deployments.
+# In a distributed or multi-process environment (e.g., using gunicorn, Kubernetes),
+# this will not work correctly. A centralized solution like Redis would be required.
 from collections import defaultdict
 import time
 import threading

@@ -1,0 +1,19 @@
+# config/deployment_config.yaml
+# Configuration for the final, integrated Universal Translation System
+
+# --- System Paths ---
+data_dir: "data"
+model_dir: "models/production" # Point to production-ready models
+vocab_dir: "vocabs"
+checkpoint_dir: "checkpoints"
+
+# --- Performance & Hardware ---
+device: "cuda" # 'cuda' for GPU, 'cpu' for CPU
+quantization_mode: "int8" # 'fp32', 'fp16', or 'int8'
+batch_size: 32
+
+# --- Features & Services ---
+use_adapters: true
+enable_monitoring: true
+monitoring_port: 8000
+vocab_cache_size: 5 # Number of vocab packs to keep in memory

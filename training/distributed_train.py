@@ -39,6 +39,7 @@ import time
 import psutil
 import gc
 import socket
+import sys
 from utils.exceptions import TrainingError
 from dataclasses import dataclass
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -46,6 +47,7 @@ from collections import defaultdict
 from utils.shutdown_handler import GracefulShutdown
 from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
+from config.schemas import RootConfig, load_config as load_pydantic_config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -102,11 +104,11 @@ class UnifiedDistributedTrainer:
     def __init__(self, 
                  gpu_id: int, 
                  world_size: int,
-                 config: TrainingConfig = None):
+                 config: RootConfig):
         
         self.gpu_id = gpu_id
         self.world_size = world_size
-        self.config = config or TrainingConfig()
+        self.config = config
         
         # Initialize distributed training
         self._init_distributed()
@@ -120,7 +122,7 @@ class UnifiedDistributedTrainer:
         optimize_gpu_memory()
         
         # Initialize modern mixed precision scaler with BFloat16 support 
-        if self.config.mixed_precision:
+        if self.config.training.mixed_precision:
             self.scaler = torch.amp.GradScaler(device='cuda')
             self.use_bfloat16 = torch.cuda.is_bf16_supported()
             self.mixed_precision_dtype = torch.bfloat16 if self.use_bfloat16 else torch.float16
@@ -136,13 +138,13 @@ class UnifiedDistributedTrainer:
         self.accumulated_loss = 0.0  
         
         # Setup Flash Attention with better error handling 
-        if self.config.flash_attention:
+        if self.config.training.flash_attention:
             self._setup_flash_attention()
         
         logger.info(f"Initialized unified trainer on GPU {gpu_id}/{world_size}")
-        logger.info(f"Using {'FSDP' if self.config.use_fsdp else 'DDP'} with compile={self.config.compile_model}")
-        logger.info(f"Mixed precision: {self.config.mixed_precision} (dtype: {self.mixed_precision_dtype})")
-        logger.info(f"Flash Attention: {self.config.flash_attention}")
+        logger.info(f"Using {'FSDP' if self.config.training.use_fsdp else 'DDP'} with compile={self.config.training.compile_model}")
+        logger.info(f"Mixed precision: {self.config.training.mixed_precision} (dtype: {self.mixed_precision_dtype})")
+        logger.info(f"Flash Attention: {self.config.training.flash_attention}")
     
     def _init_distributed(self):
         """Initialize distributed training with proper error handling and optimizations"""
@@ -172,7 +174,7 @@ class UnifiedDistributedTrainer:
                 torch.backends.cudnn.deterministic = False  
             
             # Enable compile optimizations 
-            if self.config.compile_model:
+            if self.config.training.compile_model:
                 torch._dynamo.config.cache_size_limit = 1024
                 torch._dynamo.config.optimize_ddp = True
             
@@ -202,7 +204,7 @@ class UnifiedDistributedTrainer:
                 
         except Exception as e:
             logger.warning(f"Flash Attention setup failed: {e}")
-            self.config.flash_attention = False
+            self.config.training.flash_attention = False
     
     def setup_model(self, 
                    encoder: torch.nn.Module, 
@@ -215,18 +217,18 @@ class UnifiedDistributedTrainer:
         decoder = decoder.to(self.device)
         
         # Apply gradient checkpointing (cleaner approach)
-        if self.config.gradient_checkpointing:
+        if self.config.training.gradient_checkpointing:
             if hasattr(encoder, 'gradient_checkpointing_enable'):
                 encoder.gradient_checkpointing_enable()
             if hasattr(decoder, 'gradient_checkpointing_enable'):
                 decoder.gradient_checkpointing_enable()
         
         # Apply activation checkpointing 
-        if self.config.activation_checkpointing:
+        if self.config.training.activation_checkpointing:
             encoder = self._apply_activation_checkpointing(encoder)
             decoder = self._apply_activation_checkpointing(decoder)
         
-        if self.config.use_fsdp:
+        if self.config.training.use_fsdp:
             # Modern FSDP setup
             encoder = self._setup_fsdp_model(encoder, "encoder", auto_wrap_policy)
             decoder = self._setup_fsdp_model(decoder, "decoder", auto_wrap_policy)
@@ -236,24 +238,24 @@ class UnifiedDistributedTrainer:
             decoder = self._setup_ddp_model(decoder, "decoder")
         
         # Apply torch.compile with better mode 
-        if self.config.compile_model and hasattr(torch, 'compile'):
-            logger.info(f"Applying torch.compile with mode={self.config.compile_mode}")
+        if self.config.training.compile_model and hasattr(torch, 'compile'):
+            logger.info(f"Applying torch.compile with mode={self.config.training.compile_mode}")
             try:
                 encoder = torch.compile(
                     encoder, 
-                    mode=self.config.compile_mode,
+                    mode=self.config.training.compile_mode,
                     fullgraph=False,
                     dynamic=True
                 )
                 decoder = torch.compile(
                     decoder, 
-                    mode=self.config.compile_mode,
+                    mode=self.config.training.compile_mode,
                     fullgraph=False,
                     dynamic=True
                 )
             except Exception as e:
                 logger.warning(f"torch.compile failed: {e}, falling back to eager mode")
-                self.config.compile_model = False
+                self.config.training.compile_model = False
         
         return encoder, decoder
     
@@ -285,7 +287,7 @@ class UnifiedDistributedTrainer:
         """Setup FSDP with unified configuration"""
         
         # Configure mixed precision with BFloat16 support 
-        if self.config.mixed_precision:
+        if self.config.training.mixed_precision:
             mixed_precision_policy = MixedPrecision(
                 param_dtype=self.mixed_precision_dtype,
                 reduce_dtype=self.mixed_precision_dtype,
@@ -297,7 +299,7 @@ class UnifiedDistributedTrainer:
             mixed_precision_policy = None
         
         # Configure CPU offload
-        cpu_offload_policy = CPUOffload(offload_params=True) if self.config.cpu_offload else None
+        cpu_offload_policy = CPUOffload(offload_params=True) if self.config.training.cpu_offload else None
         
         # Auto wrap policy
         if auto_wrap_policy is None:
@@ -315,8 +317,8 @@ class UnifiedDistributedTrainer:
             auto_wrap_policy=auto_wrap_policy,
             mixed_precision=mixed_precision_policy,
             cpu_offload=cpu_offload_policy,
-            backward_prefetch=self.config.backward_prefetch,
-            sharding_strategy=self.config.sharding_strategy,
+            backward_prefetch=self.config.training.backward_prefetch,
+            sharding_strategy=self.config.training.sharding_strategy,
             device_id=self.gpu_id,
             sync_module_states=True,
             param_init_fn=None,
@@ -327,7 +329,7 @@ class UnifiedDistributedTrainer:
             limit_all_gathers=True
         )
         
-        logger.info(f"Setup FSDP for {model_name} with strategy={self.config.sharding_strategy}")
+        logger.info(f"Setup FSDP for {model_name} with strategy={self.config.training.sharding_strategy}")
         logger.info(f"Using dtype={self.mixed_precision_dtype}")
         return fsdp_model
     
@@ -358,15 +360,15 @@ class UnifiedDistributedTrainer:
         start_time = time.time()
         
         # Enable gradient synchronization only on accumulation boundary
-        should_sync = (self.step + 1) % self.config.accumulation_steps == 0
+        should_sync = (self.step + 1) % self.config.training.accumulation_steps == 0
         sync_context = self._get_sync_context(encoder, decoder, should_sync)
         
         with sync_context:
             # Modern mixed precision training with BFloat16 support
-            if self.config.mixed_precision:
+            if self.config.training.mixed_precision:
                 with torch.amp.autocast(device_type='cuda', dtype=self.mixed_precision_dtype):
                     loss = self.compute_loss(batch, encoder, decoder)
-                    loss = loss / self.config.accumulation_steps
+                    loss = loss / self.config.training.accumulation_steps
                 
                 # Scale loss for mixed precision
                 if self.scaler:
@@ -375,7 +377,7 @@ class UnifiedDistributedTrainer:
                     loss.backward()
             else:
                 loss = self.compute_loss(batch, encoder, decoder)
-                loss = loss / self.config.accumulation_steps
+                loss = loss / self.config.training.accumulation_steps
                 loss.backward()
         
         # Accumulate loss 
@@ -421,19 +423,19 @@ class UnifiedDistributedTrainer:
     
     def _clip_gradients(self, encoder: torch.nn.Module, decoder: torch.nn.Module):
         """Clip gradients with proper handling for FSDP"""
-        if self.config.use_fsdp:
-            encoder.clip_grad_norm_(self.config.max_grad_norm)
-            decoder.clip_grad_norm_(self.config.max_grad_norm)
+        if self.config.training.use_fsdp:
+            encoder.clip_grad_norm_(self.config.training.max_grad_norm)
+            decoder.clip_grad_norm_(self.config.training.max_grad_norm)
         else:
             torch.nn.utils.clip_grad_norm_(
                 list(encoder.parameters()) + list(decoder.parameters()),
-                max_norm=self.config.max_grad_norm
+                max_norm=self.config.training.max_grad_norm
             )
     
     @contextmanager
     def _get_sync_context(self, encoder, decoder, should_sync):
         """Get appropriate synchronization context"""
-        if self.config.use_fsdp:
+        if self.config.training.use_fsdp:
             yield
         else:
             if should_sync:
@@ -454,7 +456,7 @@ class UnifiedDistributedTrainer:
         source_mask = batch['source_mask'].to(self.device, non_blocking=True)
         
         # Forward pass with Flash Attention and profiling 
-        if self.config.flash_attention:
+        if self.config.training.flash_attention:
             with torch.backends.cuda.sdp_kernel(
                 enable_flash=True,
                 enable_math=False,
@@ -506,21 +508,21 @@ class UnifiedDistributedTrainer:
             checkpoint = {
                 'epoch': epoch,
                 'step': self.step,
-                'config': self.config,  
+                'config': self.config.dict(),  
                 'torch_version': torch.__version__,
                 'world_size': self.world_size,
                 'model_config': {  
-                    'use_fsdp': self.config.use_fsdp,
-                    'mixed_precision': self.config.mixed_precision,
+                    'use_fsdp': self.config.training.use_fsdp,
+                    'mixed_precision': self.config.training.mixed_precision,
                     'mixed_precision_dtype': str(self.mixed_precision_dtype),
-                    'sharding_strategy': self.config.sharding_strategy.name if self.config.use_fsdp else None,
-                    'compile_model': self.config.compile_model,
-                    'compile_mode': self.config.compile_mode
+                    'sharding_strategy': self.config.training.sharding_strategy.name if self.config.training.use_fsdp else None,
+                    'compile_model': self.config.training.compile_model,
+                    'compile_mode': self.config.training.compile_mode
                 }
             }
             
             # Save model states
-            if self.config.use_fsdp:
+            if self.config.training.use_fsdp:
                 # FSDP state dict handling
                 with FSDP.state_dict_type(
                     encoder, 
@@ -595,11 +597,11 @@ class UnifiedDistributedTrainer:
             checkpoint = torch.load(
                 checkpoint_path, 
                 map_location=f'cuda:{self.gpu_id}',
-                weights_only=False
+                weights_only=True # Set to True for security
             )
         
         # Load model states
-        if self.config.use_fsdp:
+        if self.config.training.use_fsdp:
             with FSDP.state_dict_type(
                 encoder,
                 StateDictType.FULL_STATE_DICT,
@@ -616,11 +618,7 @@ class UnifiedDistributedTrainer:
             
             # Load optimizer with FSDP
             if load_optimizer and 'optimizer_state_dict' in checkpoint:
-                optim_state = FSDP.optim_state_dict_to_load(
-                    model=encoder,
-                    optim=optimizer,
-                    optim_state_dict=checkpoint['optimizer_state_dict']
-                )
+                optim_state = FSDP.optim_state_dict(encoder, optimizer)
                 optimizer.load_state_dict(optim_state)
         else:
             encoder.module.load_state_dict(checkpoint['encoder_state_dict'])
@@ -736,14 +734,16 @@ def train_with_unified_distributed(gpu_id: int,
                                  train_loader: torch.utils.data.DataLoader,
                                  val_loader: Optional[torch.utils.data.DataLoader] = None,
                                  num_epochs: int = 10,
-                                 config: TrainingConfig = None) -> None:
+                                 config: RootConfig = None,
+                                 checkpoint_path: Optional[str] = None,
+                                 shutdown_handler: Optional[GracefulShutdown] = None) -> None:
     """Complete unified distributed training function"""
     
     # Initialize trainer
     trainer = UnifiedDistributedTrainer(
         gpu_id=gpu_id,
         world_size=world_size,
-        config=config or TrainingConfig()
+        config=config
     )
     
     # Setup models
@@ -752,18 +752,18 @@ def train_with_unified_distributed(gpu_id: int,
     # Modern optimizer with fused operations
     optimizer = torch.optim.AdamW(
         list(encoder.parameters()) + list(decoder.parameters()),
-        lr=trainer.config.lr,
-        weight_decay=trainer.config.weight_decay,
+        lr=trainer.config.training.learning_rate,
+        weight_decay=trainer.config.training.weight_decay,
         eps=1e-8,
         betas=(0.9, 0.98),
         fused=torch.cuda.is_available()
     )
     
     # Modern learning rate scheduler
-    total_steps = len(train_loader) * num_epochs // trainer.config.accumulation_steps
+    total_steps = len(train_loader) * num_epochs // trainer.config.training.accumulation_steps
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
-        max_lr=trainer.config.lr,
+        max_lr=trainer.config.training.learning_rate,
         total_steps=total_steps,
         pct_start=0.1,
         anneal_strategy='cos',
@@ -776,7 +776,7 @@ def train_with_unified_distributed(gpu_id: int,
     
     # Profiler setup
     profiler = None
-    if trainer.config.profile_training and gpu_id == 0:
+    if config.training.profile_training and gpu_id == 0:
         profiler = profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
             schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
@@ -788,9 +788,19 @@ def train_with_unified_distributed(gpu_id: int,
     
     # Training loop with modern features
     start_time = time.time()
+    start_epoch = 0
     best_val_loss = float('inf')
-    
-    for epoch in range(num_epochs):
+
+    # Load checkpoint if provided
+    if checkpoint_path and Path(checkpoint_path).exists():
+        if gpu_id == 0: logger.info(f"Resuming training from checkpoint: {checkpoint_path}")
+        # The load_checkpoint method handles mapping the state dict to the sharded model
+        loaded_epoch, _ = trainer.load_checkpoint(
+            checkpoint_path, encoder, decoder, optimizer, scheduler
+        )
+        start_epoch = loaded_epoch + 1 # Start from the next epoch
+
+    for epoch in range(start_epoch, num_epochs):
         encoder.train()
         decoder.train()
         
@@ -802,6 +812,12 @@ def train_with_unified_distributed(gpu_id: int,
         num_updates = 0
         
         for step, batch in enumerate(train_loader):
+            # Check for shutdown signal
+            if shutdown_handler and shutdown_handler.should_stop():
+                logger.info(f"GPU {gpu_id}: Shutdown requested. Saving final checkpoint.")
+                trainer.save_checkpoint(epoch, encoder, decoder, optimizer, scheduler, "emergency_checkpoint.pt")
+                return
+
             trainer.step = step
             
             # Start profiling
@@ -817,7 +833,7 @@ def train_with_unified_distributed(gpu_id: int,
                 num_updates += 1
                 
                 # Logging
-                if num_updates % trainer.config.log_every == 0 and gpu_id == 0:
+                if num_updates % trainer.config.training.log_every == 0 and gpu_id == 0:
                     elapsed = time.time() - start_time
                     current_lr = scheduler.get_last_lr()[0]
                     logger.info(
@@ -839,7 +855,7 @@ def train_with_unified_distributed(gpu_id: int,
                 )
         
         # Save checkpoint
-        if gpu_id == 0 and (epoch + 1) % trainer.config.save_every == 0:
+        if gpu_id == 0 and (epoch + 1) % trainer.config.training.save_every == 0:
             trainer.save_checkpoint(
                 epoch, encoder, decoder, optimizer, scheduler,
                 f"checkpoint_epoch_{epoch}.pt"
@@ -870,7 +886,7 @@ def validate_model(encoder: torch.nn.Module,
                   decoder: torch.nn.Module,
                   val_loader: torch.utils.data.DataLoader,
                   device: torch.device,
-                  config: TrainingConfig) -> float:
+                  config: RootConfig) -> float:
     """Modern validation function with inference mode"""
     
     encoder.eval()
@@ -885,7 +901,7 @@ def validate_model(encoder: torch.nn.Module,
         source_mask = batch['source_mask'].to(device, non_blocking=True)
         
         # Forward pass with Flash Attention if enabled
-        if config.flash_attention:
+        if config.training.flash_attention:
             with torch.backends.cuda.sdp_kernel(
                 enable_flash=True,
                 enable_math=False,
@@ -923,7 +939,7 @@ def distributed_validate(encoder: torch.nn.Module,
                         decoder: torch.nn.Module,
                         val_loader: torch.utils.data.DataLoader,
                         device: torch.device,
-                        config: TrainingConfig,
+                        config: RootConfig,
                         world_size: int) -> float:
     """Distributed validation with proper reduction"""
     encoder.eval()
@@ -950,40 +966,17 @@ def distributed_validate(encoder: torch.nn.Module,
     
     return total_loss / max(total_batches, 1)    
 
-def main():
-    """
-    Main entry point for orchestrating distributed training.
-    This function handles setup, configuration, and spawning of training processes.
-    """
-    # 1. --- SETUP PHASE ---
-    parser = argparse.ArgumentParser(description="Unified Distributed Training")
-    parser.add_argument('--config', type=str, default=None,
-                        help="Path to training config file. If not provided, auto-detects based on GPU.")
-    parser.add_argument('--epochs', type=int, default=20, help="Number of training epochs.")
-    parser.add_argument('--global-batch-size', type=int, default=128,
-                        help="Total batch size across all GPUs.")
-    parser.add_argument('--checkpoint', type=str, default=None,
-                        help="Path to a checkpoint to resume training from.")
-    args = parser.parse_args()
-
+def setup_environment(args: argparse.Namespace) -> Tuple[RootConfig, int, str]:
+    """Handles initial setup of logging, performance, environment, and config."""
     # Setup logging and performance optimizations first
     from utils.logging_config import setup_logging
     setup_logging(log_dir="logs/distributed_training", log_level="INFO")
-    
+
     from utils.performance_setup import setup_performance_optimizations
     setup_performance_optimizations()
 
     # Setup distributed environment variables
     setup_distributed_environment()
-
-    # Load configuration
-    config_path = args.config or auto_select_config()
-    try:
-        config_dict = load_config(config_path)
-        logger.info(f"Loaded configuration from: {config_path}")
-    except FileNotFoundError as e:
-        logger.error(e)
-        sys.exit(1)
 
     # Check for available GPUs
     world_size = torch.cuda.device_count()
@@ -991,6 +984,20 @@ def main():
         raise TrainingError("No CUDA devices found. Distributed training requires GPUs.")
     logger.info(f"Found {world_size} GPUs. Starting distributed training...")
 
+    # Load configuration
+    config_path = args.config or "config/base.yaml" # Default config path
+    try:
+        config = load_pydantic_config(config_path)
+        logger.info(f"Loaded configuration from: {config_path}")
+        logger.info("✅ Configuration validated successfully with Pydantic.")
+    except Exception as e: # Catches both FileNotFoundError and pydantic.ValidationError
+        logger.error(f"❌ Failed to load or validate configuration from {config_path}: {e}")
+        sys.exit(1)
+
+    return config, world_size, config_path
+
+def prepare_resources(config: RootConfig) -> Tuple:
+    """Loads and prepares models and datasets."""
     # 2. --- RESOURCE PREPARATION PHASE ---
     try:
         # Import models and dataset (place imports here to avoid issues with multiprocessing)
@@ -998,29 +1005,51 @@ def main():
         from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
         from training.train_universal_system import ModernParallelDataset
 
-        # Get the model config section from the dictionary
-        model_config = config_dict.get('model', {})
-
         # Initialize models on CPU first; they will be moved to GPUs in the spawned processes
         encoder = UniversalEncoder(
-            max_vocab_size=model_config.get('vocab_size', 50000),
-            hidden_dim=model_config.get('hidden_dim', 1024),
-            num_layers=model_config.get('num_layers', 6),
-            num_heads=model_config.get('num_heads', 16),
-            dropout=model_config.get('dropout', 0.1)
+            max_vocab_size=config.model.vocab_size,
+            hidden_dim=config.model.hidden_dim,
+            num_layers=config.model.num_layers,
+            num_heads=config.model.num_heads,
+            dropout=config.model.dropout
         )
         decoder = OptimizedUniversalDecoder(
-            encoder_dim=model_config.get('hidden_dim', 1024),
-            decoder_dim=model_config.get('decoder_dim', 512),
-            vocab_size=model_config.get('vocab_size', 50000),
-            num_layers=model_config.get('decoder_layers', 6),
-            num_heads=model_config.get('decoder_heads', 8),
-            dropout=model_config.get('dropout', 0.1) 
+            encoder_dim=config.model.hidden_dim,
+            decoder_dim=config.model.decoder_dim,
+            vocab_size=config.model.vocab_size,
+            num_layers=config.model.decoder_layers,
+            num_heads=config.model.decoder_heads,
+            dropout=config.model.dropout 
         )
 
+        # --- ADDED: Load bootstrapped models if they exist ---
+        bootstrapped_encoder_path = Path('models/encoder/universal_encoder_initial.pt')
+        bootstrapped_decoder_path = Path('models/decoder/universal_decoder_initial.pt')
+
+        if bootstrapped_encoder_path.exists():
+            logger.info(f"Found bootstrapped encoder at {bootstrapped_encoder_path}. Loading weights...")
+            try:
+                # Load on CPU to avoid memory issues on rank 0 before distributing
+                checkpoint = torch.load(bootstrapped_encoder_path, map_location='cpu')
+                encoder.load_state_dict(checkpoint['model_state_dict'])
+                logger.info("✅ Successfully loaded bootstrapped encoder weights.")
+            except Exception as e:
+                logger.error(f"❌ Failed to load bootstrapped encoder: {e}. Training will start from scratch.")
+
+        if bootstrapped_decoder_path.exists():
+            logger.info(f"Found bootstrapped decoder at {bootstrapped_decoder_path}. Loading weights...")
+            try:
+                # Load on CPU
+                checkpoint = torch.load(bootstrapped_decoder_path, map_location='cpu')
+                decoder.load_state_dict(checkpoint['model_state_dict'])
+                logger.info("✅ Successfully loaded bootstrapped decoder weights.")
+            except Exception as e:
+                logger.error(f"❌ Failed to load bootstrapped decoder: {e}. Training will start from scratch.")
+        # --- END ADDED ---
+
         # Load datasets
-        train_data_path = Path(config_dict['data']['processed_dir']) / 'train_final.txt'
-        val_data_path = Path(config_dict['data']['processed_dir']) / 'val_final.txt'
+        train_data_path = Path(config.data.processed_dir) / 'train_final.txt'
+        val_data_path = Path(config.data.processed_dir) / 'val_final.txt'
         train_dataset = ModernParallelDataset(str(train_data_path))
         val_dataset = ModernParallelDataset(str(val_data_path))
 
@@ -1029,7 +1058,23 @@ def main():
         logger.error("Please ensure models are importable and data pipeline has been run.")
         sys.exit(1)
 
-    # 3. --- EXECUTION PHASE ---
+    return encoder, decoder, train_dataset, val_dataset
+
+def main():
+    """
+    Main entry point for orchestrating distributed training.
+    This function handles setup, configuration, and spawning of training processes.
+    """
+    parser = argparse.ArgumentParser(description="Unified Distributed Training")
+    parser.add_argument('--config', type=str, default=None, help="Path to training config file.")
+    parser.add_argument('--epochs', type=int, default=20, help="Number of training epochs.")
+    parser.add_argument('--global-batch-size', type=int, default=128, help="Total batch size across all GPUs.")
+    parser.add_argument('--checkpoint', type=str, default=None, help="Path to a checkpoint to resume from.")
+    args = parser.parse_args()
+
+    # 1. Setup Environment
+    config, world_size, config_path = setup_environment(args)
+
     # Setup graceful shutdown and model versioning in the main process
     def emergency_cleanup():
         logger.critical("Emergency cleanup initiated. A final checkpoint might be saved by the training process.")
@@ -1037,7 +1082,10 @@ def main():
         # This function is for cleaning up main process resources if any.
 
     shutdown_handler = GracefulShutdown(cleanup_func=emergency_cleanup)
-    versioning = ModelVersion(model_dir=config_dict.get('model_dir', 'models'))
+    versioning = ModelVersion(model_dir=config.model_dir)
+
+    # 2. Prepare Resources
+    encoder, decoder, train_dataset, val_dataset = prepare_resources(config)
 
     # Prepare arguments for the spawned processes
     spawn_args = (
@@ -1047,10 +1095,11 @@ def main():
         train_dataset,
         val_dataset,
         args,
-        config_dict,
+        config,
         shutdown_handler
     )
 
+    # 3. --- EXECUTION PHASE ---
     # Spawn training processes
     mp.spawn(
         train_with_unified_distributed_wrapper,
@@ -1067,7 +1116,7 @@ def main():
     logger.info(f"Final resource usage summary: {summary}")
 
     # Register the final model version
-    final_model_path = Path(config_dict.get('checkpoint_dir', 'checkpoints')) / "final_model.pt"
+    final_model_path = Path(config.training.checkpoint_dir) / "final_model.pt"
     if final_model_path.exists():
         logger.info("Registering final model version...")
         try:
@@ -1087,7 +1136,7 @@ def main():
 
 
 def train_with_unified_distributed_wrapper(gpu_id: int, world_size: int, encoder, decoder,
-                                           train_dataset, val_dataset, args, config_dict, shutdown_handler):
+                                           train_dataset, val_dataset, args, config, shutdown_handler):
     """
     Wrapper function to prepare dataloaders inside each spawned process
     before calling the main training logic.
@@ -1111,13 +1160,11 @@ def train_with_unified_distributed_wrapper(gpu_id: int, world_size: int, encoder
         num_workers=4, pin_memory=True, drop_last=False
     )
 
-    # Create TrainingConfig from the loaded dictionary
-    training_config = TrainingConfig(**config_dict.get('training', {}))
-
     # Call the actual training function
     train_with_unified_distributed(
         gpu_id, world_size, encoder, decoder,
-        train_loader, val_loader, args.epochs, training_config, shutdown_handler
+        train_loader, val_loader, args.epochs, config,
+        checkpoint_path=args.checkpoint, shutdown_handler=shutdown_handler
     )
 
 

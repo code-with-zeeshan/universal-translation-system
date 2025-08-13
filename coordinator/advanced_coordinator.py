@@ -12,8 +12,7 @@ from typing import Dict, List, Optional
 
 import httpx
 import jwt
-from fastapi import (FastAPI, Request, Depends, HTTPException, Form,
-                     Header, Response, status, APIRouter)
+from fastapi import (FastAPI, Request, Depends, HTTPException, Form, Header, Response, status, APIRouter)
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jinja2 import Template
@@ -41,6 +40,7 @@ MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "a-very-secret-key-for-cookies")
 JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "a-super-secret-jwt-key")
 AUTH_TOKEN = os.environ.get("COORDINATOR_TOKEN", "changeme123")
+INTERNAL_AUTH_TOKEN = os.environ.get("INTERNAL_SERVICE_TOKEN", "internal-secret-token-for-service-auth")
 
 # Initialize utilities
 api_key_manager = APIKeyManager()
@@ -199,7 +199,11 @@ class DecoderPool:
         ]        
 
     # --- THE CORE A/B LOGIC ---
-    def pick_best_node(self, source_lang: str, target_lang: str, adapter_name: str) -> Optional[Dict]:
+    def pick_best_node(
+        self, source_lang: str, target_lang: str, 
+        adapter_name: str, 
+        is_zero_shot: bool = False
+    ) -> Optional[Dict]:
         """
         Intelligently picks the best node for a request, now with A/B testing logic.
         
@@ -210,6 +214,15 @@ class DecoderPool:
         healthy_nodes = self.get_healthy_decoders()
         if not healthy_nodes:
             return None
+
+        # --- MODIFIED: Handle Zero-Shot routing first ---
+        if is_zero_shot:
+            # For zero-shot, find a node that has at least one of the pivot adapters hot.
+            source_adapter, target_adapter = get_pivot_adapters(source_lang, target_lang, None)
+            hot_candidates = [n for n in healthy_nodes if source_adapter in n.get('hot_adapters', []) or target_adapter in n.get('hot_adapters', [])]
+            if hot_candidates:
+                return min(hot_candidates, key=lambda n: n.get('load', float('inf')))
+            # Fallback to any healthy node if none have the adapters hot.
 
         # 1. Check for an active A/B test for this language pair
         pair_str = f"{source_lang}-{target_lang}"
@@ -331,9 +344,9 @@ async def get_status():
         healthy_decoders = pool.get_healthy_decoders()
         return {
             "model_version": MODEL_VERSION,
-            "decoder_pool_size": len(pool.pool),
+            "decoder_pool_size": len(pool.nodes),
             "healthy_decoders": len(healthy_decoders),
-            "decoders": pool.pool
+            "decoders": [DecoderNodeSchema(**n) for n in pool.nodes]
         }
 
 @api_router.post("/decode")
@@ -408,7 +421,7 @@ async def handle_zero_shot_request(request: Request, source_lang: str, target_la
     source_adapter_name, target_adapter_name = get_pivot_adapters(source_lang, target_lang, domain)
     
     # 2. Pick a healthy, low-load node to perform the composition
-    node = pool.pick_least_loaded()
+    node = pool.pick_best_node(source_lang, target_lang, "", is_zero_shot=True)
     if not node:
         raise HTTPException(status_code=503, detail="No healthy decoders available for zero-shot task.")
 
@@ -424,9 +437,8 @@ async def handle_zero_shot_request(request: Request, source_lang: str, target_la
             compose_resp = await client.post(
                 f"{node['endpoint']}/compose_adapter", 
                 json=composition_payload,
-                timeout=15.0
-                # +++ YOU NEED TO ADD AUTHENTICATION HERE +++
-                # headers={"Authorization": f"Bearer {self.get_internal_jwt()}"}
+                timeout=15.0,
+                headers={"X-Internal-Auth": INTERNAL_AUTH_TOKEN}
             )
             compose_resp.raise_for_status()
             composed_adapter_name = compose_resp.json()["composed_adapter_name"]

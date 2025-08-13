@@ -17,9 +17,12 @@ import asyncio
 import aiofiles
 import itertools
 from concurrent.futures import ProcessPoolExecutor
+import numpy as np
+
+import logging
 
 # Clean import from utils
-from utils.common_utils import DirectoryManager, StandardLogger
+from utils.common_utils import DirectoryManager
 
 class SmartDataSampler:
     """Sample high-quality data from large corpora with memory efficiency and async support"""
@@ -31,8 +34,7 @@ class SmartDataSampler:
         Args:
             log_dir: Custom log directory (optional)
         """
-        self.logger = StandardLogger.get_logger(__name__, log_dir)
-        StandardLogger.log_system_info(self.logger)
+        self.logger = logging.getLogger(__name__)
         
         # Initialize quality filters
         self.quality_filters: List[Callable[[str, str], bool]] = [

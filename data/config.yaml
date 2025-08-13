@@ -57,8 +57,45 @@ vocabulary_strategy:
     cjk: [zh, ja, ko]
     
 training:
+  language_to_pack_mapping:
+    en: latin
+    es: latin
+    fr: latin
+    de: latin
+    it: latin
+    pt: latin
+    nl: latin
+    sv: latin
+    pl: latin
+    id: latin
+    vi: latin
+    tr: latin
+    zh: cjk
+    ja: cjk
+    ko: cjk
+    ar: arabic
+    hi: devanagari
+    ru: cyrillic
+    uk: cyrillic
+    th: thai
+
+
   dynamic_vocabulary: true
   vocab_switch_penalty: 0.001  # Small penalty for switching
+
+data_strategy:
+  priority_rules:
+    high: ['en-es', 'en-fr', 'en-de', 'en-zh', 'en-ru']
+    medium: ['en-ja', 'en-ar', 'en-pt', 'en-it', 'en-hi', 'en-ko',
+             'es-pt', 'es-fr', 'de-fr', 'zh-ja', 'ar-fr', 'ru-uk']
+    low: ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
+  
+  source_preferences:
+    # Recommended sources by pair type
+    en_centric: ['opus-100', 'nllb-seed', 'ccmatrix', 'wmt']
+    european: ['opus-100', 'wmt', 'opus_books']
+    asian: ['opus-100', 'nllb-seed', 'ted_talks']
+    default: ['opus-100', 'nllb-seed', 'tatoeba']
 
 data_version: "1.0.0"
 pipeline_version: "1.0.0"

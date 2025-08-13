@@ -3,7 +3,7 @@
 import logging
 from torch.utils.data import DataLoader
 from encoder.train_adapters import AdapterTrainer
-from data.dataset_classes import ModernParallelDataset # Assuming this is your dataset class
+from utils.dataset_classes import ModernParallelDataset # Assuming this is your dataset class
 from vocabulary.vocabulary_manager import VocabularyManager
 
 logging.basicConfig(level=logging.INFO)
@@ -26,18 +26,7 @@ def train_for_domain(
     trainer = AdapterTrainer(base_model_path=base_model_path)
 
     # 2. Load the domain-specific vocabulary
-    # The manager will load 'latin_medical_v1.0.msgpack' (or latest version)
-    vocab_manager = VocabularyManager()
-    domain_pack_name = f"latin_{domain}" # Construct the pack name
-    
-    try:
-        # This assumes you have a way to load a specific pack by name
-        # We might need a small addition to VocabularyManager if not
-        domain_vocab = vocab_manager._load_pack(domain_pack_name)
-        logger.info(f"Loaded domain vocabulary: {domain_pack_name} v{domain_vocab.version}")
-    except Exception as e:
-        logger.error(f"Failed to load domain vocabulary '{domain_pack_name}'. Did you create it first? Error: {e}")
-        return
+    # The dataset will handle vocabulary loading internally based on language codes.
 
     # 3. Create a DataLoader using only the domain-specific data
     # This points to the parallel data file for the domain
@@ -45,10 +34,7 @@ def train_for_domain(
     
     domain_dataset = ModernParallelDataset(
         data_path=domain_data_path,
-        # Pass the domain vocab to the dataset so it tokenizes correctly
-        vocab_manager=None, # Or adapt to pass the specific pack
     )
-    # You might need to adapt your dataset class to accept a pre-loaded vocab pack
     
     train_loader = DataLoader(domain_dataset, batch_size=32, shuffle=True)
     val_loader = DataLoader(domain_dataset, batch_size=32) # Use a separate validation set in production

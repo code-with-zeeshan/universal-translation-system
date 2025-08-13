@@ -11,8 +11,10 @@ import logging
 from functools import lru_cache
 import json
 from utils.exceptions import VocabularyError
+from data.data_utils import ConfigManager # Import ConfigManager
 from collections import Counter
 import time
+import logging 
 
 logger = logging.getLogger(__name__)
 
@@ -63,44 +65,23 @@ class VocabularyManager:
     def __init__(self, vocab_dir: str = 'vocabs', enable_async: bool = False):
         self.vocab_dir = Path(vocab_dir)
         self.loaded_packs = {}
-        self.language_to_pack = self._build_language_mapping()
+        # Load mapping from the central config file
+        self.language_to_pack = ConfigManager.load_config().get('training', {}).get('language_to_pack_mapping', {})
         self.enable_async = enable_async
         self._version_cache = {}
 
         # Validate vocabulary directory
         if not self.vocab_dir.exists():
             raise VocabularyError(f"Vocabulary directory not found: {vocab_dir}")
+
+        if not self.language_to_pack:
+            logger.warning("Language-to-pack mapping is empty. Please define it in the config.")
         
         # Load version information
         self._load_version_info()
         
         logger.info(f"VocabularyManager initialized with {len(self._version_cache)} packs")
-        
-    def _build_language_mapping(self) -> Dict[str, str]:
-        """Map languages to their vocabulary packs with validation"""
-        mapping = {
-            # Latin languages
-            'en': 'latin', 'es': 'latin', 'fr': 'latin', 
-            'de': 'latin', 'it': 'latin', 'pt': 'latin',
-            'nl': 'latin', 'sv': 'latin', 'pl': 'latin',
-            'id': 'latin', 'vi': 'latin', 'tr': 'latin',
-            # CJK
-            'zh': 'cjk', 'ja': 'cjk', 'ko': 'cjk',
-            # Others
-            'ar': 'arabic', 'hi': 'devanagari',
-            'ru': 'cyrillic', 'uk': 'cyrillic',
-            'th': 'thai'
-        }
-
-        # Validate all mapped packs exist
-        required_packs = set(mapping.values())
-        for pack in required_packs:
-            pack_files = list(self.vocab_dir.glob(f"{pack}_v*.msgpack"))
-            if not pack_files:
-                logger.warning(f"Vocabulary pack '{pack}' not found in {self.vocab_dir}")
-        
-        return mapping
-    
+     
     def _load_version_info(self):
         """Load version information for all packs"""
         self._version_cache = {}
@@ -266,11 +247,10 @@ class VocabularyManager:
         pack_name = target_pack or source_pack or 'latin'
         cache_key = f"{pack_name}:{version}" if version else pack_name
         
-        if cache_key in self.loaded_packs:
-            return self.loaded_packs[cache_key]
-        
-        # Load asynchronously
-        return await self._load_pack_async(pack_name, version)
+        if cache_key not in self.loaded_packs:
+            self.loaded_packs[cache_key] = self._load_pack(pack_name, version)
+            
+        return self.loaded_packs[cache_key]
     
     async def _load_pack_async(self, pack_name: str, version: Optional[str] = None) -> VocabularyPack:
         """Async load vocabulary pack"""
@@ -288,7 +268,7 @@ class VocabularyManager:
         pack_file = Path(version_info['file'])
         
         # Async file reading
-        async with aiofiles.open(pack_file, 'rb') as f:
+        async with aiofiles.open(pack_file, 'r', encoding='utf-8') as f:
             content = await f.read()
         
         # Unpack in thread pool to avoid blocking
@@ -468,8 +448,7 @@ class VocabularyAnalytics:
             'most_used_tokens': self.token_usage.most_common(100),
             # +++ ADDED +++
             'most_common_unknowns': self.unknown_token_usage.most_common(100),
-            'language_pair_distribution': self.language_pair_usage,
-            'unknown_token_samples': self.unknown_tokens[-100:]
+            'language_pair_distribution': self.language_pair_usage
         } 
 
     def health_check(self) -> Dict[str, bool]:

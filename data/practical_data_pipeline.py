@@ -11,20 +11,12 @@ import os
 from opentelemetry import trace
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+from config.schemas import RootConfig
+
 tracer = trace.get_tracer(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
-CONFIG_PATH = os.environ.get("PIPELINE_CONFIG_PATH", "data/config.yaml")
 
-class ConfigReloadHandler(FileSystemEventHandler):
-    def on_modified(self, event):
-        if event.src_path.endswith(CONFIG_PATH):
-            with tracer.start_as_current_span("pipeline_config_reload"):
-                print("[Pipeline] Config file changed, reloading...")
-                # Reload config logic here
-
-observer = Observer()
-observer.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
-observer.start()
 
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -40,27 +32,23 @@ from pipeline_connector import PipelineConnector
 from data.vocabulary_connector import VocabularyConnector
 
 # Import shared utilities
-from data_utils import ConfigManager, DataProcessor, DatasetLoader
-from utils.common_utils import StandardLogger, DirectoryManager
+from data_utils import DataProcessor, DatasetLoader
+from utils.common_utils import DirectoryManager
 from utils.exceptions import DataError
 from utils.resource_monitor import resource_monitor
 
+logger = logging.getLogger(__name__)
 
 class PracticalDataPipeline:
     """Main orchestrator for the multilingual data pipeline with enhanced error handling"""
     
-    def __init__(self, config_path: str = CONFIG_PATH):
+    def __init__(self, config: RootConfig):
         with tracer.start_as_current_span("PracticalDataPipeline.__init__") as span:
             span.set_attribute("model_version", MODEL_VERSION)
-            span.set_attribute("config_path", config_path)
 
-            # Initialize logging
-            self.logger = StandardLogger.get_logger(__name__)
-            StandardLogger.log_system_info(self.logger)
-            
-            # Load configuration
-            self.config = ConfigManager.load_config(config_path)
-            self.data_processor = DataProcessor(self.logger)
+            self.config = config
+            self.logger = logging.getLogger(__name__)
+            self.data_processor = DataProcessor(self.config, self.logger)
             
             # Initialize strategy
             self.strategy = SmartDataStrategy()
@@ -70,7 +58,7 @@ class PracticalDataPipeline:
             try:
                 self.curated_downloader = CuratedDataDownloader()
                 self.training_downloader = MultilingualDataCollector(
-                    ConfigManager.get_languages()
+                    self.config.data.active_languages
                 )
                 self.sampler = SmartDataSampler()
                 self.augmenter = SyntheticDataAugmenter()
@@ -80,7 +68,7 @@ class PracticalDataPipeline:
             
             # Create directory structure
             self.dirs = DirectoryManager.create_data_structure(
-                ConfigManager.get_output_dir()
+                self.config.data.processed_dir
             )
             
             # Track pipeline state
@@ -104,7 +92,7 @@ class PracticalDataPipeline:
         """Wrapper for download functions with retry logic"""
         return download_func(*args, **kwargs)
     
-    def prepare_all_data(self, resume: bool = True) -> None:
+    async def prepare_all_data(self, resume: bool = True) -> None: 
         """Execute complete data pipeline with integrated modules and resume capability"""
         with tracer.start_as_current_span("PracticalDataPipeline.prepare_all_data") as span:
             span.set_attribute("model_version", MODEL_VERSION)
@@ -118,12 +106,12 @@ class PracticalDataPipeline:
 
             # Execute pipeline steps
             pipeline_steps = [
-                ("evaluation_data", "Downloading evaluation data", self._download_evaluation_data),
-                ("training_data", "Downloading training data", self._download_training_data),
-                ("sampled_data", "Sampling and filtering data", self._sample_and_filter_data),
-                ("augmented_data", "Augmenting with synthetic data", self._augment_synthetic_data),
-                ("training_ready", "Creating training-ready data", self._create_training_ready_data),
-                ("validated", "Validating final dataset", self._validate_final_dataset)
+                ("evaluation_data", "Downloading evaluation data", self._download_evaluation_data_async),
+                ("training_data", "Downloading training data", self._download_training_data_async),
+                ("sampled_data", "Sampling and filtering data", self._sample_and_filter_data_async),
+                ("augmented_data", "Augmenting with synthetic data", self._augment_synthetic_data_async),
+                ("training_ready", "Creating training-ready data", self._create_training_ready_data_async),
+                ("validated", "Validating final dataset", self._validate_final_dataset_async)
             ]
             
             for state_key, description, step_func in pipeline_steps:
@@ -133,7 +121,7 @@ class PracticalDataPipeline:
                     self.logger.info('='*60)
                     
                     try:
-                        step_func()
+                        await step_func()
                         self.pipeline_state[state_key] = True
                         self._save_checkpoint()
                     except Exception as e:
@@ -164,7 +152,7 @@ class PracticalDataPipeline:
                 self.pipeline_state = json.load(f)
             self.logger.info(f"Loaded checkpoint: {self.pipeline_state}")
 
-    def _download_evaluation_data_async(self) -> None:
+    async def _download_evaluation_data_async(self) -> None: 
         """Download evaluation data using CuratedDataDownloader with retry and validation"""
         with resource_monitor.monitor("download_evaluation_data"):
             with tracer.start_as_current_span("download_evaluation_data") as span:
@@ -189,7 +177,7 @@ class PracticalDataPipeline:
                     span.record_exception(e)
                     raise
 
-    async def prepare_all_data_async(self) -> None:
+    async def prepare_all_data_async(self) -> None: 
         """Async version of pipeline for better performance"""
         self.logger.info("🚀 Starting async data pipeline")
         
@@ -209,7 +197,7 @@ class PracticalDataPipeline:
         
         self.logger.info("✅ Async pipeline completed!")
     
-    def _download_training_data_async(self) -> None:
+    async def _download_training_data_async(self) -> None: 
         """Download training data based on strategy"""
         with resource_monitor.monitor("download_training_data"):
             with tracer.start_as_current_span("PracticalDataPipeline._download_training_data") as span:
@@ -236,7 +224,7 @@ class PracticalDataPipeline:
                             self.logger.error(f"❌ Failed to download {pair.source}-{pair.target}: {e}")
                             continue
     
-    def _download_language_pair(self, pair) -> None:
+    def _download_language_pair(self, pair) -> None: 
         """Download a specific language pair"""
         output_file = self.dirs['raw'] / f"{pair.source}-{pair.target}.txt"
         
@@ -261,14 +249,14 @@ class PracticalDataPipeline:
             self.logger.warning(f"⚠️  Failed to download {pair.source}-{pair.target}")
        
     
-    def _sample_and_filter_data_async(self) -> None:
+    async def _sample_and_filter_data_async(self) -> None: 
         """Sample and filter downloaded data"""
         with resource_monitor.monitor("sample_and_filter_data"):
             with tracer.start_as_current_span("PracticalDataPipeline._sample_and_filter_data") as span:
                 span.set_attribute("model_version", MODEL_VERSION)
                 self.logger.info("🔍 Step 3: Sampling and filtering data")
             
-                distribution = ConfigManager.get_training_distribution()
+                distribution = self.config.data.training_distribution
             
                 for pair_str, target_size in distribution.items():
                     source, target = pair_str.split('-')
@@ -290,7 +278,7 @@ class PracticalDataPipeline:
                     else:
                         self.logger.warning(f"⚠️  Input file not found for {pair_str}")
     
-    def _augment_synthetic_data_async(self) -> None:
+    async def _augment_synthetic_data_async(self) -> None: 
         """Augment with synthetic data"""
         with resource_monitor.monitor("augment_synthetic_data"):
             with tracer.start_as_current_span("PracticalDataPipeline._augment_synthetic_data") as span:
@@ -323,7 +311,7 @@ class PracticalDataPipeline:
                     english_pairs_dir=str(self.dirs['sampled'])
                 )
 
-    def _create_training_ready_data_async(self) -> None:
+    async def _create_training_ready_data_async(self) -> None: 
         """Create data ready for training"""
         with resource_monitor.monitor("create_training_ready_data"):
             with tracer.start_as_current_span("PracticalDataPipeline._create_training_ready_data") as span:
@@ -341,7 +329,7 @@ class PracticalDataPipeline:
                 self.logger.info("Creating final training file...")
                 connector.create_final_training_file()
 
-    def _create_vocabulary_packs(self) -> None:
+    def _create_vocabulary_packs(self) -> None: 
         """Create vocabulary packs from processed data"""
         self.logger.info("📚 Step 6: Creating vocabulary packs")
     
@@ -352,7 +340,7 @@ class PracticalDataPipeline:
     
         self.logger.info(f"✅ Created {len(created_packs)} vocabulary packs")       
     
-    def _validate_final_dataset_async(self) -> None:
+    async def _validate_final_dataset_async(self) -> None: 
         """Validate the final dataset"""
         with resource_monitor.monitor("validate_final_dataset"):
             with tracer.start_as_current_span("PracticalDataPipeline._validate_final_dataset") as span:
@@ -378,7 +366,7 @@ class PracticalDataPipeline:
                 self.logger.info(f"📈 Total dataset: {total_sentences:,} sentences ({total_size_gb:.2f}GB)")
             
                 # Validate against target
-                target_gb = self.config.get('total_size_gb', 8)
+                target_gb = self.config.data.total_size_gb
                 if total_size_gb < target_gb * 0.9:
                     self.logger.warning(f"⚠️  Dataset size ({total_size_gb:.2f}GB) is below target ({target_gb}GB)")
                 else:
@@ -387,7 +375,6 @@ class PracticalDataPipeline:
     def validate_data_integrity(self) -> Dict[str, bool]:
         """Validate data integrity across pipeline stages"""
         validations = {
-            'config_valid': len(ConfigManager.validate_config()) == 0,
             'raw_data_exists': any(self.dirs['raw'].glob('*.txt')),
             'sampled_data_valid': self._validate_sampled_format(),
             'language_coverage': self._check_language_coverage(),
@@ -410,9 +397,15 @@ class PracticalDataPipeline:
 def main():
     """Main entry point"""
     from utils.logging_config import setup_logging
+    from config.schemas import load_config
+
     setup_logging(log_dir="logs/training", log_level="INFO")
-    pipeline = PracticalDataPipeline()
-    pipeline.prepare_all_data()
+    
+    # Load configuration using the new system
+    config = load_config('config/base.yaml')
+
+    pipeline = PracticalDataPipeline(config)
+    asyncio.run(pipeline.prepare_all_data())
 
 
 if __name__ == "__main__":

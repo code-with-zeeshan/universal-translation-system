@@ -18,7 +18,7 @@ except ImportError:
 # System metrics
 cpu_usage = Gauge('system_cpu_usage_percent', 'System CPU usage percent')
 ram_usage = Gauge('system_ram_usage_percent', 'System RAM usage percent')
-disk_usage = Gauge('system_disk_usage_percent', 'System disk usage percent', ['mountpoint'])
+disk_usage = Gauge('system_disk_usage_percent', 'System disk usage percent', ['device'])
 net_bytes_sent = Gauge('system_net_bytes_sent', 'Network bytes sent', ['iface'])
 net_bytes_recv = Gauge('system_net_bytes_recv', 'Network bytes received', ['iface'])
 if HAS_GPU:
@@ -32,7 +32,7 @@ def collect_metrics():
     for part in psutil.disk_partitions():
         try:
             usage = psutil.disk_usage(part.mountpoint)
-            disk_usage.labels(mountpoint=part.mountpoint).set(usage.percent)
+            disk_usage.labels(device=part.mountpoint).set(usage.percent)
         except Exception:
             continue
     net = psutil.net_io_counters(pernic=True)
@@ -58,4 +58,4 @@ def main():
         time.sleep(5)
 
 if __name__ == '__main__':
-    main() 
+    main()

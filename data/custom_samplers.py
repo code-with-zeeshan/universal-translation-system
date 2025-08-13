@@ -1,10 +1,11 @@
-# data/custom_samplers.py
-
 import torch
 from torch.utils.data import Sampler
 from collections import defaultdict
 import numpy as np
 from typing import List, Dict, Iterator
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TemperatureSampler(Sampler[int]):
     """
@@ -40,8 +41,8 @@ class TemperatureSampler(Sampler[int]):
 
         self.num_samples = len(self.data_source)
         
-        print(f"TemperatureSampler initialized with T={self.temperature}")
-        print(f"Sampling weights: {dict(zip(self.lang_pairs, self.sampling_weights.tolist()))}")
+        logger.info(f"TemperatureSampler initialized with T={self.temperature}")
+        logger.info(f"Sampling weights: {dict(zip(self.lang_pairs, self.sampling_weights.tolist()))}")
 
     def _get_lang_pair_indices(self) -> Dict[str, List[int]]:
         """Group indices by language pair."""
@@ -58,26 +59,22 @@ class TemperatureSampler(Sampler[int]):
         """
         Yields a batch of indices at a time.
         """
-        # Create a list of indices for each language pair to sample from
-        lang_pair_iters = {
-            pair: iter(np.random.permutation(indices))
-            for pair, indices in self.lang_pair_indices.items()
-        }
+        # Determine the number of samples to draw from each language pair for the whole epoch
+        num_samples_per_pair = torch.multinomial(self.sampling_weights, self.num_samples, replacement=True)
+        
+        # Create the full list of indices for the epoch
+        epoch_indices = []
+        for i, pair in enumerate(self.lang_pairs):
+            count = num_samples_per_pair[i].item()
+            indices = self.lang_pair_indices[pair]
+            # Sample with replacement if necessary
+            sampled_indices = np.random.choice(indices, size=count, replace=len(indices) < count)
+            epoch_indices.extend(sampled_indices)
 
-        # Generate batches until we've yielded enough samples
-        for _ in range(len(self)):
-            # Choose a language pair based on the temperature-scaled weights
-            chosen_pair = np.random.choice(self.lang_pairs, p=self.sampling_weights.numpy())
-            
-            # Get the next index from that language pair's iterator
-            try:
-                index = next(lang_pair_iters[chosen_pair])
-            except StopIteration:
-                # If we've exhausted a language pair, reshuffle and create a new iterator
-                lang_pair_iters[chosen_pair] = iter(np.random.permutation(self.lang_pair_indices[chosen_pair]))
-                index = next(lang_pair_iters[chosen_pair])
-            
-            yield index
+        # Shuffle the combined list of indices
+        np.random.shuffle(epoch_indices)
+        
+        return iter(epoch_indices)
 
     def __len__(self) -> int:
         return self.num_samples

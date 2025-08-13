@@ -136,7 +136,7 @@ class VocabularyMetricsCollector:
             vocabulary_pack_info.labels(
                 pack_name='error',
                 version='error',
-                status='error'
+                status='error''
             ).set(0)
     
     def _get_available_packs(self) -> dict:
@@ -210,8 +210,10 @@ class VocabularyMetricsCollector:
         try:
             import msgpack
             with open(pack_file, 'rb') as f:
-                # Read just enough to get basic info
-                data = msgpack.unpackb(f.read(), raw=False)
+                # Read only enough to get basic info (e.g., first 1KB)
+                # In a real scenario, you'd parse the msgpack stream for metadata
+                # without loading the entire vocabulary.
+                data = msgpack.unpackb(f.read(1024), raw=False, strict_map_key=False)
                 return data
         except Exception:
             return None

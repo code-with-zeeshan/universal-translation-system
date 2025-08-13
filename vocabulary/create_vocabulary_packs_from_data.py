@@ -159,7 +159,8 @@ class VocabularyPackCreator:
         self, 
         pack_name: str, 
         languages: List[str],
-        base_pack_path: Optional[str] = None,
+        creation_mode: str = 'production', # 'production' or 'research'
+        base_pack_path: Optional[str] = None, # For evolution
         tokens_to_add: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
@@ -170,6 +171,7 @@ class VocabularyPackCreator:
         Args:
             pack_name: Name for the vocabulary pack
             languages: List of language codes
+            creation_mode: The method to use for vocab creation.
             
         Returns:
             Dictionary containing the vocabulary pack data
@@ -224,20 +226,23 @@ class VocabularyPackCreator:
                 logger.info(f"Languages: {languages}")
                 logger.info(f"Base pack path: {base_pack_path}")
                 logger.info(f"Tokens to add: {tokens_to_add}")
-        
-        
+
                 # 1. Validate and merge corpora
                 merged_corpus = self._merge_corpora(languages, pack_name)
-            
-                # 2. Train SentencePiece model
-                model_path = self._train_sentencepiece_model(merged_corpus, pack_name)
-            
-                # 3. Create vocabulary mappings
-                vocab_data = self._create_vocabulary_mappings(model_path, languages)
 
-                # 4. Cleanup temporary files
-                self._cleanup_temp_files(merged_corpus, model_path)
-            
+                if creation_mode == 'production':
+                    # 2. Train SentencePiece model
+                    model_path = self._train_sentencepiece_model(merged_corpus, pack_name)
+                    # 3. Create vocabulary mappings
+                    vocab_data = self._create_vocabulary_mappings(model_path, languages)
+                    # 4. Cleanup temporary files
+                    self._cleanup_temp_files(merged_corpus, model_path)
+                elif creation_mode == 'research':
+                    # Implement the logic from tools/create_vocabulary_packs.py here
+                    vocab_data = self._create_vocab_from_frequency_analysis(merged_corpus)
+                else:
+                    raise VocabularyError(f"Unknown creation_mode: {creation_mode}")
+
             # 5. Create pack structure
             pack = self._create_pack_structure(pack_name, languages, vocab_data)
             

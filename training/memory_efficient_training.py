@@ -92,10 +92,6 @@ class MemoryOptimizedTrainer:
         if self.config.use_channels_last:
             self._enable_channels_last()
         
-        # 5. Compile model for memory efficiency
-        if self.config.compile_model and hasattr(torch, 'compile'):
-            self._compile_model()
-        
         # 6. Enable nested tensor support
         if self.config.enable_nested_tensor:
             self._enable_nested_tensors()
@@ -134,7 +130,7 @@ class MemoryOptimizedTrainer:
         except Exception as e:
             logger.warning(f"⚠️ Could not enable Flash Attention: {e}")
     
-    def _enable_channels_last(self):
+    def _enable_channels_last(self): # This method should be called before moving model to device
         """Enable channels last memory format for better performance"""
         try:
             # Convert model to channels last
@@ -142,7 +138,7 @@ class MemoryOptimizedTrainer:
             logger.info("✅ Channels last memory format enabled")
         except Exception as e:
             logger.warning(f"⚠️ Could not enable channels last: {e}")
-    
+
     def _compile_model(self):
         """Compile model with modern torch.compile"""
         try:

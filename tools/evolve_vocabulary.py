@@ -29,10 +29,10 @@ class VocabularyEvolver:
         # In a real system, you would load analytics from a persistent store (e.g., Redis, a file)
         # For this example, we'll assume the analytics object is available.
         # This part needs to be connected to your live system's analytics instance.
-        usage_report = self.analytics_manager.get_vocabulary_statistics() # Placeholder for getting analytics
+        # Example: usage_report = self.analytics_manager.get_usage_report() # Assuming VocabularyManager has this method
         
-        # Let's simulate getting the unknown token report
         # TODO: Replace this with loading from your actual analytics data
+        # For now, using a placeholder for unknown tokens
         simulated_unknowns = {'new_tech_word': 1500, 'trending_meme': 1200, 'rare_word': 50}
         
         tokens_to_promote = {

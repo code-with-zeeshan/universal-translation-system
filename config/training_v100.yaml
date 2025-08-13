@@ -3,22 +3,17 @@
 _base_: base.yaml
 
 # V100-specific training settings
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 32
-  gradient_accumulation: 4
+  accumulation_steps: 4
   effective_batch_size: 128
-
-# V100 optimization
-optimization:
-  learning_rate: 3e-4
-
-# V100 memory settings - enable some optimizations
-memory:
+  lr: 3e-4
   gradient_checkpointing: true
   cpu_offload: false
   activation_offload: false
-  compile_mode: reduce-overhead
-  dtype: float16  # V100 doesn't support bfloat16 well
+  compile_mode: "reduce-overhead"
+  dtype: "float16"  # V100 doesn't support bfloat16 well
 
 distributed:
   gradient_as_bucket_view: false

@@ -5,19 +5,16 @@
 
 _base_: base.yaml
 
-# The 4090's efficiency allows for a larger batch size than the 3090.
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 24
-  gradient_accumulation: 5 # Effective batch size of 120 (close to 128)
+  accumulation_steps: 5 # Effective batch size of 120 (close to 128)
   effective_batch_size: 120
+  lr: 4e-4 # Can handle a slightly higher learning rate
 
-# Can handle a slightly higher learning rate due to architecture improvements.
-optimization:
-  learning_rate: 4e-4
+  # 24GB is still limited for large models, so keep gradient checkpointing.
+  # CPU offload is not necessary due to the fast VRAM.
 
-# 24GB is still limited for large models, so keep gradient checkpointing.
-# CPU offload is not necessary due to the fast VRAM.
-memory:
   gradient_checkpointing: true
   cpu_offload: false
   activation_offload: false

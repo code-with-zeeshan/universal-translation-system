@@ -19,8 +19,8 @@ training:
   gradient_checkpointing: false
   cpu_offload: false
   activation_offload: false
-  compile_mode: max-autotune  # A100 can handle aggressive optimization
-  dtype: bfloat16 # This is a memory setting, but part of TrainingConfig now
+  compile_mode: "max-autotune"  # A100 can handle aggressive optimization
+  dtype: "bfloat16" # This is a memory setting, but part of TrainingConfig now
 
 # A100 distributed settings
 distributed:

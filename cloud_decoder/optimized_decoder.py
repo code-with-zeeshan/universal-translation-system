@@ -32,10 +32,19 @@ from collections import OrderedDict
 # Import vocabulary manager
 from vocabulary.vocabulary_manager import VocabularyManager
 
+# --- ADDED: Hugging Face Hub Integration ---
+try:
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.utils import HfHubHTTPError
+except ImportError:
+    hf_hub_download = None
+
 # Import utility modules
 from utils.auth import APIKeyManager
 from utils.rate_limiter import RateLimiter
 from utils.security import validate_model_source, safe_load_model
+# +++ ADDED: Import the new dependency +++
+from .dependencies import verify_internal_request
 
 # OpenTelemetry imports
 from opentelemetry import trace
@@ -57,6 +66,7 @@ tracer = trace.get_tracer(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 JWT_SECRET = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
+HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "your-hf-org/universal-translation-system")
 
 logger = logging.getLogger(__name__)
 
@@ -69,53 +79,127 @@ class AdapterManager:
     """
     Manages dynamic loading and LRU caching of language adapters on a decoder node.
     """
-    def __init__(self, model: nn.Module, max_cache_size: int = 5, adapter_dir: str = "models/adapters"):
+    def __init__(self, model: nn.Module, repo_id: str, max_cache_size: int = 5, adapter_dir: str = "models/adapters"):
         self.model = model  # The AdapterUniversalEncoder instance
         self.adapter_dir = Path(adapter_dir)
         self.max_cache_size = max_cache_size
+        self.repo_id = repo_id
         
         # Use an OrderedDict for a simple and effective LRU cache
         # Maps adapter_name -> loaded adapter module
         self.cache = OrderedDict()
-        self.lock = threading.Lock() # Ensure thread-safety
+        # --- MODIFIED: Use asyncio.Lock for async environments ---
+        self.lock = asyncio.Lock()
+        self.loading_events: Dict[str, asyncio.Event] = {}
         
-        logger.info(f"AdapterManager initialized with cache size: {self.max_cache_size}")
+        logger.info(f"AdapterManager initialized for repo '{self.repo_id}' with cache size: {self.max_cache_size}")
 
-    def get_adapter(self, adapter_name: str):
+    async def get_adapter(self, adapter_name: str):
         """
-        Retrieves a language adapter, loading it from disk if not in the cache.
+        Asynchronously retrieves a language adapter, loading it from disk if not in the cache.
+        This is now non-blocking for high-concurrency environments.
         """
-        with self.lock:
-            if adapter_name in self.cache:
-                # Move to the end to mark as recently used
-                self.cache.move_to_end(adapter_name)
+        # --- Non-blocking cache check ---
+        async with self.lock:
+            if adapter_name in self.cache: # Cache Hit
+                self.cache.move_to_end(adapter_name) # Mark as recently used
                 logger.debug(f"Adapter cache hit for '{adapter_name}'")
                 return
 
             # --- Cache Miss ---
-            adapter_path = self.adapter_dir / f"best_{adapter_name}_adapter.pt"
+            # Check if another thread is already loading this adapter
+            if adapter_name in self.loading_events:
+                event = self.loading_events[adapter_name]
+                # Release the main lock and wait for the other thread to finish
+                async with self.lock.released():
+                    logger.info(f"Adapter '{adapter_name}' is being loaded by another task, waiting...")
+                    await event.wait()
+                # After waiting, the adapter should be in the cache. Re-acquire lock and check again.
+                async with self.lock:
+                    if adapter_name in self.cache:
+                        self.cache.move_to_end(adapter_name)
+                        return
+                    else: # Should not happen, but as a fallback
+                        logger.error(f"Waited for adapter '{adapter_name}' but it was not loaded.")
+                        raise RuntimeError(f"Failed to load adapter {adapter_name}")
 
-            # +++ ADD THIS LOGIC +++
-            if not adapter_path.exists():
-                logger.info(f"Adapter '{adapter_name}' not in local cache. Downloading from central storage...")
-            try:
-                # Simulate download from cloud storage
-                # In practice, this would be an actual download operation
-                # e.g., using boto3 for AWS S3, or requests for HTTP
-                logger.info(f"Downloading adapter '{adapter_name}' from cloud storage...")
-                # self.download_from_s3(f"adapters/{adapter_name}.pt", adapter_path)
-                # You would implement the download_from_s3 method.
-                pass # Placeholder for your download logic
-                # time.sleep(2)  # Simulate download delay
-                # Create a dummy file for this example
-                adapter_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(adapter_path, 'w') as f:
-                    f.write("dummy adapter data")
-            except Exception as e:
-                logger.error(f"Failed to download adapter '{adapter_name}': {e}")
-                return # Abort if download fails
-            logger.info(f"Adapter cache miss for '{adapter_name}'. Loading from disk...")
-            
+            # This is the first thread to request this adapter, so it will load it.
+            # Create an event to signal other threads.
+            self.loading_events[adapter_name] = asyncio.Event()
+
+        # --- Perform slow I/O outside the main lock ---
+        try:
+            # Download the adapter from the Hub if it doesn't exist locally
+            await self._download_adapter_from_hub(adapter_name)
+
+            # --- Re-acquire lock to update the shared cache state ---
+            async with self.lock:
+                logger.info(f"Adapter cache miss for '{adapter_name}'. Loading from disk...")
+                # Evict if cache is full
+                if len(self.cache) >= self.max_cache_size:
+                    oldest_adapter_name, _ = self.cache.popitem(last=False)
+                    if oldest_adapter_name in self.model.language_adapters:
+                        del self.model.language_adapters[oldest_adapter_name]
+                    logger.info(f"Evicted adapter '{oldest_adapter_name}' from cache.")
+
+                # Load the new adapter into the model
+                adapter_path = self.adapter_dir / f"best_{adapter_name}_adapter.pt"
+                self.model.load_language_adapter(adapter_name, str(adapter_path))
+                self.cache[adapter_name] = self.model.language_adapters[adapter_name]
+                logger.info(f"Successfully loaded and cached adapter '{adapter_name}'.")
+        finally:
+            # --- Signal other waiting threads and clean up ---
+            async with self.lock:
+                if adapter_name in self.loading_events:
+                    self.loading_events[adapter_name].set()
+                    del self.loading_events[adapter_name]
+
+    async def _download_adapter_from_hub(self, adapter_name: str):
+        """
+        Downloads an adapter from the Hugging Face Hub if it doesn't exist locally.
+        This method is non-blocking.
+        """
+        if not hf_hub_download:
+            raise ImportError("huggingface_hub is not installed. Please install it with 'pip install huggingface_hub'")
+
+        adapter_filename = f"best_{adapter_name}_adapter.pt"
+        local_adapter_path = self.adapter_dir / adapter_filename
+        
+        if local_adapter_path.exists():
+            logger.debug(f"Adapter '{adapter_name}' already exists locally at {local_adapter_path}")
+            return
+
+        logger.info(f"Adapter '{adapter_name}' not found locally. Downloading from Hugging Face Hub repo: {self.repo_id}")
+        
+        # The filename within the HF repo (e.g., "adapters/best_es_adapter.pt")
+        repo_filename = f"adapters/{adapter_filename}"
+        
+        loop = asyncio.get_event_loop()
+        try:
+            # Run the synchronous hf_hub_download in a thread pool executor to avoid blocking the event loop.
+            await loop.run_in_executor(
+                None,  # Use default executor
+                hf_hub_download,
+                self.repo_id,
+                repo_filename,
+                local_dir=str(self.adapter_dir),
+                local_dir_use_symlinks=False  # Use copies for robustness in containers
+            )
+            logger.info(f"✅ Successfully downloaded adapter '{adapter_name}' to {local_adapter_path}")
+        except HfHubHTTPError as e:
+            if e.response.status_code == 404:
+                logger.error(f"❌ Adapter '{repo_filename}' not found in repo '{self.repo_id}'.")
+                raise FileNotFoundError(f"Adapter not found on Hub: {repo_filename}") from e
+            logger.error(f"❌ HTTP error downloading adapter '{adapter_name}': {e}")
+            raise IOError(f"Failed to download adapter: {e}") from e
+        except Exception as e:
+            logger.error(f"❌ An unexpected error occurred during adapter download: {e}")
+            raise IOError(f"Failed to download adapter: {e}") from e
+
+    async def get_loaded_adapters(self) -> List[str]:
+        """Returns a list of adapters currently hot in the cache."""
+        async with self.lock:
+            return list(self.cache.keys())
             # Evict the least recently used adapter if the cache is full
             if len(self.cache) >= self.max_cache_size:
                 oldest_adapter_name, _ = self.cache.popitem(last=False)
@@ -530,13 +614,6 @@ def reload_model(credentials: HTTPAuthorizationCredentials = Depends(require_jwt
 # OpenAPI and Swagger UI are available at /openapi.json and /docs
 # All endpoints are traced, and admin endpoints require JWT
 
-# Global model and optimization
-model: Optional[AdapterUniversalEncoder] = None # We will use the adapter-aware encoder
-adapter_manager: Optional[AdapterManager] = None # Add a global manager
-model: Optional[OptimizedUniversalDecoder] = None
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-vocabulary_manager = VocabularyManager()
-
 # Continuous batching for maximum GPU utilization
 class ContinuousBatcher:
     def __init__(self, max_batch_size: int = 64, timeout_ms: int = 10):
@@ -585,6 +662,13 @@ class ContinuousBatcher:
 
 batcher = ContinuousBatcher()
 
+# --- MODIFIED: Unified Global model and optimization ---
+model: Optional[AdapterUniversalEncoder] = None # We will use the adapter-aware encoder
+adapter_manager: Optional[AdapterManager] = None # Add a global manager
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+vocabulary_manager = VocabularyManager()
+# --- END MODIFICATION ---
+
 @app.on_event("startup")
 async def startup():
     global model, adapter_manager
@@ -598,7 +682,7 @@ async def startup():
     model.eval()
 
     # Initialize the adapter manager with the model instance
-    adapter_manager = AdapterManager(model=model, max_cache_size=5)
+    adapter_manager = AdapterManager(model=model, repo_id=HF_HUB_REPO_ID, max_cache_size=5)
     
     # Compile with torch.compile for faster inference
     if torch.__version__ >= "2.0.0":
@@ -612,26 +696,27 @@ async def startup():
         logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
 
 
-@app.route('/decode', methods=['POST'])
-async def decode(request):
+@app.post("/decode")
+async def decode(request: Request):
     """
     Decode encoder output to target language
     """
     try:
         # Read compressed data
         compressed_data = await request.body()
-        
+
         # Add to batch
         result = await batcher.add_request({
             'compressed_data': compressed_data,
-            'target_lang': request.headers.get('x-target-language')
+            'target_lang': request.headers.get('x-target-language'),
+            'domain': request.headers.get('x-domain')
         })
-        
-        return result
-        
+
+        return JSONResponse(content=result)
+
     except Exception as e:
         logger.error(f"Decode error: {e}")
-        return {"error": str(e)}
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.route('/health', methods=['GET'])
 async def health(request):
@@ -760,8 +845,10 @@ def decompress_encoder_output(self, compressed_data: bytes) -> Dict:
         'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=self.device)
     }
     else:
-        # Handle dict format
-        return compressed_data
+        # This branch is problematic as it assumes the data is already a dict,
+        # which contradicts the function's type hint and purpose.
+        # The logic should always expect bytes.
+        raise ValueError("decompress_encoder_output expects bytes, but received a different type.")
 
 def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
     """Decode token IDs to text using vocabulary pack (production-grade)."""
@@ -789,10 +876,11 @@ def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
     return text.strip()
 
 #Endpoint for adapter composition 
-@app.post("/compose_adapter", status_code=201)
-async def compose_adapter_endpoint(request: CompositionRequest, credentials: HTTPAuthorizationCredentials = Depends(require_jwt)):
+@app.post("/compose_adapter", status_code=201, dependencies=[Depends(verify_internal_request)])
+async def compose_adapter_endpoint(request: CompositionRequest):
     """
     Triggers the on-the-fly creation of a composed adapter for zero-shot pairs.
+    This endpoint is protected and only accessible by internal services like the coordinator.
     """
     if not model or not isinstance(model, AdapterUniversalEncoder):
         raise HTTPException(status_code=503, detail="Model not initialized or does not support adapters.")

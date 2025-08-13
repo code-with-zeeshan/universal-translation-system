@@ -8,6 +8,11 @@ from .adapter_composition import AdapterComposition
 
 logger = logging.getLogger(__name__)
 
+try:
+    from safetensors.torch import save_file
+except ImportError:
+    save_file = None
+
 class LanguageAdapter(nn.Module):
     """Lightweight language-specific adapter (2MB each)"""
     
@@ -123,7 +128,11 @@ class AdapterUniversalEncoder(nn.Module):
         if language not in self.language_adapters:
             raise ValueError(f"No adapter found for language: {language}")
         
-        torch.save(self.language_adapters[language].state_dict(), output_path)
+        if save_file:
+            save_file(self.language_adapters[language].state_dict(), output_path)
+        else:
+            logger.warning("safetensors not found, falling back to torch.save. It is recommended to install safetensors.")
+            torch.save(self.language_adapters[language].state_dict(), output_path)
 
     def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor, 
                 language: Optional[str] = None) -> torch.Tensor:
@@ -161,13 +170,9 @@ class AdapterUniversalEncoder(nn.Module):
             quantized_model = self.base_encoder
             model_path = output_dir / 'base_encoder_fp32.pt'
         
-        # Calculate size
+        # Calculate size based on actual parameter sizes
         total_params = sum(p.numel() for p in quantized_model.parameters())
-        size_mb = (total_params * 4) / (1024 * 1024)  # Assuming float32
-        if quantization_mode == 'int8':
-            size_mb = size_mb / 4  # INT8 is ~1/4 the size
-        elif quantization_mode == 'fp16':
-            size_mb = size_mb / 2  # FP16 is half the size
+        size_mb = (total_params * next(quantized_model.parameters()).element_size()) / (1024 * 1024)
         
         # Save base model
         torch.save({
@@ -181,7 +186,7 @@ class AdapterUniversalEncoder(nn.Module):
             }
         }, model_path)
         
-        print(f"✅ Saved base model ({quantization_mode}): {size_mb:.1f}MB")
+        logger.info(f"✅ Saved base model ({quantization_mode}): {size_mb:.1f}MB")
 
         # Save each adapter separately
         adapters_dir = output_dir / 'adapters'
@@ -194,7 +199,7 @@ class AdapterUniversalEncoder(nn.Module):
             # Calculate adapter size
             adapter_params = sum(p.numel() for p in adapter.parameters())
             adapter_size_mb = (adapter_params * 4) / (1024 * 1024)
-            print(f"✅ Saved {lang} adapter: {adapter_size_mb:.2f}MB")
+            logger.info(f"✅ Saved {lang} adapter: {adapter_size_mb:.2f}MB")
 
     def compose_adapters(self, source_adapter_name: str, target_adapter_name: str, composition_strategy: str = 'average') -> str:
         """
@@ -223,8 +228,8 @@ class AdapterUniversalEncoder(nn.Module):
 
         if composition_strategy == 'average':
             # For a pivot-based approach (Source -> English -> Target), we might
-            # conceptually "subtract" the source and "add" the target. A simple
-            # average is a good starting point.
+            # conceptually "subtract" the source and "add" the target.
+            # A simple average is a good starting point.
             composed_state_dict = AdapterComposition.average_weights([source_adapter, target_adapter])
         else:
             raise NotImplementedError(f"Composition strategy '{composition_strategy}' not implemented.")
@@ -235,4 +240,4 @@ class AdapterUniversalEncoder(nn.Module):
         
         logger.info(f"Created composed adapter '{composed_name}' using '{composition_strategy}' strategy.")
         
-        return composed_name        
+        return composed_name

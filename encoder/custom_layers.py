@@ -98,17 +98,16 @@ class CustomTransformerEncoderLayer(nn.Module):
         x = self.norm1(src)
         
         # 2. Get Q, K, V from the input
-        # This is a simplified view; MultiheadAttention does this internally.
-        # For a real implementation, we'd need to modify the attention mechanism itself.
-        # For now, we'll apply RoPE before the attention call.
-        q, k, v = x, x, x # In self-attention, q, k, and v are the same
+        q_proj = self.self_attn.in_proj_q(x)
+        k_proj = self.self_attn.in_proj_k(x)
+        v_proj = self.self_attn.in_proj_v(x)
         
         # 3. Apply Rotary Embeddings to Query and Key
         cos, sin = freqs_cis
-        q, k = apply_rotary_pos_emb(q, k, cos, sin)
+        q_embed, k_embed = apply_rotary_pos_emb(q_proj, k_proj, cos, sin)
         
         # 4. Perform attention
-        attn_output, _ = self.self_attn(q, k, v, key_padding_mask=src_key_padding_mask)
+        attn_output, _ = self.self_attn(q_embed, k_embed, v_proj, key_padding_mask=src_key_padding_mask)
         
         # 5. Add & Norm (residual connection)
         src = src + self.dropout1(attn_output)

@@ -36,8 +36,7 @@ class ModelConverter:
                     # Create export program
                     export_program = torch.export.export(
                         model,
-                        (dummy_input,),
-                        dynamic_shapes={"input_ids": {0: "batch", 1: "sequence"}}
+                        (dummy_input,)
                     )
                 
                     # Convert to ONNX
@@ -49,11 +48,7 @@ class ModelConverter:
                        output_path,
                        opset_version=opset_version,
                        input_names=['input_ids'],
-                       output_names=['encoder_output'],
-                       dynamic_axes={
-                           'input_ids': {0: 'batch', 1: 'sequence'},
-                           'encoder_output': {0: 'batch', 1: 'sequence'}
-                        }
+                       output_names=['encoder_output']
                     )
                 
                 except Exception as e:

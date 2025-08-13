@@ -1,8 +1,7 @@
 # data/vocabulary_connector.py
 """Connect data pipeline to vocabulary creation"""
 from pathlib import Path
-from utils.common_utils import StandardLogger
-from utils.exceptions import DataError
+import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -14,7 +13,7 @@ class VocabularyConnector:
     """Bridge between data pipeline and vocabulary creation"""
     
     def __init__(self):
-        self.logger = StandardLogger.get_logger(__name__)
+        self.logger = logging.getLogger(__name__)
     
     def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed'):
         """Create vocabulary packs after data pipeline completes"""

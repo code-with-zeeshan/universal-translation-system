@@ -18,7 +18,7 @@ training:
   cpu_offload: true             # Essential to offload optimizer states.
   activation_offload: true      # Offload activations to CPU to save more VRAM.
   compile_mode: "reduce-overhead"
-  dtype: bfloat16               # Ampere architecture supports bfloat16.
+  dtype: "bfloat16"               # Ampere architecture supports bfloat16.
   max_split_size: 128           # Use smaller memory blocks to reduce fragmentation.
   empty_cache_freq: 50          # Clean up GPU memory more often.
 

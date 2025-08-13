@@ -7,21 +7,11 @@ Defines language pair priorities and download strategies
 from typing import List, Dict, Tuple
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 
-# Import shared utilities with fallback
-try:
-    from data_utils import ConfigManager
-    from utils.common_utils import StandardLogger
-    INTEGRATED_MODE = True
-except ImportError:
-    import logging
-    INTEGRATED_MODE = False
-    
-    class StandardLogger:
-        @staticmethod
-        def get_logger(name):
-            logging.basicConfig(level=logging.INFO)
-            return logging.getLogger(name)
+# Import shared utilities 
+from config.schemas import RootConfig, load_config
+from utils.common_utils import DirectoryManager
 
 
 @dataclass
@@ -55,35 +45,18 @@ class LanguagePair:
 class SmartDataStrategy:
     """Optimize language pair selection strategy with configuration integration"""
     
-    def __init__(self, config_path: str = 'data/config.yaml'):
-        self.logger = StandardLogger.get_logger(__name__)
+    def __init__(self, config: RootConfig):
+        self.logger = logging.getLogger(__name__)
         
         # Load configuration if available
-        if INTEGRATED_MODE:
-            self.config = ConfigManager.load_config(config_path)
-            self.languages = ConfigManager.get_languages()
-            self.training_distribution = ConfigManager.get_training_distribution()
-        else:
-            # Fallback configuration
-            self.languages = ['en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru',
-                             'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv']
-            self.training_distribution = self._get_default_distribution()
+        self.config = config
+        self.languages = self.config.data.active_languages
+        self.training_distribution = self.config.data.training_distribution
         
-        # Define priority rules
-        self.priority_rules = {
-            'high': ['en-es', 'en-fr', 'en-de', 'en-zh', 'en-ru'],
-            'medium': ['en-ja', 'en-ar', 'en-pt', 'en-it', 'en-hi', 'en-ko',
-                      'es-pt', 'es-fr', 'de-fr', 'zh-ja', 'ar-fr', 'ru-uk'],
-            'low': ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
-        }
-        
-        # Define data source preferences by pair type
-        self.source_preferences = {
-            'en-*': ['opus-100', 'nllb-seed', 'ccmatrix', 'wmt'],
-            'european': ['opus-100', 'wmt', 'opus_books'],
-            'asian': ['opus-100', 'nllb-seed', 'ted_talks'],
-            'default': ['opus-100', 'nllb-seed', 'tatoeba']
-        }
+        # Load strategy from config
+        strategy_config = self.config.data_strategy
+        self.priority_rules = strategy_config.priority_rules
+        self.source_preferences = strategy_config.source_preferences
     
     def get_required_pairs(self) -> List[LanguagePair]:
         """
@@ -138,10 +111,10 @@ class SmartDataStrategy:
     def _get_data_sources(self, source: str, target: str) -> List[str]:
         """Get recommended data sources for a language pair"""
         pair_str = f"{source}-{target}"
-        
+
         # English-centric pairs
         if source == 'en' or target == 'en':
-            return self.source_preferences['en-*']
+            return self.source_preferences.get('en_centric', self.source_preferences['default'])
         
         # European language pairs
         european_langs = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
@@ -270,7 +243,8 @@ class SmartDataStrategy:
         return estimates
     
     def export_strategy(self, output_file: str = 'data/download_strategy.json') -> None:
-        """Export strategy to JSON file for documentation"""
+        """Export strategy to JSON file for documentation
+        """
         import json
         
         pairs = self.get_required_pairs()
@@ -301,42 +275,11 @@ class SmartDataStrategy:
 
 def main():
     """Main entry point for standalone execution"""
-    strategy = SmartDataStrategy()
+    config = load_config()
+    strategy = SmartDataStrategy(config)
     
     # Get and display strategy
     pairs = strategy.get_required_pairs()
     
-    print("\n📊 LANGUAGE PAIR STRATEGY:")
-    print("-" * 60)
-    
-    for priority in ['high', 'medium', 'low']:
-        priority_pairs = [p for p in pairs if p.priority == priority]
-        if priority_pairs:
-            print(f"\n{priority.upper()} PRIORITY ({len(priority_pairs)} pairs):")
-            for pair in priority_pairs[:5]:  # Show first 5
-                print(f"  {pair.pair_string}: {pair.expected_size:,} sentences")
-            if len(priority_pairs) > 5:
-                print(f"  ... and {len(priority_pairs) - 5} more")
-    
-    # Get download schedule
-    schedule = strategy.get_download_schedule()
-    print("\n📅 DOWNLOAD SCHEDULE:")
-    print("-" * 60)
-    for i, batch in enumerate(schedule, 1):
-        print(f"\nBatch {i}: {batch['batch_name']}")
-        print(f"  Pairs: {len(batch['pairs'])}")
-        print(f"  Parallel: {batch['parallel']} (max {batch['max_workers']} workers)")
-    
-    # Get size estimates
-    estimates = strategy.estimate_download_size()
-    print("\n💾 SIZE ESTIMATES:")
-    print("-" * 60)
-    for key, value in estimates.items():
-        print(f"  {key}: {value:.2f} GB")
-    
-    # Export strategy
-    strategy.export_strategy()
-
-
-if __name__ == "__main__":
-    main()
+    logging.info("\n📊 LANGUAGE PAIR STRATEGY:")
+    logging.info("-

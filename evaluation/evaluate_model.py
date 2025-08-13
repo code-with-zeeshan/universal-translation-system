@@ -18,7 +18,7 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    print("Warning: pandas not available. Install with: pip install pandas")
+    logger.warning("Warning: pandas not available. Install with: pip install pandas")
 
 # Metrics imports
 try:
@@ -26,14 +26,14 @@ try:
     SACREBLEU_AVAILABLE = True
 except ImportError:
     SACREBLEU_AVAILABLE = False
-    print("Warning: sacrebleu not available. Install with: pip install sacrebleu")
+    logger.warning("Warning: sacrebleu not available. Install with: pip install sacrebleu")
 
 try:
     from comet import download_model, load_from_checkpoint
     COMET_AVAILABLE = True
 except ImportError:
     COMET_AVAILABLE = False
-    print("Warning: COMET not available. Install with: pip install unbabel-comet")
+    logger.warning("Warning: COMET not available. Install with: pip install unbabel-comet")
 
 logger = logging.getLogger(__name__)
 
@@ -227,17 +227,15 @@ class TranslationEvaluator:
         # Join tokens and handle subwords
         text = ''
         for i, token in enumerate(tokens):
-            if token.startswith('##'):
-                # Append subword without space
+            if token.startswith(' '):
+                # SentencePiece style: leading space indicates a new word
+                text += ' ' + token[1:]
+            elif token.startswith('##'):
+                # Subword: append without space
                 text += token[2:]
-            elif token.startswith('▁'):
-                # SentencePiece style
-                if i > 0:
-                    text += ' '
-                text += token[1:]
             else:
-                # Regular token
-                if i > 0 and not tokens[i-1].startswith('##'):
+                # Regular token: append with space if not first token
+                if i > 0:
                     text += ' '
                 text += token
     
@@ -337,7 +335,6 @@ class TranslationEvaluator:
             # to avoid memory issues with very large datasets
             if len(predictions) > 10000:
                 # Sample for final metric calculation
-                logger.info("Dataset too large, sampling 10000 examples for final metrics")
                 indices = np.random.choice(len(predictions), 10000, replace=False)
                 sampled_predictions = [predictions[i] for i in indices]
                 sampled_references = [references[i] for i in indices]
@@ -424,8 +421,9 @@ class TranslationEvaluator:
     def evaluate_file_streaming(self, test_file: str, 
                                file_format: str = 'tsv',
                                chunk_size: int = 1000) -> Dict[str, Any]:
-        """Evaluate from a test file using streaming"""
-    
+        """
+        Evaluate from a test file using streaming
+        """
         def file_iterator():
             """Generator that yields TranslationPair objects from file"""
             with open(test_file, 'r', encoding='utf-8') as f:
@@ -453,8 +451,7 @@ class TranslationEvaluator:
                         test_data: List[TranslationPair],
                         batch_size: int = 32,
                         use_cache: bool = True) -> Dict[str, Any]:
-        """
-        Evaluate translation quality on a dataset
+        """Evaluate translation quality on a dataset
         
         Args:
             test_data: List of TranslationPair objects
@@ -682,12 +679,12 @@ class TranslationEvaluator:
         logger.info(f"📊 Evaluation report saved to {output_file}")
         
         # Print summary
-        print("\n" + "="*50)
-        print("EVALUATION SUMMARY")
-        print("="*50)
+        logger.info("\n" + "="*50)
+        logger.info("EVALUATION SUMMARY")
+        logger.info("="*50)
         for metric, value in report['summary'].items():
-            print(f"{metric.upper()}: {value:.4f}")
-        print("="*50)
+            logger.info(f"{metric.upper()}: {value:.4f}")
+        logger.info("="*50)
         
         return report
 
@@ -769,8 +766,8 @@ def evaluate_translation_quality(encoder_model, decoder_model, vocab_manager, te
 
 if __name__ == "__main__":
     # Example usage
-    print("Translation Evaluation Module")
-    print("This module requires initialized encoder/decoder models and test data.")
-    print("\nExample usage:")
-    print("evaluator = TranslationEvaluator(encoder, decoder, vocab_manager)")
-    print("metrics = evaluator.evaluate_file('test_data.tsv')")
+    logger.info("Translation Evaluation Module")
+    logger.info("This module requires initialized encoder/decoder models and test data.")
+    logger.info("\nExample usage:")
+    logger.info("evaluator = TranslationEvaluator(encoder, decoder, vocab_manager)")
+    logger.info("metrics = evaluator.evaluate_file('test_data.tsv')")")}``)

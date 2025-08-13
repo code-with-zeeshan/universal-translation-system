@@ -1,7 +1,7 @@
 # utils/common_utils.py
 """
 Common utilities for data pipeline - Low Priority Clean-up
-Addresses: Directory creation, logging standardization, import cleanup
+Addresses: Directory creation, import cleanup
 """
 
 import logging
@@ -63,99 +63,6 @@ class DirectoryManager:
         
         return directories
 
-class StandardLogger:
-    """Standardized logging configuration for all pipeline components"""
-    
-    _loggers = {}  # Cache loggers to avoid reconfiguration
-    
-    @classmethod
-    def get_logger(cls, name: str, log_dir: Optional[str] = None) -> logging.Logger:
-        """
-        Get standardized logger instance
-        
-        Args:
-            name: Logger name (usually __name__)
-            log_dir: Custom log directory (defaults to 'log')
-            
-        Returns:
-            Configured logger instance
-        """
-        if name in cls._loggers:
-            return cls._loggers[name]
-        
-        # Create log directory
-        if log_dir is None:
-            log_dir = 'log'
-        DirectoryManager.create_directory(log_dir)
-        
-        # Configure logger
-        logger = logging.getLogger(name)
-        logger.setLevel(logging.INFO)
-        
-        # Prevent duplicate handlers
-        if not logger.handlers:
-            # File handler
-            file_handler = logging.FileHandler(Path(log_dir) / 'data_pipeline.log')
-            file_handler.setLevel(logging.INFO)
-            
-            # Console handler
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setLevel(logging.INFO)
-            
-            # Standardized formatter
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
-            
-            file_handler.setFormatter(formatter)
-            console_handler.setFormatter(formatter)
-            
-            logger.addHandler(file_handler)
-            logger.addHandler(console_handler)
-        
-        cls._loggers[name] = logger
-        return logger
-    
-    @classmethod
-    def log_system_info(cls, logger: logging.Logger) -> None:
-        """Log standardized system information"""
-        logger.info("=" * 60)
-        logger.info("DATA PIPELINE SYSTEM INFO")
-        logger.info("=" * 60)
-        logger.info(f"Python version: {sys.version}")
-        logger.info(f"Working directory: {os.getcwd()}")
-        logger.info(f"Available memory: {cls._get_memory_info()}")
-        logger.info("=" * 60)
-    
-    @staticmethod
-    def _get_memory_info() -> str:
-        """Get memory information"""
-        try:
-            import psutil
-            memory = psutil.virtual_memory()
-            return f"{memory.available / (1024**3):.1f}GB available / {memory.total / (1024**3):.1f}GB total"
-        except ImportError:
-            return "Memory info unavailable (psutil not installed)"
-
-    @classmethod
-    def validate_log_configuration(cls) -> Dict[str, bool]:
-        """Validate logging configuration"""
-        validations = {
-            'log_dir_writable': True,
-            'handlers_configured': True,
-            'formatter_valid': True
-        }
-    
-        try:
-            # Test log directory
-            test_logger = cls.get_logger('test')
-            test_logger.info('Configuration test')
-        except Exception as e:
-            validations['handlers_configured'] = False
-    
-        return validations
-
 class ImportCleaner:
     """Utility to identify and clean unused imports"""
     
@@ -210,27 +117,3 @@ class ImportCleaner:
             else:
                 formatted.append(f"from {module} import {', '.join(items)}")
         return formatted
-
-# Example usage and testing
-if __name__ == "__main__":
-    # Test directory creation
-    print("Testing DirectoryManager...")
-    dirs = DirectoryManager.create_data_structure("test_data")
-    print(f"Created {len(dirs)} directories")
-    
-    # Test logging
-    print("\nTesting StandardLogger...")
-    logger = StandardLogger.get_logger(__name__)
-    StandardLogger.log_system_info(logger)
-    logger.info("✅ Test log message")
-    logger.warning("⚠️  Test warning message")
-    logger.error("❌ Test error message")
-    
-    # Test import recommendations
-    print("\nTesting ImportCleaner...")
-    standard_imports = ImportCleaner.get_recommended_imports('standard')
-    print("Recommended standard imports:")
-    for imp in standard_imports:
-        print(f"  {imp}")
-    
-    print("\n✅ All utilities tested successfully!")

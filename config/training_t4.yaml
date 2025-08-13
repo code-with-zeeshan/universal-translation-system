@@ -3,21 +3,17 @@
 _base_: base.yaml
 
 # T4 training settings - very limited memory
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 8
-  gradient_accumulation: 16
+  accumulation_steps: 16
   effective_batch_size: 128
-
-optimization:
-  learning_rate: 2e-4  # Lower LR for stability
-
-# T4 memory settings - maximum optimization
-memory:
+  lr: 2e-4  # Lower LR for stability
   gradient_checkpointing: true
   cpu_offload: true
   activation_offload: true
-  compile_mode: default  # T4 might struggle with aggressive compilation
-  dtype: float16
+  compile_mode: "default"  # T4 might struggle with aggressive compilation
+  dtype: "float16"
   max_split_size: 128  # Very small splits for 16GB memory
   empty_cache_freq: 50  # More frequent cleanup
 

@@ -2,6 +2,7 @@
 import re
 from typing import List, Optional
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +10,7 @@ class InputValidator:
     """Validate and sanitize user inputs"""
     
     # Regex patterns
-    LANGUAGE_CODE_PATTERN = re.compile(r'^[a-z]{2,3}$')
+    LANGUAGE_CODE_PATTERN = re.compile(r'^[a-z]{2,3}$', re.IGNORECASE)
     FILENAME_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
     MAX_TEXT_LENGTH = 5000
     
@@ -44,6 +45,8 @@ class InputValidator:
             raise ValueError("Invalid filename")
         
         # Remove path components
+        if Path(filename).is_absolute():
+            raise ValueError("Invalid filename: must be relative")
         filename = filename.replace('/', '').replace('\\', '').replace('..', '')
         
         if not InputValidator.FILENAME_PATTERN.match(filename):
@@ -54,7 +57,6 @@ class InputValidator:
     @staticmethod
     def sanitize_path(path_str: str, allowed_dirs: List[str]) -> str:
         """Sanitize and validate file paths"""
-        from pathlib import Path
         
         path = Path(path_str).resolve()
         

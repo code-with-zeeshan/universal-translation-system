@@ -5,23 +5,17 @@
 
 _base_: base.yaml
 
-# Has more memory than a T4, allowing a larger batch size.
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 16
-  gradient_accumulation: 8
+  accumulation_steps: 8
   effective_batch_size: 128
-
-# Use a conservative learning rate for stability.
-optimization:
-  learning_rate: 2e-4
-
-# Has enough memory to avoid CPU offloading, but checkpointing is still wise.
-memory:
+  lr: 2e-4 # Use a conservative learning rate for stability.
   gradient_checkpointing: true
   cpu_offload: false
   activation_offload: false
   compile_mode: "default" # A safe compilation mode for this efficiency-focused GPU.
-  dtype: bfloat16         # Ada architecture supports bfloat16.
+  dtype: "bfloat16"         # Ada architecture supports bfloat16.
   max_split_size: 256
 
 distributed:

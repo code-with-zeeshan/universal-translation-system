@@ -178,7 +178,9 @@ class ModernParallelDataset(Dataset):
         subword_tokens = []
         
         # Simple subword tokenization
-        for i in range(len(word)):
+        i = 0
+        while i < len(word):
+            matched = False
             for j in range(len(word), i, -1):
                 subword = word[i:j]
                 if i > 0:
@@ -186,8 +188,11 @@ class ModernParallelDataset(Dataset):
                 
                 if subword in vocab_pack.subwords:
                     subword_tokens.append(vocab_pack.subwords[subword])
-                    i = j - 1
+                    i = j
+                    matched = True
                     break
+            if not matched:
+                i += 1
         
         if not subword_tokens:
             subword_tokens.append(vocab_pack.special_tokens.get('<unk>', 1))

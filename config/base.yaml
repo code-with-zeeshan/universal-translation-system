@@ -83,27 +83,32 @@ training:
   # High-level strategy
   use_fsdp: true
   num_epochs: 20
+  batch_size: 32
+  accumulation_steps: 4
+  effective_batch_size: 128
 
   # Hyperparameters
-  lr: 5e-4     # min: 1e-6, max: 1e-2
+  lr: 5e-4
   weight_decay: 0.01
-  warmup_steps: 4000  # min: 0, max: 10000
+  warmup_steps: 4000
   max_grad_norm: 1.0
-  accumulation_steps: 4 # Renamed from gradient_accumulation
   
   # Memory & Performance Optimizations
   mixed_precision: true
+  dtype: "bfloat16"
   gradient_checkpointing: true
-  activation_checkpointing: true # Added missing parameter
-  compile_model: true
-  compile_mode: "reduce-overhead" # Default mode
-  flash_attention: true # Renamed from use_flash_attention
-  use_fp8: false # Added missing parameter
   cpu_offload: false
+  activation_offload: false
+  compile_model: true
+  compile_mode: "reduce-overhead"
+  flash_attention: true
+  use_fp8: false
+  max_split_size: 512
+  empty_cache_freq: 100
 
   # Distributed Training Settings
-  sharding_strategy: "FULL_SHARD" # Added missing parameter
-  backward_prefetch: "BACKWARD_PRE" # Added missing parameter
+  sharding_strategy: "FULL_SHARD"
+  backward_prefetch: "BACKWARD_PRE"
   
   # Logging and Saving
   save_every: 2
@@ -113,22 +118,20 @@ training:
   max_sentence_length: 50
   dynamic_vocabulary: true
   vocab_switch_penalty: 0.001
-  dynamic_batch_size: true
-  adam_beta1: 0.9
-  adam_beta2: 0.98
-  adam_epsilon: 1e-8
-  max_grad_norm: 1.0
-  pin_memory: true
-  persistent_workers: true
-  prefetch_factor: 4
-  use_channels_last: true
-  use_fused_optimizer: true
-  enable_nested_tensor: true
-  use_inductor: true
-  profile_memory: false
-  use_safetensors: true
-  max_split_size: 512
-  empty_cache_freq: 100
+  # The following keys were present but are better handled by the trainer logic
+  # dynamic_batch_size: true
+  # adam_beta1: 0.9
+  # adam_beta2: 0.98
+  # adam_epsilon: 1e-8
+  # pin_memory: true
+  # persistent_workers: true
+  # prefetch_factor: 4
+  # use_channels_last: true
+  # use_fused_optimizer: true
+  # enable_nested_tensor: true
+  # use_inductor: true
+  # profile_memory: false
+  # use_safetensors: true
 
 # Distributed training defaults
 distributed:
@@ -136,6 +139,8 @@ distributed:
   find_unused_parameters: false
   broadcast_buffers: false
   bucket_cap_mb: 25
+  gradient_as_bucket_view: true
+  static_graph: true
 
 # Monitoring and logging
 monitoring:

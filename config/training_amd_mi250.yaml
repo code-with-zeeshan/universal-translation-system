@@ -5,28 +5,22 @@
 
 _base_: base.yaml
 
-# These GPUs have high memory capacity, similar to A100.
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 64
-  gradient_accumulation: 2
+  accumulation_steps: 2
   effective_batch_size: 128
-
-# High, stable learning rate is appropriate.
-optimization:
-  learning_rate: 5e-4
-
-# Abundant memory allows disabling most memory-saving tricks for speed.
-memory:
+  lr: 5e-4
   gradient_checkpointing: false
   cpu_offload: false
   activation_offload: false
   compile_mode: "max-autotune"
-  dtype: float16  # float16 is broadly supported and performant on ROCm.
-  use_flash_attention: true # ROCm 5.6+ supports flash attention.
+  dtype: "float16"  # float16 is broadly supported and performant on ROCm.
+  flash_attention: true # ROCm 5.6+ supports flash attention.
 
 # Distributed training on AMD GPUs typically uses 'rccl' or 'gloo'.
 # The backend is set in the training script, but this config is tuned for it.
 distributed:
-  backend: nccl # Note: PyTorch maps this to rccl if ROCm is detected.
+  backend: "nccl" # Note: PyTorch maps this to rccl if ROCm is detected.
   gradient_as_bucket_view: true
   static_graph: true

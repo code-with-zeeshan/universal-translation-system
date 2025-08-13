@@ -7,9 +7,9 @@ from tqdm import tqdm
 import argparse
 
 # Use your existing, excellent logging and directory management
-from utils.common_utils import StandardLogger, DirectoryManager
+from utils.common_utils import DirectoryManager
 
-logger = StandardLogger.get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class DomainDataAcquirer:
     """
@@ -90,12 +90,12 @@ class DomainDataAcquirer:
                 
                 output_file = domain_dir / f"{lang1}-{lang2}_tech.txt"
                 
+                # Process GNOME dataset
                 logger.info(f"Processing GNOME dataset for {lang1}-{lang2}...")
                 self.process_and_save(gnome_dataset, output_file, lang1, lang2)
                 
                 # Append KDE data to the same file
                 logger.info(f"Processing KDE4 dataset for {lang1}-{lang2}...")
-                # Re-open in append mode
                 with open(output_file, 'a', encoding='utf-8') as f:
                     count = 0
                     for example in tqdm(kde_dataset, desc=f"Appending KDE data"):

@@ -8,9 +8,5 @@ training:
   dtype: "bfloat16"
   compile_model: true
   compile_mode: "max-autotune"
-  
-memory:
   gradient_checkpointing: true
-  
-# Larger batch size for powerful GPUs
-batch_size: 128 
+  batch_size: 128 # Larger batch size for powerful GPUs

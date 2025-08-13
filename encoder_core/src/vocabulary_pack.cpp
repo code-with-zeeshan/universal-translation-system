@@ -20,9 +20,15 @@ int32_t VocabularyPack::getTokenId(const std::string& token) const {
         return subword_it->second;
     }
     
+    // Check special_tokens
+    auto special_it = special_tokens.find(token);
+    if (special_it != special_tokens.end()) {
+        return special_it->second;
+    }
+    
     // Return UNK token
-    auto unk_it = tokens.find("<unk>");
-    return unk_it != tokens.end() ? unk_it->second : 1;
+    auto unk_it = special_tokens.find("<unk>");
+    return unk_it != special_tokens.end() ? unk_it->second : 1;
 }
 
 std::vector<int32_t> VocabularyPack::tokenizeUnknown(const std::string& word) const {
@@ -31,10 +37,10 @@ std::vector<int32_t> VocabularyPack::tokenizeUnknown(const std::string& word) co
     // Production SentencePiece subword tokenization
     // This replaces the TODO with actual implementation
     
-    // First, try to find the word in our vocabulary
-    auto word_it = tokens.find(word);
-    if (word_it != tokens.end()) {
-        result.push_back(word_it->second);
+    // First, try to find the word in our vocabulary using getTokenId
+    int32_t word_id = getTokenId(word);
+    if (word_id != (special_tokens.count("<unk>") ? special_tokens.at("<unk>") : 1)) {
+        result.push_back(word_id);
         return result;
     }
     
@@ -73,8 +79,8 @@ std::vector<int32_t> VocabularyPack::tokenizeUnknown(const std::string& word) co
             pos += best_match_len;
         } else {
             // No subword found, use UNK token
-            auto unk_it = tokens.find("<unk>");
-            int32_t unk_id = unk_it != tokens.end() ? unk_it->second : 1;
+            auto unk_it = special_tokens.find("<unk>");
+            int32_t unk_id = unk_it != special_tokens.end() ? unk_it->second : 1;
             result.push_back(unk_id);
             pos++; // Move one character forward
         }
@@ -92,7 +98,7 @@ std::unique_ptr<VocabularyPack> VocabularyPack::loadFromFile(const std::string& 
             // Load JSON format
             std::ifstream file(path);
             if (!file.is_open()) {
-                std::cerr << "Failed to open vocabulary file: " << path << std::endl;
+                LOGI("Failed to open vocabulary file: " << path);
                 return nullptr;
             }
             
@@ -101,7 +107,6 @@ std::unique_ptr<VocabularyPack> VocabularyPack::loadFromFile(const std::string& 
             
             // Parse vocabulary data
             vocab->name = j["name"].get<std::string>();
-            vocab->size_mb = j["metadata"]["size_mb"].get<float>();
             
             // Load tokens
             for (auto& [key, value] : j["tokens"].items()) {
@@ -113,6 +118,11 @@ std::unique_ptr<VocabularyPack> VocabularyPack::loadFromFile(const std::string& 
                 vocab->subwords[key] = value.get<int32_t>();
             }
             
+            // Load special_tokens
+            for (auto& [key, value] : j["special_tokens"].items()) {
+                vocab->special_tokens[key] = value.get<int32_t>();
+            }
+            
             // Load languages
             for (auto& lang : j["languages"]) {
                 vocab->languages.push_back(lang.get<std::string>());
@@ -122,7 +132,7 @@ std::unique_ptr<VocabularyPack> VocabularyPack::loadFromFile(const std::string& 
             // Load MessagePack format
             std::ifstream file(path, std::ios::binary);
             if (!file.is_open()) {
-                std::cerr << "Failed to open vocabulary file: " << path << std::endl;
+                LOGI("Failed to open vocabulary file: " << path);
                 return nullptr;
             }
             
@@ -155,23 +165,26 @@ std::unique_ptr<VocabularyPack> VocabularyPack::loadFromFile(const std::string& 
                 subwords_map.begin(), subwords_map.end()
             );
             
+            // Parse special_tokens
+            std::map<std::string, int32_t> special_tokens_map;
+            data["special_tokens"].convert(special_tokens_map);
+            vocab->special_tokens = std::unordered_map<std::string, int32_t>(
+                special_tokens_map.begin(), special_tokens_map.end()
+            );
+            
             // Parse languages
             data["languages"].convert(vocab->languages);
             
-            // Parse metadata
-            std::map<std::string, msgpack::object> metadata;
-            data["metadata"].convert(metadata);
-            metadata["size_mb"].convert(vocab->size_mb);
         }
         
-        std::cout << "Loaded vocabulary pack: " << vocab->name 
+        LOGI("Loaded vocabulary pack: " << vocab->name 
                   << " (" << vocab->tokens.size() << " tokens, "
-                  << vocab->subwords.size() << " subwords)" << std::endl;
+                  << vocab->subwords.size() << " subwords)");
         
         return vocab;
         
     } catch (const std::exception& e) {
-        std::cerr << "Error loading vocabulary pack: " << e.what() << std::endl;
+        LOGI("Error loading vocabulary pack: " << e.what());
         return nullptr;
     }
 }

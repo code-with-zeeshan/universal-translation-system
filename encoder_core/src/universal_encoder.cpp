@@ -58,9 +58,9 @@ UniversalEncoder::UniversalEncoder(const std::string& model_path) {
         size_t num_input_nodes = session->GetInputCount();
         size_t num_output_nodes = session->GetOutputCount();
         
-        std::cout << "Model loaded successfully:" << std::endl;
-        std::cout << "  Input nodes: " << num_input_nodes << std::endl;
-        std::cout << "  Output nodes: " << num_output_nodes << std::endl;
+        LOGI("Model loaded successfully:");
+        LOGI("  Input nodes: " << num_input_nodes);
+        LOGI("  Output nodes: " << num_output_nodes);
         
         // Get input/output names and shapes
         for (size_t i = 0; i < num_input_nodes; i++) {
@@ -68,12 +68,12 @@ UniversalEncoder::UniversalEncoder(const std::string& model_path) {
             auto type_info = session->GetInputTypeInfo(i);
             auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
             
-            std::cout << "  Input " << i << ": " << input_name.get() 
+            LOGI("  Input " << i << ": " << input_name.get() 
                       << " shape: [";
             for (auto dim : tensor_info.GetShape()) {
-                std::cout << dim << " ";
+                LOGI(dim << " ");
             }
-            std::cout << "]" << std::endl;
+            LOGI("]");
         }
         
     } catch (const Ort::Exception& e) {
@@ -90,7 +90,7 @@ bool UniversalEncoder::loadVocabulary(const std::string& vocab_path) {
         current_vocab = VocabularyPack::loadFromFile(vocab_path);
         return current_vocab != nullptr;
     } catch (const std::exception& e) {
-        std::cerr << "Failed to load vocabulary: " << e.what() << std::endl;
+        LOGI("Failed to load vocabulary: " << e.what());
         return false;
     }
 }
@@ -117,13 +117,7 @@ std::vector<int32_t> UniversalEncoder::tokenize(const std::string& text, const s
     std::string word;
     while (iss >> word) {
         std::transform(word.begin(), word.end(), word.begin(), ::tolower);
-        auto token_it = current_vocab->tokens.find(word);
-        if (token_it != current_vocab->tokens.end()) {
-            tokens.push_back(token_it->second);
-        } else {
-            auto subwords = current_vocab->tokenizeUnknown(word);
-            tokens.insert(tokens.end(), subwords.begin(), subwords.end());
-        }
+        tokens.push_back(current_vocab->getTokenId(word));
     }
     // Add EOS token
     tokens.push_back(current_vocab->getTokenId("</s>"));
@@ -276,8 +270,8 @@ std::vector<uint8_t> UniversalEncoder::encode(
     
     // Log compression stats
     float compression_ratio = static_cast<float>(quantized.size()) / compressed_size;
-    std::cout << "Compression: " << quantized.size() << " bytes -> " 
-              << compressed_size << " bytes (ratio: " << compression_ratio << "x)" << std::endl;
+    LOGI("Compression: " << quantized.size() << " bytes -> " 
+              << compressed_size << " bytes (ratio: " << compression_ratio << "x)");
     
     return compressed;
 }

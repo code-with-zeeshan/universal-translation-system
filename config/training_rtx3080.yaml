@@ -5,22 +5,17 @@
 
 _base_: base.yaml
 
-# Very small batch size due to limited VRAM.
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 8
-  gradient_accumulation: 16 # Accumulate heavily to reach effective batch size.
+  accumulation_steps: 16 # Accumulate heavily to reach effective batch size.
   effective_batch_size: 128
-
-optimization:
-  learning_rate: 3e-4 # A stable learning rate for this class of GPU.
-
-# Aggressive memory optimization is required for a 10GB/12GB card.
-memory:
+  lr: 3e-4 # A stable learning rate for this class of GPU.
   gradient_checkpointing: true
   cpu_offload: true             # Offload optimizer state to CPU to save VRAM.
   activation_offload: false
   compile_mode: "reduce-overhead"
-  dtype: bfloat16               # Ampere supports bfloat16.
+  dtype: "bfloat16"               # Ampere supports bfloat16.
   max_split_size: 128           # Smaller memory splits for less fragmentation.
   empty_cache_freq: 50          # Clean up memory more frequently.
 

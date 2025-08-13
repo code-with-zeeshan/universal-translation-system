@@ -26,9 +26,9 @@ class VocabularyPack {
 public:
     std::unordered_map<std::string, int32_t> tokens;
     std::unordered_map<std::string, int32_t> subwords;
+    std::unordered_map<std::string, int32_t> special_tokens;
     std::vector<std::string> languages;
     std::string name;
-    float size_mb;
     
     // Constructor/Destructor
     VocabularyPack() = default;

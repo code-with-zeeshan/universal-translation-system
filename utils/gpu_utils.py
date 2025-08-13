@@ -35,6 +35,3 @@ def get_gpu_memory_info():
                        torch.cuda.memory_reserved()) / 1024**3
         }
     return {}
-
-# Call this at the start of training scripts:
-optimize_gpu_memory()

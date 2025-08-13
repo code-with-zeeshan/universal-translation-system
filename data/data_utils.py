@@ -1,9 +1,4 @@
 # data/data_utils.py
-"""
-Shared data processing utilities for the multilingual pipeline
-Centralizes common data operations to eliminate duplication
-"""
-
 from pathlib import Path
 from typing import Dict, List, Optional, Iterator
 import yaml
@@ -12,99 +7,18 @@ from datasets import Dataset, IterableDataset
 from tqdm import tqdm
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
+import itertools
 
 # Import from common utils
-from utils.common_utils import StandardLogger, DirectoryManager
-
-
-class ConfigManager:
-    """Centralized configuration management"""
-    
-    _config = None
-    _config_path = None
-    
-    @classmethod
-    def load_config(cls, config_path: str = 'data/config.yaml') -> dict:
-        """
-        Load configuration from YAML file (singleton pattern)
-        
-        Args:
-            config_path: Path to configuration file
-            
-        Returns:
-            Configuration dictionary
-        """
-        if cls._config is None or cls._config_path != config_path:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                cls._config = yaml.safe_load(f)
-            cls._config_path = config_path
-        return cls._config
-    
-    @classmethod
-    def get_languages(cls) -> List[str]:
-        """Get list of languages from config"""
-        config = cls.load_config()
-        return config.get('languages', [])
-    
-    @classmethod
-    def get_training_distribution(cls) -> Dict[str, int]:
-        """Get training distribution from config"""
-        config = cls.load_config()
-        return config.get('training_distribution', {})
-    
-    @classmethod
-    def get_quality_threshold(cls) -> float:
-        """Get quality threshold from config"""
-        config = cls.load_config()
-        return config.get('quality_threshold', 0.8)
-    
-    @classmethod
-    def get_output_dir(cls) -> str:
-        """Get output directory from config"""
-        config = cls.load_config()
-        return config.get('output_dir', 'data/processed')
-
-    @classmethod
-    def validate_config(cls) -> List[str]:
-        """Validate configuration and return list of errors"""
-        errors = []
-        config = cls.load_config()
-    
-        # Check required fields
-        required_fields = ['languages', 'max_sentence_length', 'quality_threshold', 
-                          'output_dir', 'training_distribution']
-        for field in required_fields:
-            if field not in config:
-                errors.append(f"Missing required field: {field}")
-    
-        # Validate language codes
-        if 'languages' in config:
-            valid_langs = set(config['languages'])
-        
-            # Check training distribution
-            if 'training_distribution' in config:
-               for pair_str in config['training_distribution']:
-                   if '-' in pair_str:
-                        src, tgt = pair_str.split('-')
-                        if src not in valid_langs:
-                           errors.append(f"Unknown source language in pair {pair_str}: {src}")
-                        if tgt not in valid_langs:
-                            errors.append(f"Unknown target language in pair {pair_str}: {tgt}")
-    
-        # Validate numeric values
-        if 'quality_threshold' in config:
-            if not 0 <= config['quality_threshold'] <= 1:
-                errors.append(f"quality_threshold must be between 0 and 1")
-    
-        return errors    
+from utils.common_utils import DirectoryManager
 
 
 class DataProcessor:
     """Shared data processing functionality"""
     
-    def __init__(self, logger: Optional[logging.Logger] = None):
-        self.logger = logger or StandardLogger.get_logger(__name__)
-        self.config = ConfigManager.load_config()
+    def __init__(self, config: dict, logger: Optional[logging.Logger] = None):
+        self.logger = logger or logging.getLogger(__name__)
+        self.config = config
     
     def process_streaming_dataset(
         self, 
@@ -213,7 +127,7 @@ class DataProcessor:
             List of (source, target) language pairs
         """
         pairs = []
-        distribution = ConfigManager.get_training_distribution()
+        distribution = self.config.data.training_distribution
         
         for pair_str in distribution.keys():
             if '-' in pair_str:
@@ -233,7 +147,7 @@ class DataProcessor:
         Returns:
             True if both languages are configured
         """
-        languages = ConfigManager.get_languages()
+        languages = self.config.data.active_languages
         return source in languages and target in languages
 
 
@@ -241,7 +155,7 @@ class DatasetLoader:
     """Centralized dataset loading with error handling"""
     
     def __init__(self, logger: Optional[logging.Logger] = None):
-        self.logger = logger or StandardLogger.get_logger(__name__)
+        self.logger = logger or logging.getLogger(__name__)
     
     def load_dataset_safely(
         self,
@@ -255,14 +169,17 @@ class DatasetLoader:
         Safely load a dataset with error handling
         
         Args:
-            dataset_name: Name of the dataset
-            config_name: Configuration name
-            split: Dataset split
-            streaming: Whether to use streaming
-            **kwargs: Additional arguments for load_dataset
+            dataset: Streaming dataset from HuggingFace
+            output_path: Path to save processed data
+            batch_size: Number of samples to process at once (default: 1000)
+            max_samples: Maximum number of samples to process (default: None - process all)
             
         Returns:
-            Dataset object or None if failed
+            int: Number of samples processed
+
+        Raises:
+            DataError: If dataset processing fails
+            IOError: If output path is not writable    
         """
         try:
             from datasets import load_dataset
@@ -308,25 +225,28 @@ def estimate_sentence_count(file_path: Path, sample_size: int = 1000) -> int:
     if not file_path.exists():
         return 0
     
-    # Count lines in sample
     with open(file_path, 'r', encoding='utf-8') as f:
-        sample_lines = sum(1 for i, _ in enumerate(f) if i < sample_size)
+        sample_lines = list(itertools.islice(f, sample_size))
     
-    # Estimate total based on file size
-    if sample_lines > 0:
-        sample_size_bytes = sum(len(line.encode('utf-8')) for i, line in enumerate(open(file_path, 'r', encoding='utf-8')) if i < sample_size)
-        total_size_bytes = file_path.stat().st_size
-        estimated_lines = int(total_size_bytes / sample_size_bytes * sample_lines)
-        return estimated_lines
+    if not sample_lines:
+        return 0
+
+    sample_line_count = len(sample_lines)
+    sample_size_bytes = sum(len(line.encode('utf-8')) for line in sample_lines)
+    total_size_bytes = file_path.stat().st_size
     
-    return 0
+    if sample_size_bytes == 0:
+        return 0
+
+    estimated_lines = int(total_size_bytes / sample_size_bytes * sample_line_count)
+    return estimated_lines
 
 
 def merge_datasets(dataset_paths: List[Path], output_path: Path) -> None:
     """Merge multiple dataset files into one"""
-    logger = StandardLogger.get_logger(__name__)
+    logger = logging.getLogger(__name__)
     
-    DirectoryManager.create_directory(output_path.parent)
+    DirectoryManager.create_directory(.parent)
     
     total_lines = 0
     with open(output_path, 'w', encoding='utf-8') as out_file:

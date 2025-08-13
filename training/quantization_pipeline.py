@@ -24,6 +24,11 @@ from collections import defaultdict
 import json
 import torch.distributed as dist
 
+try:
+    from safetensors.torch import save_file
+except ImportError:
+    save_file = None
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -79,21 +84,32 @@ class EncoderQuantizer:
         master_model = torch.load(master_model_path, map_location='cpu')
         master_model.eval()
         
-        results = {}
+        results = {} 
+
+        # 0. Profile original FP32 model to get a baseline
+        logger.info("📦 Profiling original FP32 model for baseline...")
+        original_metrics = self.profiler.profile_model(master_model, test_data_path) if test_data_path else None
+        if original_metrics:
+            results['fp32'] = {
+                'path': master_model_path,
+                'metrics': original_metrics,
+                'size_mb': self._get_file_size_mb(master_model_path)
+            }
         
         # 1. Create INT8 (125MB) version
         logger.info("📦 Creating INT8 quantized model...")
         int8_path, int8_metrics = self.quantize_dynamic_modern(
             master_model, 
             master_model_path.replace('.pt', '_int8.pt'),
-            test_data_path
+            test_data_path,
+            original_metrics=original_metrics
         )
         results['int8'] = {
             'path': int8_path,
             'metrics': int8_metrics,
             'size_mb': self._get_file_size_mb(int8_path)
         }
-        
+
         # 2. Create FP16 (250MB) version
         logger.info("📦 Creating FP16 model...")
         fp16_path, fp16_metrics = self.convert_to_fp16(
@@ -101,7 +117,8 @@ class EncoderQuantizer:
             master_model_path.replace('.pt', '_fp16.pt'),
             test_data_path
         )
-        results['fp16'] = {
+        if fp16_path:
+            results['fp16'] = {
             'path': fp16_path,
             'metrics': fp16_metrics,
             'size_mb': self._get_file_size_mb(fp16_path)
@@ -110,11 +127,12 @@ class EncoderQuantizer:
         # 3. Create static INT8 with calibration if available
         if calibration_data_path:
             logger.info("📦 Creating calibrated static INT8 model...")
-            static_path, static_metrics = self.quantize_static(
+            static_path, static_metrics = self.quantize_static_fx(
                 master_model,
                 calibration_data_path,
                 master_model_path.replace('.pt', '_static_int8.pt'),
-                test_data_path
+                test_data_path,
+                original_metrics=original_metrics
             )
             results['static_int8'] = {
                 'path': static_path,
@@ -127,7 +145,8 @@ class EncoderQuantizer:
         mixed_path, mixed_metrics = self.create_mixed_precision_model(
             master_model,
             master_model_path.replace('.pt', '_mixed.pt'),
-            test_data_path
+            test_data_path,
+            original_metrics=original_metrics
         )
         results['mixed_precision'] = {
             'path': mixed_path,
@@ -141,12 +160,9 @@ class EncoderQuantizer:
         return results
     
     def quantize_dynamic_modern(self, model: torch.nn.Module, output_path: str,
-                        test_data_path: Optional[str] = None) -> Tuple[str, QualityMetrics]:
+                        test_data_path: Optional[str] = None,
+                        original_metrics: Optional[QualityMetrics] = None) -> Tuple[str, QualityMetrics]:
         """Dynamic INT8 quantization with quality testing"""
-        
-        # Profile original model first
-        if test_data_path:
-            original_metrics = self.profiler.profile_model(model, test_data_path)
         
         # Configure for dynamic quantization
         quantized_model = torch.ao.quantization.quantize_dynamic(
@@ -163,39 +179,37 @@ class EncoderQuantizer:
         )
         
         # Save quantized model
-        torch.save(quantized_model.state_dict(), output_path)
+        if save_file:
+            save_file(quantized_model.state_dict(), output_path)
+        else:
+            logger.warning("safetensors not found, falling back to torch.save.")
+            torch.save(quantized_model.state_dict(), output_path)
         
         # Profile quantized model and return metrics
         metrics = None
         if test_data_path:
             metrics = self.profiler.profile_model(quantized_model, test_data_path)
-            metrics.compression_ratio = original_metrics.memory_mb / metrics.memory_mb
+            if original_metrics:
+                metrics.compression_ratio = original_metrics.memory_mb / metrics.memory_mb
             
             # Log quality comparison
             logger.info(f"✅ INT8 Quantization Results:")
-            logger.info(f"   Memory: {original_metrics.memory_mb:.1f}MB → {metrics.memory_mb:.1f}MB")
-            logger.info(f"   Quality retention: {(metrics.bleu_score/original_metrics.bleu_score)*100:.1f}%")
+            if original_metrics:
+                logger.info(f"   Memory: {original_metrics.memory_mb:.1f}MB → {metrics.memory_mb:.1f}MB")
+                logger.info(f"   Quality retention: {(metrics.bleu_score/original_metrics.bleu_score)*100:.1f}%")
         
         return output_path, metrics
     
     def quantize_static_fx(self, model: torch.nn.Module, 
                        calibration_data_path: str,
                        output_path: str,
-                       test_data_path: Optional[str] = None) -> Tuple[str, QualityMetrics]:
+                       test_data_path: Optional[str] = None,
+                       original_metrics: Optional[QualityMetrics] = None) -> Tuple[str, QualityMetrics]:
         """Static INT8 quantization with calibration for better quality with FX graph mode (modern approach)"""
         
         # Clone model for quantization
         model_to_quantize = self._clone_model(model)
 
-        # The model might be a tuple (encoder, decoder)
-        # Add handling:
-        if isinstance(model, tuple):
-            encoder, decoder = model
-            # Handle each separately
-            quantized_encoder = self._quantize_single_model(encoder, ...)
-            quantized_decoder = self._quantize_single_model(decoder, ...)
-            return (quantized_encoder, quantized_decoder), metrics
-        
         # Load calibration data
         calibration_data = torch.load(calibration_data_path)
 
@@ -224,6 +238,9 @@ class EncoderQuantizer:
                 if i >= self.config.calibration_samples:
                     break
                 input_data = batch['input_ids'] if isinstance(batch, dict) else batch
+                # Handle shape mismatches
+                if input_data.shape[0] != example_inputs.shape[0]:
+                    input_data = input_data[:example_inputs.shape[0]]
                 model_prepared(input_data)
         
         # Convert to quantized model
@@ -234,7 +251,11 @@ class EncoderQuantizer:
         )
         
         # Save
-        torch.save(quantized_model.state_dict(), output_path)
+        if save_file:
+            save_file(quantized_model.state_dict(), output_path)
+        else:
+            logger.warning("safetensors not found, falling back to torch.save.")
+            torch.save(quantized_model.state_dict(), output_path)
         
         # Profile if test data available
         metrics = None
@@ -257,7 +278,11 @@ class EncoderQuantizer:
                 module.float()
         
         # Save FP16 model
-        torch.save(model_fp16.state_dict(), output_path)
+        if save_file:
+            save_file(model_fp16.state_dict(), output_path)
+        else:
+            logger.warning("safetensors not found, falling back to torch.save.")
+            torch.save(model_fp16.state_dict(), output_path)
         
         # Profile if test data available
         metrics = None
@@ -299,7 +324,11 @@ class EncoderQuantizer:
                 ).dequantize()
         
         # Save
-        torch.save(model_mixed.state_dict(), output_path)
+        if save_file:
+            save_file(model_mixed.state_dict(), output_path)
+        else:
+            logger.warning("safetensors not found, falling back to torch.save.")
+            torch.save(model_mixed.state_dict(), output_path)
         
         # Profile
         metrics = None
@@ -321,7 +350,7 @@ class EncoderQuantizer:
         """Get file size in MB"""
         return Path(file_path).stat().st_size / (1024 * 1024)
     
-    def _generate_comparison_report(self, results: Dict[str, Dict[str, Any]], 
+    def _generate_comparison_report(self, results: Dict[str, Dict[str, Any}], 
                                   original_model_path: str):
         """Generate detailed comparison report"""
         

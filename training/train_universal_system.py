@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
 import json
 import time
+import argparse
 from contextlib import contextmanager
 from data.custom_samplers import TemperatureSampler
 from vocabulary.vocabulary_manager import VocabularyManager
@@ -25,6 +26,7 @@ from utils.gpu_utils import optimize_gpu_memory, get_gpu_memory_info
 from utils.resource_monitor import resource_monitor
 from utils.shutdown_handler import GracefulShutdown
 from utils.model_versioning import ModelVersion
+from config.schemas import RootConfig, load_config as load_pydantic_config
 
 # Initialize GPU optimization
 optimize_gpu_memory()
@@ -35,12 +37,11 @@ CHECKPOINT_VERSION = "2.0"
 try:
     import safetensors.torch
 except ImportError:
-    logger.warning("safetensors not available, using standard torch.save")
+    logging.warning("safetensors not available, using standard torch.save")
     safetensors = None
 
- # Expanded GPU configuration map including new and common hardware.
- # The order matters: more specific names (e.g., "RTX 3090") should come before general ones ("RTX").
-
+# Expanded GPU configuration map including new and common hardware.
+# The order matters: more specific names (e.g., "RTX 3090") should come before general ones ("RTX").
 GPU_CONFIG_MAP = [
     # Datacenter GPUs (NVIDIA)
     ("H100", "config/training_h100.yaml"),
@@ -65,25 +66,28 @@ GPU_CONFIG_MAP = [
     ("K80", "config/training_colab_free.yaml"),
 ]
 
+logger = logging.getLogger(__name__) # Make sure logger is defined at the module level
+
 def auto_select_config(
-    languages: Optional[List[str]] = None,
-    data_info: Optional[Dict[str, int]] = None
+    config: RootConfig
 ) -> str:
     """
     Automatically selects the best training configuration file based on the detected
     hardware, language count, and data size.
     Handles NVIDIA CUDA, AMD ROCm, and CPU-only environments.
     """
+    selected_config = None
     # Check for AMD ROCm environment first
     try:
         # The 'rocm-smi' command is the equivalent of 'nvidia-smi' for AMD GPUs
         result = subprocess.run(['rocm-smi', '--showproductname'], capture_output=True, text=True, check=True)
         gpu_name = result.stdout.strip()
-        print(f"Detected AMD ROCm GPU: {gpu_name}")
+        logger.info(f"Detected AMD ROCm GPU: {gpu_name}")
         for key, config_path in GPU_CONFIG_MAP:
             if key in gpu_name:
-                print(f"Using config: {config_path}")
-                return config_path
+                logger.info(f"Matched AMD GPU '{key}'. Selecting config: {config_path}")
+                selected_config = config_path
+                break
     except (FileNotFoundError, subprocess.CalledProcessError):
         # rocm-smi not found or failed, proceed to check for NVIDIA CUDA
         pass
@@ -92,67 +96,47 @@ def auto_select_config(
     gpu_name = None
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
-        print(f"Detected NVIDIA CUDA GPU: {gpu_name}")
+        logger.info(f"Detected NVIDIA CUDA GPU: {gpu_name}")
     else:
         # CPU-only configuration
-        print("No compatible GPU detected. Using CPU-only configuration.")
-        return "config/training_cpu.yaml"    
+        logger.info("No compatible GPU detected. Using CPU-only configuration.")
+        selected_config = "config/training_cpu.yaml"
 
-    # Smart logic based on task complexity 
-    num_languages = len(languages) if languages else 0
-    total_sentences = sum(data_info.values()) if data_info else 0
-    
-    # Rule 1: Large-scale multilingual training on high-end GPUs
-    if num_languages > 20 and total_sentences > 50_000_000:
-        if "H100" in gpu_name or "A100" in gpu_name:
-            print("INFO: High language count and data size on A100/H100. Selecting FSDP-optimized config.")
-            return "config/training_a100_fsdp.yaml" # Assumes you create this config
-            
-    # Rule 2: Fine-tuning a few languages
-    if 1 < num_languages <= 5:
-        if "V100" in gpu_name or "RTX 3090" in gpu_name or "RTX 4090" in gpu_name:
-            print("INFO: Small language set. Selecting fine-tuning optimized config.")
-            return "config/training_v100_finetune.yaml" # Assumes you create this config
+    if not selected_config and gpu_name:
+        # Smart logic based on task complexity
+        num_languages = len(config.data.active_languages)
+        total_sentences = sum(config.data.training_distribution.values())
 
-    for key, config_path in GPU_CONFIG_MAP:
-        if key in gpu_name:
-            print(f"Using default config for {key}: {config_path}")
-            return config_path
-        
-    # Fallback for unknown NVIDIA GPUs
-    print(f"Unknown NVIDIA GPU: {gpu_name}. Using default T4 config as a safe fallback.")
-    return "config/training_t4.yaml"
+        # Rule 1: Large-scale multilingual training on high-end GPUs
+        if num_languages > 20 and total_sentences > 50_000_000:
+            if "H100" in gpu_name or "A100" in gpu_name:
+                logger.info("High language count and data size on A100/H100. Selecting FSDP-optimized config.")
+                selected_config = "config/training_a100_fsdp.yaml"
 
-def load_config(config_path: str) -> dict:
-    """
-    Loads and merges hierarchical YAML configurations.
-    """
-    path = Path(config_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
+        # Rule 2: Fine-tuning a few languages
+        if not selected_config and 1 < num_languages <= 5:
+            if "V100" in gpu_name or "RTX 3090" in gpu_name or "RTX 4090" in gpu_name:
+                logger.info("Small language set. Selecting fine-tuning optimized config.")
+                selected_config = "config/training_v100_finetune.yaml"
 
-    with open(path, 'r') as f:
-        config = yaml.safe_load(f)
+        # Standard GPU matching
+        if not selected_config:
+            for key, config_path in GPU_CONFIG_MAP:
+                if key in gpu_name:
+                    logger.info(f"Matched NVIDIA GPU '{key}'. Selecting config: {config_path}")
+                    selected_config = config_path
+                    break
 
-    # Handle inheritance from a _base_ file
-    if '_base_' in config:
-        base_path = path.parent / config['_base_']
-        base_config = load_config(str(base_path))
-        
-        # Deep merge the configurations
-        import collections.abc
-        def deep_merge(d, u):
-            for k, v in u.items():
-                if isinstance(v, collections.abc.Mapping):
-                    d[k] = deep_merge(d.get(k, {}), v)
-                else:
-                    d[k] = v
-            return d
-            
-        config = deep_merge(base_config, config)
-        del config['_base_']
+        # Fallback for unknown NVIDIA GPUs
+        if not selected_config:
+            logger.warning(f"Unknown NVIDIA GPU: {gpu_name}. Using default T4 config as a safe fallback.")
+            selected_config = "config/training_t4.yaml"
 
-    return config
+    if not Path(selected_config).exists():
+        logger.error(f"Auto-selected config file does not exist: {selected_config}. Please check your config directory.")
+        raise FileNotFoundError(f"Configuration file not found: {selected_config}")
+
+    return selected_config
 
 from training.memory_efficient_training import (
     MemoryOptimizedTrainer, 
@@ -167,15 +151,16 @@ class ModernUniversalSystemTrainer:
     """Modern universal system trainer with all latest optimizations"""
     
     def __init__(self, encoder, decoder, train_data_path, val_data_path, 
-                 config: MemoryConfig = None, experiment_name: str = "universal-translation"):
+                 config: RootConfig, experiment_name: str = "universal-translation"):
         
         self.encoder = encoder
         self.decoder = decoder
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.experiment_name = experiment_name
+        self.config = config
         
         # Initialize memory optimized trainer
-        self.memory_config = config or MemoryConfig()
+        self.memory_config = self.config.memory
         self.trainer = MemoryOptimizedTrainer(encoder, self.memory_config)
         
         # Move models to device
@@ -191,14 +176,14 @@ class ModernUniversalSystemTrainer:
         
         # Create modern optimizers
         self.encoder_optimizer = self.trainer.create_optimized_optimizer(
-            self.encoder.parameters(), lr=5e-5, weight_decay=0.01
+            self.encoder.parameters(), lr=self.config.training.learning_rate, weight_decay=0.01
         )
         self.decoder_optimizer = self.trainer.create_optimized_optimizer(
-            self.decoder.parameters(), lr=5e-5, weight_decay=0.01
+            self.decoder.parameters(), lr=self.config.training.learning_rate, weight_decay=0.01
         )
         
         # Dynamic batch sizing
-        self.batch_sizer = DynamicBatchSizer(initial_batch_size=32, max_batch_size=128)
+        self.batch_sizer = DynamicBatchSizer(initial_batch_size=self.config.training.batch_size, max_batch_size=128)
         
         # Initialize wandb with modern config
         self._setup_wandb()
@@ -239,7 +224,7 @@ class ModernUniversalSystemTrainer:
     
         logger.info(f"🎲 Reproducibility setup with seed: {seed}")    
     
-    def _setup_models(self):
+def _setup_models(self):
         """Setup models with modern optimizations"""
         
         # Apply memory optimizations to both models
@@ -268,7 +253,7 @@ class ModernUniversalSystemTrainer:
             except Exception as e:
                 logger.warning(f"⚠️ Channels last format failed: {e}")
     
-    def _setup_wandb(self):
+def _setup_wandb(self):
         """Setup wandb with comprehensive config"""
         
         wandb_config = {
@@ -1279,79 +1264,65 @@ class ExperimentComparator:
         return df      
 
 # Usage example
-def main():
-    """Main training function with all proper imports"""
-    from utils.logging_config import setup_logging
-    setup_logging(log_dir="logs/training", log_level="INFO")
-    import torch
-    from pathlib import Path
-    from data.data_utils import ConfigManager
-
-    data_config = ConfigManager.load_config()
-    languages = data_config.get('languages')
-    training_distribution = data_config.get('training_distribution')
+def setup_environment_and_config() -> Tuple[RootConfig, str]:
+    """Handles logging and configuration loading."""
+    base_config = load_pydantic_config() # Load base config with languages
 
     # Pass the context to the auto-selector
-    config_path = auto_select_config(
-        languages=languages,
-        data_info=training_distribution
-    )
-
-    # Check if models exist, if not create them
-    try:
-        from encoder.universal_encoder import UniversalEncoder
-        from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
-    except ImportError:
-        logger.error("Cannot import encoder/decoder modules. Please ensure they are in the Python path.")
-        return
-
-    # Auto-detect GPU and load config
-    config_path = auto_select_config() # This will automatically find the best config file for your hardware
-    config_dict = load_config(config_path) # Load the full, merged configuration
+    config_path = auto_select_config(base_config)
+    config = load_pydantic_config(config_path, base_config) # Load the full, merged configuration
 
     logger.info(f"Loaded config from: {config_path}")
-    logger.info(yaml.dump(config_dict, default_flow_style=False))
+    logger.info(yaml.dump(config.dict(), default_flow_style=False))
     logger.info(f"Using device: {'cuda' if torch.cuda.is_available() else 'cpu'}")
+    return config, config_path
+
+def initialize_components(config: RootConfig) -> Tuple:
+    """Initializes models, data paths, and memory config."""
+    from encoder.universal_encoder import UniversalEncoder
+    from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
 
     # Initialize models
     encoder = UniversalEncoder(
         max_vocab_size=50000,
-        hidden_dim=config_dict.get('model', {}).get('hidden_dim', 1024),
-        num_layers=config_dict.get('model', {}).get('num_layers', 6),
-        num_heads=config_dict.get('model', {}).get('num_heads', 16),
-        dropout=config_dict.get('model', {}).get('dropout', 0.1)
+        hidden_dim=config.model.hidden_dim,
+        num_layers=config.model.num_layers,
+        num_heads=config.model.num_heads,
+        dropout=config.model.dropout
     )
     
     decoder = OptimizedUniversalDecoder(
-        encoder_dim=config_dict.get('model', {}).get('hidden_dim', 1024),
-        decoder_dim=config_dict.get('model', {}).get('decoder_dim', 512),
+        encoder_dim=config.model.hidden_dim,
+        decoder_dim=config.model.decoder_dim,
         vocab_size=50000,
-        num_layers=config_dict.get('model', {}).get('decoder_layers', 6),
-        num_heads=config_dict.get('model', {}).get('decoder_heads', 8),
-        dropout=config_dict.get('model', {}).get('dropout', 0.1)
+        num_layers=config.model.decoder_layers,
+        num_heads=config.model.decoder_heads,
+        dropout=config.model.dropout
     )
     
     # Check if data exists
-    train_data_path = Path(config_dict['data']['processed_dir']) / 'train_final.txt'
-    val_data_path = Path(config_dict['data']['processed_dir']) / 'val_final.txt'
+    train_data_path = Path(config.data.processed_dir) / 'train_final.txt'
+    val_data_path = Path(config.data.processed_dir) / 'val_final.txt'
     
     if not train_data_path.exists():
         logger.error(f"Training data not found at {train_data_path}")
         logger.info("Please run the data pipeline first: python -m data.practical_data_pipeline")
-        return
 
-    # Configure memory optimizations from config
-    memory_config = MemoryConfig(
-        mixed_precision=config_dict["memory"].get("mixed_precision", True),
-        gradient_checkpointing=config_dict["memory"].get("gradient_checkpointing", True),
-        compile_model=config_dict["memory"].get("compile_model", True),
-        compile_mode=config_dict["memory"].get("compile_mode", "reduce-overhead"),
-        use_flash_attention=config_dict["memory"].get("use_flash_attention", True),
-        dtype=getattr(torch, config_dict["memory"].get("dtype", "bfloat16")),
-        use_safetensors=config_dict["memory"].get("use_safetensors", True),
-        cpu_offload=config_dict["memory"].get("cpu_offload", False),
-        activation_offload=config_dict["memory"].get("activation_offload", False),
-    )
+    return encoder, decoder, str(train_data_path), str(val_data_path), config.memory
+
+def run_training_session(
+    encoder, decoder, train_data_path, val_data_path, memory_config, config, config_path
+):
+    """Runs the training loop and handles post-training tasks like versioning."""
+    from pathlib import Path
+    import torch
+    from utils.shutdown_handler import GracefulShutdown
+    from utils.model_versioning import ModelVersion
+
+    parser = argparse.ArgumentParser(description="Modern Universal System Trainer")
+    parser.add_argument('--checkpoint', type=str, default=None, help="Path to a checkpoint to resume training from.")
+    # Initialize trainer
+    experiment_name = f"universal-translation-{Path(config_path).stem}"
 
     # Initialize trainer
     trainer = ModernUniversalSystemTrainer(
@@ -1359,12 +1330,18 @@ def main():
         decoder=decoder,
         train_data_path=str(train_data_path),
         val_data_path=str(val_data_path),
-        config=memory_config,
-        experiment_name=f"universal-translation-{Path(config_path).stem}"
+        config=config,
+        experiment_name=experiment_name
     )
 
+    # Load checkpoint if provided
+    args, _ = parser.parse_known_args()
+    if args.checkpoint and Path(args.checkpoint).exists():
+        logger.info(f"Resuming training from checkpoint: {args.checkpoint}")
+        trainer.load_checkpoint(args.checkpoint)
+
     # Configure training parameters from config
-    training_config = config_dict.get('training', {})
+    training_config = config.training
     
     def cleanup():
         """Emergency cleanup function"""
@@ -1381,14 +1358,31 @@ def main():
 
     # Start training
     trainer.train(
-        num_epochs=training_config.get('num_epochs', 20),
-        save_every=training_config.get('save_every', 2),
-        validate_every=training_config.get('validate_every', 1),
-        log_every=training_config.get('log_every', 50),
+        num_epochs=training_config.num_epochs,
+        save_every=training_config.save_every,
+        validate_every=training_config.validate_every,
+        log_every=training_config.log_every,
         shutdown_handler=shutdown_handler
     )
     logger.info("✅ Training completed successfully!")
 
+    # Post-training tasks
+    versioning = ModelVersion()
+    final_encoder_path = trainer.checkpoint_dir / "best_encoder.safetensors"
+    if final_encoder_path.exists():
+        encoder_version = versioning.register_model(
+            model_path=str(final_encoder_path),
+            model_type="encoder",
+            metrics={'final_val_loss': trainer.best_val_loss},
+            metadata={'config_file': config_path}
+        )
+        logger.info(f"Encoder registered as version: {encoder_version}")
+
+
+def main():
+    """Main training function with all proper imports"""
+    from utils.logging_config import setup_logging
+    setup_logging(log_dir="logs/training", log_level="INFO")
     # Versioning:
     versioning = ModelVersion()
     
@@ -1401,12 +1395,25 @@ def main():
             'training_time_hours': total_time / 3600
         },
         metadata={
-            'config': config_dict,
+            'config': config.dict(),
             'dataset': 'universal_v1',
             'pytorch_version': torch.__version__
         }
     )
     logger.info(f"Encoder registered as version: {encoder_version}")
+    
+    try:
+        config, config_path = setup_environment_and_config()
+        components = initialize_components(config)
+        if components:
+            encoder, decoder, train_path, val_path, memory_config = components
+            run_training_session(encoder, decoder, train_path, val_path, memory_config, config, config_path)
+    except (ImportError, FileNotFoundError) as e:
+        logger.error(f"Setup failed: {e}")
+        return
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during training: {e}", exc_info=True)
+        return
 
 # QuantizationAwareTrainer fake_quantize method:
 class QuantizationAwareTrainer:

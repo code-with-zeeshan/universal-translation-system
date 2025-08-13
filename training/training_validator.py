@@ -22,15 +22,14 @@ class TrainingValidator:
         for field in required_fields:
             if not hasattr(config, field):
                 errors.append(f"Missing required field: {field}")
-        
-        # Validate ranges
-        if hasattr(config, 'lr'):
-            if not 0 < config.lr < 1:
-                errors.append(f"Invalid learning rate: {config.lr}")
-        
-        if hasattr(config, 'batch_size'):
-            if not 1 <= config.batch_size <= 1024:
-                errors.append(f"Invalid batch size: {config.batch_size}")
+            else:
+                # Validate ranges
+                if field == 'lr':
+                    if not 0 < config.lr < 1:
+                        errors.append(f"Invalid learning rate: {config.lr}")
+                elif field == 'batch_size':
+                    if not 1 <= config.batch_size <= 1024:
+                        errors.append(f"Invalid batch size: {config.batch_size}")
         
         # Validate device settings
         if hasattr(config, 'device'):

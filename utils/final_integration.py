@@ -21,7 +21,7 @@ class SystemIntegrator:
             'utils.security': ['validate_model_source', 'safe_load_model'],
             'utils.base_classes': ['BaseDataProcessor', 'TokenizerMixin'],
             'utils.dataset_classes': ['ModernParallelDataset'],
-            'utils.common_utils': ['StandardLogger', 'DirectoryManager'],
+            'utils.common_utils': ['DirectoryManager'], # Removed StandardLogger
             
             # Data
             'data.data_utils': ['ConfigManager', 'DataProcessor'],
@@ -35,7 +35,7 @@ class SystemIntegrator:
             # Training
             'training.distributed_train': ['UnifiedDistributedTrainer'],
             'training.memory_efficient_training': ['MemoryOptimizedTrainer'],
-            'training.progressive_training': ['ProgressiveTrainingStrategy'],
+            'training.progressive_training': ['ProgressiveTrainingOrchestrator'], # Corrected class name
             'training.quantization_pipeline': ['EncoderQuantizer'],
             
             # Evaluation
@@ -135,9 +135,6 @@ class SystemIntegrator:
         ]
         
         files_exist = all((project_root / f).exists() for f in critical_files)
-        
-        # Overall result
-        all_imports_ok = all(import_results.values())
         
         if all_imports_ok and files_exist:
             logger.info("✅ System validation passed - ready to run!")

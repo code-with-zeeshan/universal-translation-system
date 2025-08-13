@@ -6,21 +6,22 @@ from typing import List, Dict
 from tqdm import tqdm
 from datetime import datetime
 
-from data_utils import ConfigManager, merge_datasets
-from utils.common_utils import StandardLogger
+from data_utils import merge_datasets
+from utils.common_utils import DirectoryManager
 from utils.exceptions import DataError
+from config.schemas import RootConfig
 
 class PipelineConnector:
     """Connects all pipeline stages"""
     
-    def __init__(self):
-        self.logger = StandardLogger.get_logger(__name__)
-        self.config = ConfigManager.load_config()
+    def __init__(self, config: RootConfig):
+        self.logger = logging.getLogger(__name__)
+        self.config = config
         
     def create_monolingual_corpora(self):
         """Split parallel data into monolingual files for vocabulary creation"""
-        sampled_dir = Path(self.config['output_dir']) / 'sampled'
-        processed_dir = Path(self.config['output_dir']) / 'processed'
+        sampled_dir = Path(self.config.data.processed_dir) / 'sampled'
+        processed_dir = Path(self.config.data.processed_dir)
         processed_dir.mkdir(exist_ok=True)
 
         if not sampled_dir.exists():
@@ -40,11 +41,11 @@ class PipelineConnector:
                         if len(parts) == 4:  # source, target, source_lang, target_lang
                             source_text, target_text, source_lang, target_lang = parts
                             
-                            # Validate language codes
-                            if source_lang not in self.config.get('languages', []):
+                            # +++ ADDED: Validate language codes against config +++
+                            if source_lang not in self.config.data.active_languages:
                                 self.logger.warning(f"Unknown source language: {source_lang}")
                                 continue
-                            if target_lang not in self.config.get('languages', []):
+                            if target_lang not in self.config.data.active_languages:
                                 self.logger.warning(f"Unknown target language: {target_lang}")
                                 continue
 
@@ -73,11 +74,11 @@ class PipelineConnector:
                     f.write(f"{text}\n")
             self.logger.info(f"Created {output_file} with {len(unique_texts)} unique sentences (from {len(texts)} total)")
     
-    def create_final_training_file(self):
+def create_final_training_file(self):
         """Merge all data into final training file"""
-        sampled_dir = Path(self.config['output_dir']) / 'sampled'
-        final_dir = Path(self.config['output_dir']) / 'final'
-        processed_dir = Path(self.config['output_dir']) / 'processed'
+        sampled_dir = Path(self.config.data.processed_dir) / 'sampled'
+        final_dir = Path(self.config.data.processed_dir) / 'final'
+        processed_dir = Path(self.config.data.processed_dir)
         
         # Collect all files to merge
         files_to_merge = []
@@ -99,17 +100,24 @@ class PipelineConnector:
     def get_data_version_info(self) -> Dict[str, str]:
         """Get data and pipeline version information"""
         return {
-            'data_version': self.config.get('data_version', 'unknown'),
-            'pipeline_version': self.config.get('pipeline_version', 'unknown'),
+            'data_version': self.config.version,
             'timestamp': datetime.now().isoformat(),
             'git_commit': self._get_git_commit()
-        }        
+        }
+
+    def _get_git_commit(self) -> str:
+        """Get current git commit hash"""
+        try:
+            import subprocess
+            return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
+        except Exception:
+            return "unknown"
 
 # Update practical_data_pipeline.py
 # Add these methods to PracticalDataPipeline class:
 def _create_training_ready_data(self):
     """Create data ready for training"""
-    connector = PipelineConnector()
+    connector = PipelineConnector(self.config)
     
     # Create monolingual corpora for vocabulary
     self.logger.info("Creating monolingual corpora...")

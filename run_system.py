@@ -17,10 +17,8 @@ sys.path.insert(0, str(project_root))
 from utils.final_integration import SystemIntegrator
 from integration.connect_all_systems import integrate_full_pipeline
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+
+
 logger = logging.getLogger(__name__)
 
 def main():
@@ -63,11 +61,17 @@ def main():
         
     elif args.mode == 'evaluate':
         logger.info("📊 Starting evaluation...")
-        # Import and run evaluation
+        from evaluation.evaluate_model import main as evaluate_main
+        evaluate_main(args.config) # Assuming evaluate_model.py takes a config
         
     elif args.mode == 'translate':
         logger.info("🌐 Starting translation service...")
-        # Import and run translation service
+        # Placeholder for translation service. This would likely involve:
+        # 1. Loading a trained model (e.g., from `models/production`)
+        # 2. Initializing an inference service (e.g., using FastAPI from `cloud_decoder`)
+        # 3. Exposing an API endpoint for translation requests.
+        logger.info("Translation service not yet implemented. Please refer to documentation for manual setup.")
+        return 1 # Indicate that this mode is not fully implemented
     
     return 0
 

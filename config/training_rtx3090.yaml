@@ -1,24 +1,19 @@
 # config/training_rtx3090.yaml
 # RTX 3090-specific configuration
 _base_: base.yaml
-
-# RTX 3090 training settings - limited memory
+ 
+# All settings are under the 'training' key to correctly override the base config.
 training:
   batch_size: 16
-  gradient_accumulation: 8
+  accumulation_steps: 8
   effective_batch_size: 128
-
-optimization:
-  learning_rate: 3e-4
-
-# RTX 3090 memory settings - aggressive optimization needed
-memory:
+  lr: 3e-4
   gradient_checkpointing: true
   cpu_offload: true
   activation_offload: false
   compile_mode: reduce-overhead
   dtype: bfloat16
-  max_split_size: 256  # Smaller splits for 24GB memory
+  max_split_size: 256
 
 distributed:
   gradient_as_bucket_view: false

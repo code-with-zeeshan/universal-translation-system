@@ -174,9 +174,9 @@ class UniversalEncoder(nn.Module):
                 # This maintains quality even with smaller vocab!
                 if isinstance(vocab_pack.embeddings, dict):
                     # If embeddings are stored as dict
-                    for token, idx in vocab_pack.tokens.items():
+                    for token, token_id in vocab_pack.tokens.items():
                         if token in vocab_pack.embeddings:
-                            self.embedding_layer.weight.data[idx] = torch.tensor(
+                            self.embedding_layer.weight.data[token_id] = torch.tensor(
                                 vocab_pack.embeddings[token]
                             )
                 else:
@@ -215,4 +215,4 @@ class UniversalEncoder(nn.Module):
     
     def enable_quantization(self):
         """Mark model as quantized"""
-        self.is_quantized = True   
+        self.is_quantized = True

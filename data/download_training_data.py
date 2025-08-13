@@ -8,55 +8,28 @@ from pathlib import Path
 from typing import List, Dict
 from concurrent.futures import ProcessPoolExecutor
 from utils.security import validate_model_source, safe_load_model
-import torch
 from tqdm import tqdm
+import logging
 
-# Import shared utilities with fallback
-try:
-    from data_utils import ConfigManager, DataProcessor, DatasetLoader, get_corpus_size_mb
-    from utils.common_utils import StandardLogger, DirectoryManager
-    INTEGRATED_MODE = True
-except ImportError:
-    # Fallback for standalone execution
-    import logging
-    INTEGRATED_MODE = False
-    
-    class StandardLogger:
-        @staticmethod
-        def get_logger(name):
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            return logging.getLogger(name)
-    
-    class DirectoryManager:
-        @staticmethod
-        def create_directory(path):
-            Path(path).mkdir(parents=True, exist_ok=True)
-            return Path(path)
+# Import shared utilities
+from data_utils import DataProcessor, DatasetLoader, get_corpus_size_mb
+from utils.common_utils import DirectoryManager
+from config.schemas import RootConfig, load_config
 
 
 class MultilingualDataCollector:
     """Collect high-quality parallel data for multiple languages with modern practices"""
     
-    def __init__(self, target_languages: List[str] = None):
+    def __init__(self, config: RootConfig, target_languages: List[str] = None):
         # Initialize logger
-        self.logger = StandardLogger.get_logger(__name__)
+        self.logger = logging.getLogger(__name__)
+        self.config = config
         
         # Get languages from config or use provided list
-        if INTEGRATED_MODE and target_languages is None:
-            self.languages = ConfigManager.get_languages()
-            self.data_processor = DataProcessor(self.logger)
-            self.dataset_loader = DatasetLoader(self.logger)
-            self.training_distribution = ConfigManager.get_training_distribution()
-        else:
-            # Fallback for standalone mode
-            self.languages = target_languages or [
-                'en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru',
-                'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv'
-            ]
-            self.training_distribution = {}
+        self.languages = target_languages or self.config.data.active_languages
+        self.data_processor = DataProcessor(self.config, self.logger)
+        self.dataset_loader = DatasetLoader(self.logger)
+        self.training_distribution = self.config.data.training_distribution
         
         # Data source configuration
         self.data_sources = {
@@ -105,10 +78,7 @@ class MultilingualDataCollector:
         
         # Calculate total size
         for file_path in output_path.rglob('*.txt'):
-            if INTEGRATED_MODE:
-                stats['total_size_mb'] += get_corpus_size_mb(file_path)
-            else:
-                stats['total_size_mb'] += file_path.stat().st_size / (1024 * 1024)
+            stats['total_size_mb'] += get_corpus_size_mb(file_path)
         
         self.logger.info(f"✅ Downloaded {stats['total_files']} datasets ({stats['total_size_mb']:.1f}MB)")
         return stats
@@ -125,71 +95,41 @@ class MultilingualDataCollector:
                 continue
         
         # FLORES-200 with security check
-        if INTEGRATED_MODE:
-            dataset = self.dataset_loader.load_dataset_safely(
-                'facebook/flores',
-                config_name='flores200_sacrebleu_tokenized_xlm_roberta_base',
-                split='dev',
-                streaming=True,
-                trust_remote_code=False  # Explicitly set to False
+        dataset = self.dataset_loader.load_dataset_safely(
+            'facebook/flores',
+            config_name='flores200_sacrebleu_tokenized_xlm_roberta_base',
+            split='dev',
+            streaming=True,
+            trust_remote_code=False  # Explicitly set to False
+        )
+        if dataset:
+            self.data_processor.process_streaming_dataset(
+                dataset, output_dir / 'flores200'
             )
-            if dataset:
-                self.data_processor.process_streaming_dataset(
-                    dataset, output_dir / 'flores200'
-                )
-                downloaded_count += 1
-        else:
-            # Fallback implementation
-            try:
-                from datasets import load_dataset
-                flores = load_dataset(
-                    'facebook/flores',
-                    name='flores200_sacrebleu_tokenized_xlm_roberta_base',
-                    split='dev',
-                    streaming=True,
-                    trust_remote_code=False
-                )
-                self._process_streaming_dataset_fallback(flores, output_dir / 'flores200')
-                downloaded_count += 1
-            except Exception as e:
-                self.logger.error(f"✗ Failed to download FLORES-200: {e}")
+            downloaded_count += 1
         
         # NLLB-MD for configured language pairs
         for lang_pair in self._get_language_pairs():
             pair_str = f"{lang_pair[0]}-{lang_pair[1]}"
             
             # Skip if not in training distribution (when integrated)
-            if INTEGRATED_MODE and self.training_distribution:
+            if self.training_distribution:
                 if pair_str not in self.training_distribution:
                     continue
             
             try:
-                if INTEGRATED_MODE:
-                    dataset = self.dataset_loader.load_dataset_safely(
-                        'facebook/nllb-seed',
-                        config_name=pair_str,
-                        streaming=True,
-                        trust_remote_code=False  # Explicitly set to False
-                    )
-                    if dataset:
-                        target_size = self.training_distribution.get(pair_str, 100000)
-                        self.data_processor.process_streaming_dataset(
-                            dataset,
-                            output_dir / f'nllb_{pair_str}',
-                            max_samples=target_size
-                        )
-                        downloaded_count += 1
-                else:
-                    # Fallback implementation
-                    from datasets import load_dataset
-                    dataset = load_dataset(
-                        'facebook/nllb-seed',
-                        pair_str,
-                        streaming=True,
-                        trust_remote_code=False
-                    )
-                    self._process_streaming_dataset_fallback(
-                        dataset, output_dir / f'nllb_{pair_str}'
+                dataset = self.dataset_loader.load_dataset_safely(
+                    dataset_name,
+                    config_name=pair_str,
+                    streaming=True,
+                    trust_remote_code=False  # Explicitly set to False
+                )
+                if dataset:
+                    target_size = self.training_distribution.get(pair_str, 100000)
+                    self.data_processor.process_streaming_dataset(
+                        dataset,
+                        output_dir / f'nllb_{pair_str}',
+                        max_samples=target_size
                     )
                     downloaded_count += 1
             except Exception as e:
@@ -197,26 +137,16 @@ class MultilingualDataCollector:
         
         # CCMatrix
         try:
-            if INTEGRATED_MODE:
-                dataset = self.dataset_loader.load_dataset_safely(
-                    'yhavinga/ccmatrix',
-                    config_name='multilingual',
-                    streaming=True,
-                    trust_remote_code=False  # Explicitly set to False
+            dataset = self.dataset_loader.load_dataset_safely(
+                'yhavinga/ccmatrix',
+                config_name='multilingual',
+                streaming=True,
+                trust_remote_code=False  # Explicitly set to False
+            )
+            if dataset:
+                self.data_processor.process_streaming_dataset(
+                    dataset, output_dir / 'ccmatrix'
                 )
-                if dataset:
-                    self.data_processor.process_streaming_dataset(
-                        dataset, output_dir / 'ccmatrix'
-                    )
-                    downloaded_count += 1
-            else:
-                from datasets import load_dataset
-                ccmatrix = load_dataset(
-                    'yhavinga/ccmatrix', 'multilingual', 
-                    streaming=True, 
-                    trust_remote_code=False
-                )
-                self._process_streaming_dataset_fallback(ccmatrix, output_dir / 'ccmatrix')
                 downloaded_count += 1
         except Exception as e:
             self.logger.error(f"✗ Failed to download CCMatrix: {e}")
@@ -230,23 +160,15 @@ class MultilingualDataCollector:
         
         for dataset_name in tqdm(self.data_sources['opus_datasets'], desc="Downloading OPUS"):
             try:
-                if INTEGRATED_MODE:
-                    dataset = self.dataset_loader.load_dataset_safely(
-                        dataset_name,
-                        streaming=True,
-                        trust_remote_code=False  # Explicitly set to False
-                    )
-                    if dataset:
-                        self.data_processor.process_streaming_dataset(
-                            dataset,
-                            opus_dir / dataset_name.split('/')[-1]
-                        )
-                        downloaded_count += 1
-                else:
-                    from datasets import load_dataset
-                    dataset = load_dataset(dataset_name, streaming=True, trust_remote_code=False)
-                    self._process_streaming_dataset_fallback(
-                        dataset, opus_dir / dataset_name.split('/')[-1]
+                dataset = self.dataset_loader.load_dataset_safely(
+                    dataset_name,
+                    streaming=True,
+                    trust_remote_code=False  # Explicitly set to False
+                )
+                if dataset:
+                    self.data_processor.process_streaming_dataset(
+                        dataset,
+                        opus_dir / dataset_name.split('/')[-1]
                     )
                     downloaded_count += 1
             except Exception as e:
@@ -261,23 +183,15 @@ class MultilingualDataCollector:
         
         for dataset_name in self.data_sources['google_datasets']:
             try:
-                if INTEGRATED_MODE:
-                    dataset = self.dataset_loader.load_dataset_safely(
-                        dataset_name,
-                        streaming=True,
-                        trust_remote_code=False  # Explicitly set to False
-                    )
-                    if dataset:
-                        self.data_processor.process_streaming_dataset(
-                            dataset,
-                            wmt_dir / dataset_name
-                        )
-                        downloaded_count += 1
-                else:
-                    from datasets import load_dataset
-                    dataset = load_dataset(dataset_name, streaming=True, trust_remote_code=False)
-                    self._process_streaming_dataset_fallback(
-                        dataset, wmt_dir / dataset_name
+                dataset = self.dataset_loader.load_dataset_safely(
+                    dataset_name,
+                    streaming=True,
+                    trust_remote_code=False  # Explicitly set to False
+                )
+                if dataset:
+                    self.data_processor.process_streaming_dataset(
+                        dataset,
+                        wmt_dir / dataset_name
                     )
                     downloaded_count += 1
             except Exception as e:
@@ -300,9 +214,6 @@ class MultilingualDataCollector:
                     str(output_path / f"batch_{i}")
                 )
                 batch_data = []
-                if torch.cuda.is_available():
-                    del batch_data  # Delete tensors first
-                    torch.cuda.empty_cache()  # Then clear cache
         
         # Save remaining data
         if batch_data:
@@ -314,7 +225,7 @@ class MultilingualDataCollector:
         """Generate language pairs based on configuration or defaults"""
         pairs = []
         
-        if INTEGRATED_MODE and self.training_distribution:
+        if self.training_distribution:
             # Use configured pairs
             for pair_str in self.training_distribution.keys():
                 if '-' in pair_str:
@@ -350,29 +261,14 @@ class MultilingualDataCollector:
         # Try different sources
         for dataset_name in ['Helsinki-NLP/opus-100', 'facebook/nllb-seed']:
             try:
-                if INTEGRATED_MODE:
-                    dataset = self.dataset_loader.load_dataset_safely(
-                        dataset_name,
-                        config_name=pair_str,
-                        streaming=True,
-                        trust_remote_code=False  # Explicitly set to False
-                    )
-                    if dataset:
-                        self.data_processor.process_streaming_dataset(
-                            dataset,
-                            output_path / f"{dataset_name.split('/')[-1]}_{pair_str}"
-                        )
-                        success = True
-                        break
-                else:
-                    from datasets import load_dataset
-                    dataset = load_dataset(
-                        dataset_name,
-                        pair_str,
-                        streaming=True,
-                        trust_remote_code=False
-                    )
-                    self._process_streaming_dataset_fallback(
+                dataset = self.dataset_loader.load_dataset_safely(
+                    dataset_name,
+                    config_name=pair_str,
+                    streaming=True,
+                    trust_remote_code=False  # Explicitly set to False
+                )
+                if dataset:
+                    self.data_processor.process_streaming_dataset(
                         dataset,
                         output_path / f"{dataset_name.split('/')[-1]}_{pair_str}"
                     )
@@ -391,8 +287,9 @@ class MultilingualDataCollector:
 
 def main():
     """Main entry point for standalone execution"""
+    config = load_config()
     # When run standalone, use default languages
-    collector = MultilingualDataCollector([
+    collector = MultilingualDataCollector(config, [
         'en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru',
         'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv'
     ])
@@ -400,9 +297,9 @@ def main():
     # Download all data
     stats = collector.download_all_data()
     
-    print(f"\nDownload complete! Statistics:")
+    logging.info(f"\nDownload complete! Statistics:")
     for key, value in stats.items():
-        print(f"  {key}: {value}")
+        logging.info(f"  {key}: {value}")
 
 
 if __name__ == "__main__":

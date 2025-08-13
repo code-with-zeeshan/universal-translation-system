@@ -12,6 +12,14 @@ import logging
 from utils.security import validate_model_source, safe_load_model
 from utils.exceptions import TrainingError
 
+# --- ADDED: Import Path for directory creation ---
+from pathlib import Path
+
+try:
+    from safetensors.torch import save_file
+except ImportError:
+    save_file = None
+
 logger = logging.getLogger(__name__)
 
 class PretrainedModelBootstrapper:
@@ -51,11 +59,11 @@ class PretrainedModelBootstrapper:
     
     def create_encoder_from_pretrained(self, 
                                     model_name: str = 'xlm-roberta-base',
-                                    output_path: str = 'models/universal_encoder_initial.pt',
+                                    output_path: str = 'models/encoder/universal_encoder_initial.pt',
                                     target_hidden_dim: int = 1024) -> nn.Module:
         """Create encoder using modern AutoModel patterns with dimension adaptation"""
         
-        print(f"🔄 Loading {model_name} with AutoModel...")
+        logger.info(f"🔄 Loading {model_name} with AutoModel...")
         
         # Use safe loading with security validation
         try:
@@ -75,10 +83,10 @@ class PretrainedModelBootstrapper:
                 trust_remote_code=False
             )
         except Exception as e:
-            print(f"❌ Error loading model: {e}")
+            logger.error(f"❌ Error loading model: {e}")
             raise
         
-        print("📦 Extracting components with proper error handling...")
+        logger.info("📦 Extracting components with proper error handling...")
         
         # Extract embeddings with proper dimension handling
         try:
@@ -87,18 +95,18 @@ class PretrainedModelBootstrapper:
             hidden_size = model.config.hidden_size
             source_hidden_size = hidden_size
             
-            print(f"  - Source embeddings: {pretrained_embeddings.shape}")
-            print(f"  - Vocab size: {vocab_size}")
-            print(f"  - Source hidden size: {source_hidden_size}")
-            print(f"  - Target hidden size: {target_hidden_dim}")
+            logger.info(f"  - Source embeddings: {pretrained_embeddings.shape}")
+            logger.info(f"  - Vocab size: {vocab_size}")
+            logger.info(f"  - Source hidden size: {source_hidden_size}")
+            logger.info(f"  - Target hidden size: {target_hidden_dim}")
             
         except AttributeError as e:
-            print(f"❌ Error extracting embeddings: {e}")
+            logger.error(f"❌ Error extracting embeddings: {e}")
             raise
 
         # Adapt embeddings if dimensions don't match
         if source_hidden_size != target_hidden_dim:
-            print(f"📏 Adapting embeddings from {source_hidden_size} to {target_hidden_dim}")
+            logger.info(f"📏 Adapting embeddings from {source_hidden_size} to {target_hidden_dim}")
             pretrained_embeddings = self._adapt_pretrained_embeddings(
                 pretrained_embeddings, source_hidden_size, target_hidden_dim
             )
@@ -116,7 +124,7 @@ class PretrainedModelBootstrapper:
         )
         
         # Copy weights with proper error handling and dimension checks
-        print("💉 Transferring pretrained weights...")
+        logger.info("💉 Transferring pretrained weights...")
         
         with torch.no_grad():
             # Copy embeddings with dimension validation
@@ -144,16 +152,16 @@ class PretrainedModelBootstrapper:
                             # Copy FFN weights
                             if hasattr(layer, 'intermediate') and hasattr(our_layer, 'intermediate'):
                                 our_layer.intermediate.load_state_dict(layer.intermediate.state_dict())
-                    print("✅ Transferred transformer layer weights")
+                    logger.info("✅ Transferred transformer layer weights")
                 except Exception as e:
-                    print(f"⚠️  Could not transfer transformer weights: {e}")  
+                    logger.warning(f"⚠️  Could not transfer transformer weights: {e}")  
         
         # Apply torch.compile for better performance (PyTorch 2.0+)
         if hasattr(torch, 'compile'):
-            print("🚀 Applying torch.compile optimization...")
+            logger.info("🚀 Applying torch.compile optimization...")
             our_encoder = torch.compile(our_encoder)
         
-        print("✅ Encoder initialized with modern practices")
+        logger.info("✅ Encoder initialized with modern practices")
         
         # Save with comprehensive metadata
         checkpoint = {
@@ -167,13 +175,21 @@ class PretrainedModelBootstrapper:
                 'device': str(self.device),
                 'torch_version': torch.__version__,
                 'transformers_version': __import__('transformers').__version__,
-                'adaptation_applied': source_hidden_size != target_hidden_dim
+                'adaptation_applied': source_hidden_dim != target_hidden_dim
             },
             'tokenizer_config': tokenizer.init_kwargs if hasattr(tokenizer, 'init_kwargs') else {}
         }
-        
-        torch.save(checkpoint, output_path)
-        print(f"💾 Saved encoder to {output_path}")
+
+        # --- ADDED: Ensure output directory exists ---
+        output_dir = Path(output_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if save_file:
+            save_file(checkpoint, output_path)
+        else:
+            logger.warning("safetensors not found, falling back to torch.save.")
+            torch.save(checkpoint, output_path)
+        logger.info(f"💾 Saved encoder to {output_path}")
         
         return our_encoder
 
@@ -238,8 +254,8 @@ class PretrainedModelBootstrapper:
             
                 # Preserve relative norms
                 original_norms = pretrained_embeddings.norm(dim=1, keepdim=True)
-                adapted_norms = adapted.norm(dim=1, keepdim=True)
-                scale = original_norms / (adapted_norms + 1e-8)
+                adapted_norms = adapted.norm(dim=1, keepdim=True) + 1e-8 # Add epsilon to prevent division by zero
+                scale = original_norms / adapted_norms
                 adapted = adapted * scale
     
         else:
@@ -289,10 +305,10 @@ class PretrainedModelBootstrapper:
 
     def create_decoder_from_mbart(self, 
                                 model_name: str = 'facebook/mbart-large-50',
-                                output_path: str = 'models/universal_decoder_initial.pt') -> nn.Module:
+                                output_path: str = 'models/decoder/universal_decoder_initial.pt') -> nn.Module:
         """Create decoder using modern AutoModel patterns"""
         
-        print(f"🔄 Loading {model_name} with AutoModel...")
+        logger.info(f"🔄 Loading {model_name} with AutoModel...")
         
         try:
             # Use AutoModel instead of specific model class
@@ -310,7 +326,7 @@ class PretrainedModelBootstrapper:
             )
             
         except Exception as e:
-            print(f"❌ Error loading model: {e}")
+            logger.error(f"❌ Error loading model: {e}")
             raise
         
         # Extract decoder with proper error handling
@@ -319,10 +335,10 @@ class PretrainedModelBootstrapper:
             config = model.config
             
         except AttributeError as e:
-            print(f"❌ Error extracting decoder: {e}")
+            logger.error(f"❌ Error extracting decoder: {e}")
             raise
         
-        print("📦 Creating decoder with modern architecture...")
+        logger.info("📦 Creating decoder with modern architecture...")
         
         from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
         
@@ -336,7 +352,7 @@ class PretrainedModelBootstrapper:
         )
         
         # Transfer weights with proper dimension handling
-        print("💉 Transferring knowledge with dimension adaptation...")
+        logger.info("💉 Transferring knowledge with dimension adaptation...")
         
         with torch.no_grad():
             # Transfer embeddings
@@ -354,10 +370,10 @@ class PretrainedModelBootstrapper:
         
         # Apply modern optimizations
         if hasattr(torch, 'compile'):
-            print("🚀 Applying torch.compile optimization...")
+            logger.info("🚀 Applying torch.compile optimization...")
             our_decoder = torch.compile(our_decoder)
         
-        print("✅ Decoder initialized with modern practices")
+        logger.info("✅ Decoder initialized with modern practices")
         
         # Save with comprehensive metadata
         checkpoint = {
@@ -373,6 +389,10 @@ class PretrainedModelBootstrapper:
             }
         }
         
+        # --- ADDED: Ensure output directory exists ---
+        output_dir = Path(output_path).parent
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         torch.save(checkpoint, output_path)
         return our_decoder
     
@@ -380,7 +400,7 @@ class PretrainedModelBootstrapper:
                                    model_name: str = 'facebook/nllb-200-distilled-600M') -> tuple:
         """Extract vocabulary using modern tokenizer patterns"""
         
-        print(f"🔄 Loading {model_name} tokenizer...")
+        logger.info(f"🔄 Loading {model_name} tokenizer...")
         
         try:
             # Use AutoTokenizer instead of specific tokenizer
@@ -391,18 +411,18 @@ class PretrainedModelBootstrapper:
             )
             
         except Exception as e:
-            print(f"❌ Error loading tokenizer: {e}")
+            logger.error(f"❌ Error loading tokenizer: {e}")
             raise
         
         # Define supported languages
         our_languages = {
             'eng_Latn', 'spa_Latn', 'fra_Latn', 'deu_Latn', 'zho_Hans',
             'jpn_Jpan', 'kor_Hang', 'arb_Arab', 'hin_Deva', 'rus_Cyrl',
-            'por_Latn', 'ita_Latn', 'tur_Latn', 'tha_Thai', 'vie_Latn',
+            'por_Latn', 'ita_Latn', 'tur_Latn', 'tha_Thai',
             'pol_Latn', 'ukr_Cyrl', 'nld_Latn', 'ind_Latn', 'swe_Latn'
         }
         
-        print("📊 Extracting vocabulary with modern practices...")
+        logger.info("📊 Extracting vocabulary with modern practices...")
         
         # Build vocabulary with proper error handling
         try:
@@ -417,10 +437,10 @@ class PretrainedModelBootstrapper:
                     nllb_to_ours[token_id] = idx
                     idx += 1
             
-            print(f"✅ Extracted {len(our_vocab)} tokens with modern tokenizer")
+            logger.info(f"✅ Extracted {len(our_vocab)} tokens with modern tokenizer")
             
         except Exception as e:
-            print(f"❌ Error extracting vocabulary: {e}")
+            logger.error(f"❌ Error extracting vocabulary: {e}")
             raise
         
         return our_vocab, nllb_to_ours
@@ -429,7 +449,7 @@ class PretrainedModelBootstrapper:
         """Check if token is relevant for our languages"""
         # Implement proper token filtering logic
         # This is a simplified version
-        return len(token) > 0 and not token.startswith('▁▁')
+        return len(token) > 0 and not token.startswith('  ')
 
 # Usage with modern practices
 if __name__ == "__main__":
@@ -442,8 +462,8 @@ if __name__ == "__main__":
         decoder = bootstrapper.create_decoder_from_mbart()
         vocab, mapping = bootstrapper.extract_vocabulary_from_nllb()
         
-        print("🎉 All models bootstrapped successfully!")
+        logger.info("🎉 All models bootstrapped successfully!")
         
     except Exception as e:
-        print(f"❌ Bootstrap failed: {e}")
+        logger.error(f"❌ Bootstrap failed: {e}")
         raise

@@ -4,7 +4,6 @@ Curated data downloader - Updated to use shared utilities
 Maintains backwards compatibility for standalone execution
 """
 
-import datasets
 from datasets import load_dataset
 from pathlib import Path
 from utils.security import validate_model_source, safe_load_model
@@ -15,48 +14,25 @@ from urllib3.util.retry import Retry
 from tqdm import tqdm
 import zipfile
 import io
+import logging
 
 # Import shared utilities
-try:
-    from data_utils import ConfigManager, DataProcessor, DatasetLoader
-    from utils.common_utils import StandardLogger, DirectoryManager
-    INTEGRATED_MODE = True
-except ImportError:
-    # Fallback for standalone execution
-    import logging
-    INTEGRATED_MODE = False
-    
-    class StandardLogger:
-        @staticmethod
-        def get_logger(name):
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            return logging.getLogger(name)
-    
-    class DirectoryManager:
-        @staticmethod
-        def create_directory(path):
-            Path(path).mkdir(parents=True, exist_ok=True)
-            return Path(path)
+from .data_utils import DataProcessor, DatasetLoader
+from utils.common_utils import DirectoryManager
+from config.schemas import RootConfig, load_config
 
 
 class CuratedDataDownloader:
     """Download high-quality, manageable datasets with modern practices"""
     
-    def __init__(self):
+    def __init__(self, config: RootConfig):
         # Use shared logger if available
-        self.logger = StandardLogger.get_logger(__name__)
+        self.logger = logging.getLogger(__name__)
+        self.config = config
         
-        # Use shared config if available
-        if INTEGRATED_MODE:
-            self.languages = ConfigManager.get_languages()
-            self.dataset_loader = DatasetLoader(self.logger)
-            self.data_processor = DataProcessor(self.logger)
-        else:
-            # Fallback configuration for standalone mode
-            self.languages = ['en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru', 'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv']
+        self.languages = self.config.data.active_languages
+        self.dataset_loader = DatasetLoader(self.logger)
+        self.data_processor = DataProcessor(self.config, self.logger)
         
         # Data source configuration
         self.data_sources: Dict[str, Dict] = {
@@ -156,30 +132,17 @@ class CuratedDataDownloader:
     def _download_flores200(self, output_dir: Path) -> bool:
         """Download FLORES-200 evaluation dataset"""
         try:
-            if INTEGRATED_MODE:
-                # Use shared dataset loader
-                dataset = self.dataset_loader.load_dataset_safely(
-                    self.data_sources['flores200']['dataset_name'],
-                    config_name=self.data_sources['flores200']['config_name'],
-                    split=self.data_sources['flores200']['split'],
-                    trust_remote_code=False  # Always False for security
-                )
-                
-                if dataset:
-                    save_path = output_dir / 'flores200'
-                    dataset.save_to_disk(str(save_path))
-                    self.logger.info(f"✓ FLORES-200 saved to {save_path}")
-                    return True
-            else:
-                # Fallback for standalone mode
-                flores = load_dataset(
-                    self.data_sources['flores200']['dataset_name'],
-                    name=self.data_sources['flores200']['config_name'],
-                    split=self.data_sources['flores200']['split'],
-                    trust_remote_code=False
-                )
+            # Use shared dataset loader
+            dataset = self.dataset_loader.load_dataset_safely(
+                self.data_sources['flores200']['dataset_name'],
+                config_name=self.data_sources['flores200']['config_name'],
+                split=self.data_sources['flores200']['split'],
+                trust_remote_code=False  # Always False for security
+            )
+            
+            if dataset:
                 save_path = output_dir / 'flores200'
-                flores.save_to_disk(str(save_path))
+                dataset.save_to_disk(str(save_path))
                 self.logger.info(f"✓ FLORES-200 saved to {save_path}")
                 return True
                 
@@ -193,41 +156,23 @@ class CuratedDataDownloader:
         
         for target_lang in tqdm(self.get_english_pairs(), desc="Downloading Tatoeba"):
             try:
-                if INTEGRATED_MODE:
-                    # Use shared dataset loader
-                    dataset = self.dataset_loader.load_dataset_safely(
-                        self.data_sources['tatoeba']['dataset_name'],
-                        lang1='eng',
-                        lang2=target_lang,
-                        split='train',
-                        trust_remote_code=False  # Always False for security
-                    )
-                    
-                    if dataset:
-                        # Limit to 100k sentences
-                        if hasattr(dataset, '__len__') and len(dataset) > 100000:
-                            dataset = dataset.select(range(100000))
-                        
-                        save_path = output_dir / f'tatoeba_en_{target_lang}'
-                        dataset.save_to_disk(str(save_path))
-                        self.logger.info(f"✓ en-{target_lang}: saved to {save_path}")
-                        downloaded_count += 1
-                else:
-                    # Fallback for standalone mode
-                    dataset = load_dataset(
-                        self.data_sources['tatoeba']['dataset_name'],
-                        lang1='eng',
-                        lang2=target_lang,
-                        split='train',
-                        trust_remote_code=False
-                    )
-                    
+                # Use shared dataset loader
+                dataset = self.dataset_loader.load_dataset_safely(
+                    self.data_sources['tatoeba']['dataset_name'],
+                    lang1='eng',
+                    lang2=target_lang,
+                    split='train',
+                    trust_remote_code=False  # Always False for security
+                )
+                
+                if dataset:
                     # Limit to 100k sentences
-                    dataset = dataset.select(range(min(100000, len(dataset))))
+                    if hasattr(dataset, '__len__') and len(dataset) > 100000:
+                        dataset = dataset.select(range(100000))
                     
                     save_path = output_dir / f'tatoeba_en_{target_lang}'
                     dataset.save_to_disk(str(save_path))
-                    self.logger.info(f"✓ en-{target_lang}: {len(dataset)} sentences")
+                    self.logger.info(f"✓ en-{target_lang}: saved to {save_path}")
                     downloaded_count += 1
                     
             except Exception as e:
@@ -419,35 +364,36 @@ class CuratedDataDownloader:
 
 def main():
     """Main entry point for standalone execution"""
-    downloader = CuratedDataDownloader()
+    config = load_config()
+    downloader = CuratedDataDownloader(config)
     
     # Show available datasets
-    print("📊 Available Curated Datasets:")
-    print("-" * 60)
+    logging.info("📊 Available Curated Datasets:")
+    logging.info("-" * 60)
     for name, info in downloader.get_dataset_info().items():
-        print(f"\n{name}:")
+        logging.info(f"\n{name}:")
         for key, value in info.items():
             if key != 'dataset_name':
-                print(f"  {key}: {value}")
+                logging.info(f"  {key}: {value}")
     
     # Download all essential data
-    print("\n" + "="*60)
-    print("📥 Starting download of essential data...")
-    print("="*60)
+    logging.info("\n" + "="*60)
+    logging.info("📥 Starting download of essential data...")
+    logging.info("="*60)
     
     stats = downloader.download_essential_data()
     
     # Print summary
-    print("\n" + "="*60)
-    print("📊 DOWNLOAD SUMMARY:")
-    print("="*60)
+    logging.info("\n" + "="*60)
+    logging.info("📊 DOWNLOAD SUMMARY:")
+    logging.info("="*60)
     for key, value in stats.items():
         if isinstance(value, float):
-            print(f"{key}: {value:.1f}")
+            logging.info(f"{key}: {value:.1f}")
         else:
-            print(f"{key}: {value}")
+            logging.info(f"{key}: {value}")
     
-    print("\n✅ Essential data download complete!")
+    logging.info("\n✅ Essential data download complete!")
 
 
 if __name__ == "__main__":

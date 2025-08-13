@@ -11,49 +11,26 @@ from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
+import logging
 
-# Import shared utilities with fallback
-try:
-    from data_utils import ConfigManager, estimate_sentence_count
-    from utils.common_utils import StandardLogger, DirectoryManager
-    INTEGRATED_MODE = True
-except ImportError:
-    import logging
-    INTEGRATED_MODE = False
-    
-    class StandardLogger:
-        @staticmethod
-        def get_logger(name):
-            logging.basicConfig(
-                level=logging.INFO,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
-            return logging.getLogger(name)
-    
-    class DirectoryManager:
-        @staticmethod
-        def create_directory(path):
-            Path(path).mkdir(parents=True, exist_ok=True)
-            return Path(path)
+# Import shared utilities
+from data_utils import estimate_sentence_count
+from utils.common_utils import DirectoryManager
+from config.schemas import RootConfig, load_config
 
 
 class SyntheticDataAugmenter:
     """Generate additional training data using modern transformer models"""
     
-    def __init__(self, base_model: str = 'facebook/nllb-200-distilled-1.3B'):
-        self.logger = StandardLogger.get_logger(__name__)
+    def __init__(self, config: RootConfig, base_model: str = 'facebook/nllb-200-distilled-1.3B'):
+        self.logger = logging.getLogger(__name__)
         self.base_model = base_model
+        self.config = config
         
         # Get configuration if available
-        if INTEGRATED_MODE:
-            self.languages = ConfigManager.get_languages()
-            self.quality_threshold = ConfigManager.get_quality_threshold()
-            self.output_dir = Path(ConfigManager.get_output_dir())
-        else:
-            self.languages = ['en', 'es', 'fr', 'de', 'zh', 'ja', 'ko', 'ar', 'hi', 'ru',
-                             'pt', 'it', 'tr', 'th', 'vi', 'pl', 'uk', 'nl', 'id', 'sv']
-            self.quality_threshold = 0.8
-            self.output_dir = Path('data/processed')
+        self.languages = self.config.data.active_languages
+        self.quality_threshold = self.config.data.quality_threshold
+        self.output_dir = Path(self.config.data.processed_dir)
         
         # Initialize models lazily
         self._model = None
@@ -129,10 +106,7 @@ class SyntheticDataAugmenter:
         self.logger.info(f"📝 Generating backtranslations for {source_lang}->{target_lang}")
         
         # Estimate total sentences
-        if INTEGRATED_MODE:
-            total_sentences = estimate_sentence_count(monolingual_path)
-        else:
-            total_sentences = sum(1 for _ in open(monolingual_path, 'r', encoding='utf-8'))
+        total_sentences = estimate_sentence_count(monolingual_path)
         
         sentences_to_process = min(total_sentences, max_sentences)
         
@@ -241,7 +215,7 @@ class SyntheticDataAugmenter:
             # Return empty translations for failed batch
             results = [(text, None, None) for text in texts]
         
-        return results
+            return results
     
     def _get_nllb_code(self, lang_code: str) -> str:
         """Convert language code to NLLB format"""
@@ -416,10 +390,11 @@ class SyntheticDataAugmenter:
 
 def main():
     """Main entry point for standalone execution"""
-    augmenter = SyntheticDataAugmenter()
+    config = load_config()
+    augmenter = SyntheticDataAugmenter(config)
     
     # Example: Augment English-Spanish with backtranslation
-    print("🚀 Running synthetic data augmentation example...")
+    logging.info("🚀 Running synthetic data augmentation example...")
     
     # Create sample monolingual data
     sample_dir = Path("test_data")
@@ -440,9 +415,9 @@ def main():
         max_sentences=3
     )
     
-    print(f"\nAugmentation statistics:")
+    logging.info(f"\nAugmentation statistics:")
     for key, value in stats.items():
-        print(f"  {key}: {value}")
+        logging.info(f"  {key}: {value}")
 
 
 if __name__ == "__main__":

@@ -9,13 +9,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 import torch
 import torch.nn as nn
+import os
 
 class BaseDataProcessor(ABC):
     """Base class for all data processors"""
     
     def __init__(self, logger: Optional[logging.Logger] = None):
-        from utils.common_utils import StandardLogger
-        self.logger = logger or StandardLogger.get_logger(self.__class__.__name__)
+        self.logger = logger or logging.getLogger(self.__class__.__name__)
         
     @abstractmethod
     def process(self, *args, **kwargs):
@@ -52,8 +52,7 @@ class TokenizerMixin:
     """Mixin class for consistent tokenization across modules"""
     
     def tokenize_with_subwords(self, text: str, vocab_pack: Any, language: str) -> List[int]:
-        """
-        Unified tokenization method with subword handling.
+        """Unified tokenization method with subword handling.
         Used across all modules to ensure consistency.
         """
         tokens = []

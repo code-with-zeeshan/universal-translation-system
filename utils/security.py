@@ -62,6 +62,8 @@ def validate_path_component(component: str) -> str:
         ValueError: If component contains dangerous characters
     """
     # Check for path traversal attempts
+    if Path(component).is_absolute():
+        raise ValueError(f"Invalid path component '{component}': must be relative")
     dangerous_patterns = ['..', '/', '\\', '\x00', '~', '$', '`', '|', ';', '&']
     
     for pattern in dangerous_patterns:

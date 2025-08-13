@@ -22,6 +22,7 @@ from utils.dataset_classes import ModernParallelDataset, StreamingParallelDatase
 from monitoring.health_service import start_health_service
 import threading
 from utils.validators import InputValidator
+from vocabulary.vocabulary_manager import VocabularyManager, VocabularyPack
 
 # Metrics
 translation_counter = Counter('translations_total', 'Total translations', ['source_lang', 'target_lang'])
@@ -428,12 +429,12 @@ class UniversalTranslationSystem:
 
         # 2. Load the correct vocabulary pack
         try:
-            vocab_pack = self.vocab_manager._load_pack(vocab_pack_name)
-        except VocabularyError:
+            vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
+        except Exception:
             if domain:
                 logger.warning(f"Domain vocab '{vocab_pack_name}' not found. Falling back to general vocab.")
                 general_pack_name = self.vocab_manager.language_to_pack.get(source_lang, 'latin')
-                vocab_pack = self.vocab_manager._load_pack(general_pack_name)
+                vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
                 # Also fallback the adapter name
                 adapter_name = source_lang
             else:
@@ -908,31 +909,29 @@ class UniversalTranslationSystem:
 
 # Enhanced integration function with async support
 async def integrate_full_pipeline_async(config_file: Optional[str] = None) -> UniversalTranslationSystem:
-    """Main async integration function"""
-    
-    # Load configuration
-    if config_file and Path(config_file).exists():
-        with open(config_file, 'r') as f:
-            config_dict = yaml.safe_load(f)
-        config = SystemConfig(**config_dict)
-    else:
+    """Main async integration function that loads config from a file."""
+    config_path = config_file or "config/deployment_config.yaml"
+    try:
+        with open(config_path, 'r') as f:
+            config_data = yaml.safe_load(f)
+        config = SystemConfig(**config_data)
+        logger.info(f"Loaded deployment configuration from: {config_path}")
+    except (FileNotFoundError, yaml.YAMLError, TypeError) as e:
+        logger.error(f"Failed to load deployment config '{config_path}': {e}. Using default settings.")
         config = SystemConfig()
-    
-    # Create integrated system
+
+    # Create the system with the validated config object
     system = UniversalTranslationSystem(config)
-    
+
     # Initialize all components
     if system.initialize_all_systems():
         logger.info("\n✅ System ready for use!")
-        
-        # Run initial health check
         health = await system.health_check_async()
         logger.info(f"System health: {health['status']}")
-        
         return system
-    else:
-        logger.error("❌ System initialization failed")
-        return None
+    
+    logger.error("❌ System initialization failed")
+    return None
 
 # Synchronous wrapper for backward compatibility
 def integrate_full_pipeline(config_file: Optional[str] = None) -> UniversalTranslationSystem:

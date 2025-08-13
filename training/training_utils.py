@@ -37,7 +37,7 @@ def get_optimal_batch_size(model: torch.nn.Module,
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
                 
-        except TrainingError as e:
+        except Exception as e:
             if "out of memory" in str(e):
                 logger.info(f"Batch size {batch_size} too large, using {optimal_batch_size}")
                 break
