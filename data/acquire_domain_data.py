@@ -1,4 +1,4 @@
-# tools/acquire_domain_data.py
+# data/acquire_domain_data.py
 
 import logging
 from pathlib import Path
@@ -125,7 +125,7 @@ def main():
         "--pairs",
         type=str,
         required=True,
-        help="Comma-separated language pairs, e.g., 'en-es,en-fr'."
+        help="Comma-separated language pairs, e.g., 'en-es'."
     )
     args = parser.parse_args()
 

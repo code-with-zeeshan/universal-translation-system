@@ -6,7 +6,7 @@ The Universal Translation System uses a config-driven, orchestrated pipeline for
 
 ## 🔧 Available Scripts
 
-### Script 1: `tools/create_vocabulary_packs.py`
+### Script 1: `vocabulary/create_vocabulary_packs.py`
 **Advanced Vocabulary Pack Creator with Corpus Analysis**
 
 - Use for research, custom optimization, or domain-specific vocabularies

@@ -1,8 +1,11 @@
-# tools/evolve_vocabulary.py
+# vocabulary/evolve_vocabulary.py
 
 import logging
-from vocabulary.vocabulary_manager import VocabularyManager, VocabularyAnalytics
-from vocabulary.create_vocabulary_packs_from_data import VocabularyPackCreator
+from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+
+# Use FULL mode for evolution (needs analytics)
+VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.FULL, **kwargs)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

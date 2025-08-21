@@ -1,3 +1,4 @@
+# config/training_a100_fsdp.yaml
 # Inherits from the base A100 config but overrides for large scale
 _base_: 'training_a100.yaml'
 

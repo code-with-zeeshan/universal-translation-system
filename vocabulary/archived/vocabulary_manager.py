@@ -11,10 +11,10 @@ import logging
 from functools import lru_cache
 import json
 from utils.exceptions import VocabularyError
-from data.data_utils import ConfigManager # Import ConfigManager
 from collections import Counter
 import time
-import logging 
+from utils.base_classes import BaseVocabularyManager
+from config.schemas import RootConfig
 
 logger = logging.getLogger(__name__)
 
@@ -61,26 +61,25 @@ class VocabularyPack:
         
         return len(errors) == 0, errors
 
-class VocabularyManager:
-    def __init__(self, vocab_dir: str = 'vocabs', enable_async: bool = False):
-        self.vocab_dir = Path(vocab_dir)
+class VocabularyManager(BaseVocabularyManager):
+    def __init__(self, config: RootConfig = None, vocab_dir: str = 'vocabs', enable_async: bool = False):
+        # Handle case where config is not provided
+        if config is None:
+            from config.schemas import load_config
+            config = load_config()
+        
+        super().__init__(config, vocab_dir)
         self.loaded_packs = {}
-        # Load mapping from the central config file
-        self.language_to_pack = ConfigManager.load_config().get('training', {}).get('language_to_pack_mapping', {})
         self.enable_async = enable_async
         self._version_cache = {}
 
-        # Validate vocabulary directory
-        if not self.vocab_dir.exists():
-            raise VocabularyError(f"Vocabulary directory not found: {vocab_dir}")
-
         if not self.language_to_pack:
-            logger.warning("Language-to-pack mapping is empty. Please define it in the config.")
+            self.logger.warning("Language-to-pack mapping is empty. Please define it in the config.")
         
         # Load version information
         self._load_version_info()
         
-        logger.info(f"VocabularyManager initialized with {len(self._version_cache)} packs")
+        self.logger.info(f"VocabularyManager initialized with {len(self._version_cache)} packs")
      
     def _load_version_info(self):
         """Load version information for all packs"""
@@ -92,15 +91,15 @@ class VocabularyManager:
             try:
                 with open(manifest_path, 'r') as f:
                     self._version_cache = json.load(f)
-                logger.info(f"Loaded version manifest with {len(self._version_cache)} entries")
+                self.logger.info(f"Loaded version manifest with {len(self._version_cache)} entries")
             except FileNotFoundError:
-                logger.warning(f"Version manifest not found: {manifest_path}")
+                self.logger.warning(f"Version manifest not found: {manifest_path}")
             except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in version manifest: {e}")
+                self.logger.error(f"Invalid JSON in version manifest: {e}")
             except PermissionError as e:
-                logger.error(f"Permission denied reading manifest: {e}")
+                self.logger.error(f"Permission denied reading manifest: {e}")
             except Exception as e:
-                logger.error(f"Unexpected error loading manifest: {e}")
+                self.logger.error(f"Unexpected error loading manifest: {e}")
         
         # Scan directory for pack files
         for pack_file in self.vocab_dir.glob('*_v*.msgpack'):
@@ -176,7 +175,7 @@ class VocabularyManager:
             version_info = available_versions[0]
         
         pack_file = Path(version_info['file'])
-        logger.info(f"Loading {pack_name} v{version_info['version']} from {pack_file}")
+        self.logger.info(f"Loading {pack_name} v{version_info['version']} from {pack_file}")
         
         # Load with validation
         try:
@@ -196,12 +195,12 @@ class VocabularyManager:
             # Validate pack
             is_valid, errors = pack.validate()
             if not is_valid:
-                logger.warning(f"Vocabulary pack validation warnings: {errors}")
+                self.logger.warning(f"Vocabulary pack validation warnings: {errors}")
             
             return pack
             
         except Exception as e:
-            logger.error(f"Failed to load vocabulary pack {pack_name}: {e}")
+            self.logger.error(f"Failed to load vocabulary pack {pack_name}: {e}")
             raise
 
     def get_vocabulary_version_info(self) -> Dict[str, List[Dict[str, any]]]:
@@ -234,9 +233,9 @@ class VocabularyManager:
         for pack_name in packs_to_load:
             try:
                 self._load_pack(pack_name, version)
-                logger.info(f"Preloaded {pack_name} for languages: {languages}")
+                self.logger.info(f"Preloaded {pack_name} for languages: {languages}")
             except Exception as e:
-                logger.error(f"Failed to preload {pack_name}: {e}")
+                self.logger.error(f"Failed to preload {pack_name}: {e}")
     
     async def get_vocab_for_pair_async(self, source_lang: str, target_lang: str,
                                       version: Optional[str] = None) -> VocabularyPack:
@@ -327,7 +326,7 @@ class VocabularyManager:
     def clear_cache(self):
         """Clear loaded vocabulary packs from memory"""
         self.loaded_packs.clear()
-        logger.info("Cleared vocabulary cache")
+        self.logger.info("Cleared vocabulary cache")
     
     @lru_cache(maxsize=128)
     def get_token_id(self, token: str, pack_name: str) -> Optional[int]:
@@ -356,14 +355,14 @@ class VocabularyManager:
             # Clear language mapping
             self.language_to_pack.clear()
             
-            logger.info("VocabularyManager cleanup completed")
+            self.logger.info("VocabularyManager cleanup completed")
         except Exception as e:
-            logger.error(f"Error during cleanup: {e}")
+            self.logger.error(f"Error during cleanup: {e}")
     
     def cleanup_cache(self):
         """Explicitly cleanup cache to free memory"""
         self.loaded_packs.clear()
-        logger.info("Vocabulary cache cleared")
+        self.logger.info("Vocabulary cache cleared")
 
 class VocabularyMigrator:
     """Handle vocabulary pack version migrations"""
@@ -449,7 +448,7 @@ class VocabularyAnalytics:
             # +++ ADDED +++
             'most_common_unknowns': self.unknown_token_usage.most_common(100),
             'language_pair_distribution': self.language_pair_usage
-        } 
+        }
 
     def health_check(self) -> Dict[str, bool]:
         """Perform health check on vocabulary system"""

@@ -15,6 +15,7 @@ from tqdm import tqdm
 import zipfile
 import io
 import logging
+from utils.exceptions import DataError
 
 # Import shared utilities
 from .data_utils import DataProcessor, DatasetLoader
@@ -148,7 +149,7 @@ class CuratedDataDownloader:
                 
         except Exception as e:
             self.logger.error(f"✗ Failed to download FLORES-200: {e}")
-            return False
+            raise DataError(f"Failed to download FLORES-200: {e}") from e
     
     def _download_tatoeba(self, output_dir: Path) -> int:
         """Download Tatoeba sentence pairs"""
@@ -197,9 +198,9 @@ class CuratedDataDownloader:
         return downloaded_count
     
     def download_opus_sample(
-        self, 
-        corpus_name: str, 
-        output_dir: Path, 
+        self,
+        corpus_name: str,
+        output_dir: Path,
         max_size_mb: int = 100
     ) -> bool:
         """
@@ -272,6 +273,7 @@ class CuratedDataDownloader:
                     self.logger.error(f"✗ {lang_pair}: HTTP {e.response.status_code}")
             except Exception as e:
                 self.logger.error(f"✗ {lang_pair}: {e}")
+                raise DataError(f"Failed to download OPUS sample for {lang_pair}: {e}") from e
         
         return success_count > 0
     
@@ -315,10 +317,11 @@ class CuratedDataDownloader:
                     
         except Exception as e:
             self.logger.error(f"  Failed to extract {zip_file.name}: {e}")
+            raise DataError(f"Failed to extract OPUS file {zip_file.name}: {e}") from e
     
     def download_specific_dataset(
-        self, 
-        dataset_key: str, 
+        self,
+        dataset_key: str,
         output_dir: str = 'data/essential'
     ) -> bool:
         """

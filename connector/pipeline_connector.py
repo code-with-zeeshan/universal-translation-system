@@ -1,4 +1,4 @@
-# data/pipeline_connector.py
+# connector/pipeline_connector.py
 """Connects data pipeline → vocabulary creation → training"""
 from pathlib import Path
 import logging
@@ -6,7 +6,7 @@ from typing import List, Dict
 from tqdm import tqdm
 from datetime import datetime
 
-from data_utils import merge_datasets
+from data.data_utils import merge_datasets
 from utils.common_utils import DirectoryManager
 from utils.exceptions import DataError
 from config.schemas import RootConfig
@@ -74,7 +74,7 @@ class PipelineConnector:
                     f.write(f"{text}\n")
             self.logger.info(f"Created {output_file} with {len(unique_texts)} unique sentences (from {len(texts)} total)")
     
-def create_final_training_file(self):
+    def create_final_training_file(self):
         """Merge all data into final training file"""
         sampled_dir = Path(self.config.data.processed_dir) / 'sampled'
         final_dir = Path(self.config.data.processed_dir) / 'final'
@@ -113,9 +113,8 @@ def create_final_training_file(self):
         except Exception:
             return "unknown"
 
-# Update practical_data_pipeline.py
-# Add these methods to PracticalDataPipeline class:
-def _create_training_ready_data(self):
+# Add these methods to UnifiedDataPipeline class:
+def _create_training_ready(self):
     """Create data ready for training"""
     connector = PipelineConnector(self.config)
     

@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Any
 import torch
 import torch.nn as nn
 import os
+from config.schemas import RootConfig
 
 class BaseDataProcessor(ABC):
     """Base class for all data processors"""
@@ -28,6 +29,28 @@ class BaseDataProcessor(ABC):
             self.logger.error("Input data is None")
             return False
         return True
+
+class BaseVocabularyManager(ABC):
+    """Base class for vocabulary managers."""
+
+    def __init__(self, config: RootConfig, vocab_dir: str = 'vocabs'):
+        self.config = config
+        self.vocab_dir = Path(vocab_dir)
+        self.language_to_pack = self.config.vocabulary.language_to_pack_mapping
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self._validate_vocab_dir()
+
+    def _validate_vocab_dir(self):
+        """Validate vocabulary directory exists and is accessible"""
+        if not self.vocab_dir.exists():
+            raise FileNotFoundError(f"Vocabulary directory not found: {self.vocab_dir}")
+        if not os.access(self.vocab_dir, os.R_OK):
+            raise PermissionError(f"Cannot read vocabulary directory: {self.vocab_dir}")
+
+    @abstractmethod
+    def get_vocab_for_pair(self, source_lang: str, target_lang: str, version: Optional[str] = None) -> Any:
+        """Get appropriate vocabulary pack for a language pair."""
+        pass
 
 class BaseVocabularyHandler(ABC):
     """Base class for vocabulary-related operations"""

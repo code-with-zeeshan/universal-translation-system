@@ -7,7 +7,7 @@ corpus analysis and compression optimization.
 """
 
 from .create_vocabulary_packs import (
-    VocabularyPackCreator,
+    UnifiedVocabularyCreator as VocabularyPackCreator,
     VocabConfig,
     VocabStats
 )

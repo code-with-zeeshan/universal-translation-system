@@ -8,6 +8,7 @@ from tqdm import tqdm
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
 import itertools
+from utils.exceptions import DataError
 
 # Import from common utils
 from utils.common_utils import DirectoryManager
@@ -94,7 +95,7 @@ class DataProcessor:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to process dataset: {e}")
-            raise
+            raise DataError(f"Failed to process dataset: {e}") from e
         
         return samples_processed
     
@@ -209,7 +210,7 @@ class DatasetLoader:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to load {dataset_name}: {e}")
-            return None
+            raise DataError(f"Failed to load {dataset_name}: {e}") from e
 
 
 # Utility functions for common operations
@@ -246,7 +247,7 @@ def merge_datasets(dataset_paths: List[Path], output_path: Path) -> None:
     """Merge multiple dataset files into one"""
     logger = logging.getLogger(__name__)
     
-    DirectoryManager.create_directory(.parent)
+    DirectoryManager.create_directory(output_path.parent)
     
     total_lines = 0
     with open(output_path, 'w', encoding='utf-8') as out_file:

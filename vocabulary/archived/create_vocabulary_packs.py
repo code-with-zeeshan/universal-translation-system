@@ -1,4 +1,4 @@
-# tools/create_vocabulary_packs.py
+# vocabulary/create_vocabulary_packs.py
 """
 Advanced vocabulary pack creator with corpus analysis and optimization.
 
@@ -17,13 +17,14 @@ import os
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 import msgpack
 import numpy as np
 import sentencepiece as spm
 import tempfile
+from utils.exceptions import DataError , VocabularyError
 # from transformers import AutoTokenizer
 
 
@@ -126,7 +127,7 @@ class VocabularyPackCreator:
         total_chars = 0
     
         logger.info("Calculating vocabulary quality metrics...")
-    
+
         try:
             with open(corpus_path, 'r', encoding='utf-8') as f:
                 for i, line in enumerate(f):

@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor
 from utils.security import validate_model_source, safe_load_model
 from tqdm import tqdm
 import logging
+from utils.exceptions import DataError
 
 # Import shared utilities
 from data_utils import DataProcessor, DatasetLoader, get_corpus_size_mb
@@ -25,7 +26,6 @@ class MultilingualDataCollector:
         self.logger = logging.getLogger(__name__)
         self.config = config
         
-        # Get languages from config or use provided list
         self.languages = target_languages or self.config.data.active_languages
         self.data_processor = DataProcessor(self.config, self.logger)
         self.dataset_loader = DatasetLoader(self.logger)
@@ -150,6 +150,7 @@ class MultilingualDataCollector:
                 downloaded_count += 1
         except Exception as e:
             self.logger.error(f"✗ Failed to download CCMatrix: {e}")
+            raise DataError(f"Failed to download CCMatrix: {e}") from e
         
         return downloaded_count
     
@@ -173,6 +174,7 @@ class MultilingualDataCollector:
                     downloaded_count += 1
             except Exception as e:
                 self.logger.error(f"✗ Failed to download {dataset_name}: {e}")
+                raise DataError(f"Failed to download OPUS data for {dataset_name}: {e}") from e
         
         return downloaded_count
     
@@ -196,6 +198,7 @@ class MultilingualDataCollector:
                     downloaded_count += 1
             except Exception as e:
                 self.logger.error(f"✗ Failed to download {dataset_name}: {e}")
+                raise DataError(f"Failed to download WMT data for {dataset_name}: {e}") from e
         
         return downloaded_count
     

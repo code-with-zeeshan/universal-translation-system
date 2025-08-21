@@ -1,181 +1,219 @@
 # utils/security.py
 """
-Enhanced Security utilities for the Universal Translation System
-Centralizes all security-related functions
+Security utilities for the Universal Translation System
 """
+import os
 import re
 from pathlib import Path
-from typing import List, Optional, Union, Dict, Any
+from typing import List, Optional
 import logging
-import hashlib
+from .exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
 # Trusted model sources
-TRUSTED_MODEL_SOURCES = [
+TRUSTED_SOURCES = [
     'facebook/',
-    'microsoft/', 
+    'microsoft/',
     'google/',
     'Helsinki-NLP/',
     'huggingface/',
-    'sentence-transformers/',
-    'allenai/',
-    'OpenNMT/',
-    'Unbabel/',
-    'xlm-roberta',
-    'bert-base',
-    'distilbert'
+    'openai/',
+    'anthropic/'
 ]
 
-def validate_model_source(model_name: str) -> bool:
+def validate_path_component(path_component: str) -> str:
     """
-    Validate model source before loading to prevent security risks.
+    Validate and sanitize a path component to prevent path traversal attacks.
     
     Args:
-        model_name: Name of the model to validate
-    
-    Returns:
-        True if model is from trusted source
-    """
-    # Check if model is from trusted source
-    is_trusted = any(
-        source in model_name or model_name.startswith(source) 
-        for source in TRUSTED_MODEL_SOURCES
-    )
-    
-    if not is_trusted:
-        logger.warning(f"⚠️ Model '{model_name}' is not from a known trusted source")
-    
-    return is_trusted
-
-def validate_path_component(component: str) -> str:
-    """
-    Validate path component to prevent path traversal attacks.
-    
-    Args:
-        component: Path component to validate
+        path_component: The path component to validate
         
     Returns:
-        Validated path component
+        Sanitized path component
         
     Raises:
-        ValueError: If component contains dangerous characters
+        SecurityError: If the path component is invalid or potentially dangerous
     """
+    if not path_component:
+        raise SecurityError("Path component cannot be empty")
+    
     # Check for path traversal attempts
-    if Path(component).is_absolute():
-        raise ValueError(f"Invalid path component '{component}': must be relative")
-    dangerous_patterns = ['..', '/', '\\', '\x00', '~', '$', '`', '|', ';', '&']
+    dangerous_patterns = [
+        '..',
+        '/',
+        '\\',
+        ':',
+        '<',
+        '>',
+        '|',
+        '?',
+        '*'
+    ]
     
     for pattern in dangerous_patterns:
-        if pattern in component:
-            raise ValueError(f"Invalid path component '{component}': contains '{pattern}'")
+        if pattern in path_component:
+            raise SecurityError(f"Invalid character '{pattern}' in path component: {path_component}")
     
-    # Additional validation using regex
-    if not re.match(r'^[a-zA-Z0-9_\-\.]+$', component):
-        raise ValueError(f"Invalid path component '{component}': contains invalid characters")
+    # Check for null bytes
+    if '\x00' in path_component:
+        raise SecurityError("Null byte detected in path component")
     
-    return component
+    # Sanitize the component
+    sanitized = re.sub(r'[^\w\-_.]', '_', path_component)
+    
+    # Ensure it's not too long
+    if len(sanitized) > 255:
+        raise SecurityError("Path component too long")
+    
+    return sanitized
 
-def safe_load_model(model_name: str, model_class=None, **kwargs):
+def validate_file_path(file_path: str, allowed_directories: Optional[List[str]] = None) -> Path:
     """
-    Safely load a model with security validation.
+    Validate a file path for security.
     
     Args:
-        model_name: Name of the model to load
-        model_class: Model class to use (e.g., AutoModel)
-        **kwargs: Additional arguments for model loading
-        
-    Returns:
-        Loaded model
-        
-    Raises:
-        ValueError: If model source is untrusted
-    """
-    if not validate_model_source(model_name):
-        raise ValueError(f"Untrusted model source: {model_name}")
-    
-    # Force secure loading
-    kwargs['trust_remote_code'] = False
-    
-    # Add safety checks for local paths
-    if '/' in model_name and not any(source in model_name for source in TRUSTED_MODEL_SOURCES):
-        # This might be a local path, validate it
-        model_path = Path(model_name)
-        if not model_path.is_absolute():
-            model_path = model_path.resolve()
-        
-        # Check if path is within allowed directories
-        allowed_dirs = [Path.cwd() / 'models', Path.cwd() / 'checkpoints']
-        if not any(str(model_path).startswith(str(allowed)) for allowed in allowed_dirs):
-            raise ValueError(f"Model path outside allowed directories: {model_path}")
-    
-    if model_class:
-        return model_class.from_pretrained(model_name, **kwargs)
-    else:
-        # Import here to avoid circular imports
-        from transformers import AutoModel
-        return AutoModel.from_pretrained(model_name, **kwargs)
-
-def validate_corpus_path(corpus_path: Union[str, Path]) -> Path:
-    """
-    Validate corpus file path for security.
-    
-    Args:
-        corpus_path: Path to corpus file
+        file_path: The file path to validate
+        allowed_directories: List of allowed base directories
         
     Returns:
         Validated Path object
         
     Raises:
-        ValueError: If path is invalid or outside allowed directories
+        SecurityError: If the path is invalid or outside allowed directories
     """
-    corpus_path = Path(corpus_path).resolve()
+    try:
+        path = Path(file_path).resolve()
+    except Exception as e:
+        raise SecurityError(f"Invalid file path: {e}")
     
-    # Check if path exists
-    if not corpus_path.exists():
-        raise FileNotFoundError(f"Corpus file not found: {corpus_path}")
+    # Check if path exists and is a file
+    if not path.exists():
+        raise SecurityError(f"File does not exist: {path}")
     
-    # Check if path is within allowed directories
-    allowed_dirs = [
-        Path.cwd() / 'data',
-        Path.cwd() / 'corpora',
-        Path('/tmp')  # For temporary files
-    ]
+    if not path.is_file():
+        raise SecurityError(f"Path is not a file: {path}")
     
-    if not any(str(corpus_path).startswith(str(allowed)) for allowed in allowed_dirs):
-        raise ValueError(f"Corpus path outside allowed directories: {corpus_path}")
+    # Check allowed directories if specified
+    if allowed_directories:
+        allowed = False
+        for allowed_dir in allowed_directories:
+            try:
+                allowed_path = Path(allowed_dir).resolve()
+                if path.is_relative_to(allowed_path):
+                    allowed = True
+                    break
+            except Exception:
+                continue
+        
+        if not allowed:
+            raise SecurityError(f"File path not in allowed directories: {path}")
     
-    return corpus_path
+    return path
 
-def get_file_hash(file_path: Union[str, Path]) -> str:
-    """Get SHA256 hash of a file for integrity checking."""
-    hasher = hashlib.sha256()
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(4096), b''):
-            hasher.update(chunk)
-    return hasher.hexdigest()
-
-def sanitize_filename(filename: str, max_length: int = 255) -> str:
+def validate_model_source(model_name: str) -> bool:
     """
-    Sanitize filename for safe file operations.
+    Validate if a model comes from a trusted source.
     
     Args:
-        filename: Original filename
-        max_length: Maximum allowed length
+        model_name: Name of the model (e.g., 'facebook/nllb-200-distilled-600M')
+        
+    Returns:
+        True if from trusted source, False otherwise
+    """
+    if not model_name:
+        return False
+    
+    for trusted_source in TRUSTED_SOURCES:
+        if model_name.startswith(trusted_source):
+            return True
+    
+    logger.warning(f"Model from untrusted source: {model_name}")
+    return False
+
+def check_file_size(file_path: str, max_size_gb: float = 10.0) -> bool:
+    """
+    Check if file size is within acceptable limits.
+    
+    Args:
+        file_path: Path to the file
+        max_size_gb: Maximum allowed size in GB
+        
+    Returns:
+        True if file size is acceptable, False otherwise
+    """
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return False
+        
+        size_gb = path.stat().st_size / (1024 ** 3)
+        return size_gb <= max_size_gb
+    
+    except Exception as e:
+        logger.error(f"Error checking file size: {e}")
+        return False
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize a filename to make it safe for filesystem operations.
+    
+    Args:
+        filename: The filename to sanitize
         
     Returns:
         Sanitized filename
     """
-    # Remove path separators and null bytes
-    filename = filename.replace('/', '_').replace('\\', '_').replace('\x00', '')
+    # Remove or replace dangerous characters
+    sanitized = re.sub(r'[<>:"/\\|?*]', '_', filename)
     
-    # Remove other dangerous characters
-    filename = re.sub(r'[<>:"|?*]', '_', filename)
+    # Remove control characters
+    sanitized = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', sanitized)
     
     # Limit length
-    if len(filename) > max_length:
-        name, ext = Path(filename).stem, Path(filename).suffix
-        max_name_length = max_length - len(ext) - 1
-        filename = name[:max_name_length] + ext
+    if len(sanitized) > 255:
+        name, ext = os.path.splitext(sanitized)
+        sanitized = name[:255-len(ext)] + ext
     
-    return filename
+    # Ensure it's not empty
+    if not sanitized.strip():
+        sanitized = "unnamed_file"
+    
+    return sanitized
+
+def validate_config_value(value: str, allowed_values: List[str]) -> bool:
+    """
+    Validate that a configuration value is in the allowed list.
+    
+    Args:
+        value: The value to validate
+        allowed_values: List of allowed values
+        
+    Returns:
+        True if value is allowed, False otherwise
+    """
+    return value in allowed_values
+
+class SecurityContext:
+    """Context manager for security-sensitive operations"""
+    
+    def __init__(self, operation_name: str):
+        self.operation_name = operation_name
+        self.start_time = None
+    
+    def __enter__(self):
+        import time
+        self.start_time = time.time()
+        logger.info(f"Starting security-sensitive operation: {self.operation_name}")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        import time
+        duration = time.time() - self.start_time
+        
+        if exc_type:
+            logger.error(f"Security operation failed: {self.operation_name} ({duration:.2f}s)")
+        else:
+            logger.info(f"Security operation completed: {self.operation_name} ({duration:.2f}s)")
+        
+        return False  # Don't suppress exceptions

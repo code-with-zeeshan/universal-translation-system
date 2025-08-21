@@ -1,10 +1,13 @@
-# tools/train_domain_adapter.py
+# encoder/train_domain_adapter.py
 
 import logging
 from torch.utils.data import DataLoader
 from encoder.train_adapters import AdapterTrainer
 from utils.dataset_classes import ModernParallelDataset # Assuming this is your dataset class
-from vocabulary.vocabulary_manager import VocabularyManager
+from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+
+# Use FULL mode for training (needs all features)
+VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.FULL, **kwargs)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,5 +59,5 @@ if __name__ == "__main__":
     # Example: Train a Spanish medical adapter
     # Pre-requisites:
     # 1. Run data pipeline on medical data to create 'data/processed/es_medical_parallel.txt'
-    # 2. Run 'tools/create_vocabulary_packs.py' to create 'latin_medical' pack
+    # 2. Run 'vocabulary/unified_vocabulary_creator.py' to create 'latin_medical' pack
     train_for_domain(domain="medical", language="es")

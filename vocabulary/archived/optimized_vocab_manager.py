@@ -4,20 +4,21 @@ import msgpack
 from functools import lru_cache
 from pathlib import Path
 import threading
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, Tuple, List, Any
 import numpy as np
 import logging
 from utils.exceptions import VocabularyError
 import zstandard as zstd
+from utils.base_classes import BaseVocabularyManager
+from config.schemas import RootConfig
 
-class OptimizedVocabularyManager:
+class OptimizedVocabularyManager(BaseVocabularyManager):
     """Memory-efficient vocabulary management for edge devices"""
     
-    def __init__(self, vocab_dir: str = 'vocabs', cache_size: int = 3):
-        self.vocab_dir = Path(vocab_dir)
+    def __init__(self, config: RootConfig, vocab_dir: str = 'vocabs', cache_size: int = 3):
+        super().__init__(config, vocab_dir)
         self.cache_size = cache_size
         self._lock = threading.Lock()
-        self.logger = logging.getLogger(__name__)
         
         # Memory-mapped files
         self.mmap_files = {}
@@ -25,17 +26,6 @@ class OptimizedVocabularyManager:
         # LRU cache for hot vocabularies
         self._vocabulary_cache = {}
         self._cache_order = []
-        
-        # Language to pack mapping
-        self.language_to_pack = {
-            'en': 'latin', 'es': 'latin', 'fr': 'latin', 'de': 'latin',
-            'it': 'latin', 'pt': 'latin', 'nl': 'latin', 'sv': 'latin',
-            'zh': 'cjk', 'ja': 'cjk', 'ko': 'cjk',
-            'ar': 'arabic', 'hi': 'devanagari',
-            'ru': 'cyrillic', 'uk': 'cyrillic',
-            'th': 'thai', 'vi': 'latin', 'pl': 'latin',
-            'tr': 'latin', 'id': 'latin'
-        }
         
         # Preload metadata only
         self._load_pack_metadata()
@@ -55,7 +45,7 @@ class OptimizedVocabularyManager:
                     'size': pack_file.stat().st_size
                 }
     
-    def get_vocabulary_for_edge(self, source_lang: str, target_lang: str) -> 'EdgeVocabularyPack':
+    def get_vocab_for_pair(self, source_lang: str, target_lang: str, version: Optional[str] = None) -> 'EdgeVocabularyPack':
         """Get minimal vocabulary for edge device"""
         # Determine pack
         source_pack = self.language_to_pack.get(source_lang, 'latin')

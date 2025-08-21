@@ -7,13 +7,16 @@ for training multilingual translation models.
 """
 
 from .data_utils import ConfigManager, DataProcessor, DatasetLoader
-from .download_curated_data import CuratedDataDownloader
-from .download_training_data import MultilingualDataCollector
-from .smart_data_downloader import SmartDataStrategy
+from .unified_data_downloader import UnifiedDataDownloader
+
+# Backward compatibility aliases
+CuratedDataDownloader = UnifiedDataDownloader
+MultilingualDataCollector = UnifiedDataDownloader
+SmartDataStrategy = UnifiedDataDownloader
 from .smart_sampler import SmartDataSampler
 from .synthetic_augmentation import SyntheticDataAugmenter
 from .pipeline_connector import PipelineConnector
-from .practical_data_pipeline import PracticalDataPipeline
+from .unified_data_pipeline import UnifiedDataPipeline as PracticalDataPipeline
 
 __all__ = [
     "ConfigManager",

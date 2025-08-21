@@ -28,8 +28,8 @@ from download_training_data import MultilingualDataCollector
 from smart_data_downloader import SmartDataStrategy
 from smart_sampler import SmartDataSampler
 from synthetic_augmentation import SyntheticDataAugmenter
-from pipeline_connector import PipelineConnector
-from data.vocabulary_connector import VocabularyConnector
+from connector.pipeline_connector import PipelineConnector
+from connector.vocabulary_connector import VocabularyConnector
 
 # Import shared utilities
 from data_utils import DataProcessor, DatasetLoader
@@ -319,7 +319,7 @@ class PracticalDataPipeline:
                 self.logger.info("📝 Step 5: Creating training-ready data")
         
                 #from pipeline_connector import PipelineConnector
-                connector = PipelineConnector()
+                connector = PipelineConnector(self.config)
         
                 # Create monolingual corpora for vocabulary
                 self.logger.info("Creating monolingual corpora...")

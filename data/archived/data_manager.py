@@ -1,3 +1,5 @@
+# data/data_manager.py
+
 import torch
 from torch.utils.data import Sampler, Dataset
 from collections import defaultdict
@@ -24,43 +26,6 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 from sentence_transformers import SentenceTransformer, util
 from dataclasses import dataclass
 import random
-
-# --- Configuration Management ---
-
-class ConfigManager:
-    """Centralized configuration management with thread-safe singleton pattern."""
-    _config = None
-    _config_path = None
-    _lock = threading.Lock()
-
-    @classmethod
-    def load_config(cls, config_path: str = 'data/config.yaml') -> dict:
-        """Load configuration from YAML file."""
-        with cls._lock:
-            if cls._config is None or cls._config_path != config_path:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    cls._config = yaml.safe_load(f)
-                cls._config_path = config_path
-        return cls._config
-
-    @classmethod
-    def get_config(cls) -> dict:
-        """Get the loaded configuration."""
-        if cls._config is None:
-            raise ValueError("Configuration not loaded. Call load_config first.")
-        return cls._config
-
-# --- Utility Classes ---
-
-
-
-class DirectoryManager:
-    """Manages directory creation."""
-    @staticmethod
-    def create_directory(path: Path) -> Path:
-        """Creates a directory if it doesn't exist."""
-        path.mkdir(parents=True, exist_ok=True)
-        return path
 
 # --- Custom Samplers ---
 
@@ -108,34 +73,6 @@ class TemperatureSampler(Sampler[List[int]]):
     def __len__(self) -> int:
         return self.num_batches
 
-# --- Data Processing ---
-
-class DataProcessor:
-    """Shared data processing functionality."""
-    def __init__(self, config: dict, logger: Optional[logging.Logger] = None):
-        self.logger = logger or logging.getLogger(__name__)
-        self.config = config
-
-    def process_streaming_dataset(
-        self,
-        dataset: torch.utils.data.IterableDataset,
-        output_path: Path,
-        batch_size: int = 1000,
-        max_samples: Optional[int] = None
-    ) -> int:
-        """Process streaming dataset with memory efficiency and proper cleanup."""
-        DirectoryManager.create_directory(output_path.parent)
-        samples_processed = 0
-        with open(output_path, 'w', encoding='utf-8') as f_out:
-            for sample in tqdm(dataset, desc=f"Processing {output_path.name}"):
-                # Assuming the dataset yields dictionaries with 'source' and 'target' keys
-                f_out.write(f"{sample['source']}\t{sample['target']}\n")
-                samples_processed += 1
-                if max_samples and samples_processed >= max_samples:
-                    break
-        self.logger.info(f"✅ Processed {samples_processed:,} samples to {output_path}")
-        return samples_processed
-
 # --- Data Downloading ---
 
 class DataDownloader:
@@ -181,15 +118,12 @@ class DataManager:
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.data_downloader = DataDownloader(self.logger)
-        self.data_processor = DataProcessor(self.config, self.logger)
+        # Note: DataProcessor is now imported from data_utils and instantiated in the pipeline
 
     def run_pipeline(self):
         """Runs the entire data pipeline."""
         self.logger.info("Starting data pipeline...")
-        # 1. Download data
-        # 2. Process data
-        # 3. Augment data
-        # 4. Sample data
+        # This is a placeholder. The main pipeline logic is in practical_data_pipeline.py
         self.logger.info("Data pipeline finished.")
 
 if __name__ == '__main__':

@@ -482,8 +482,8 @@ class QualityComparator:
             return ""
     
         # Import vocabulary manager
-        from vocabulary.vocabulary_manager import VocabularyManager
-        vocab_manager = VocabularyManager()
+        from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+        vocab_manager = UnifiedVocabularyManager(mode=VocabularyMode.OPTIMIZED)
         vocab_pack = vocab_manager.get_vocab_for_pair(source_lang, target_lang)
     
         # Tokenize input

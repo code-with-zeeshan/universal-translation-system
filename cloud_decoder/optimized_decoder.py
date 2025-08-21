@@ -30,7 +30,10 @@ from monitoring.metrics_collector import (
 )
 from collections import OrderedDict
 # Import vocabulary manager
-from vocabulary.vocabulary_manager import VocabularyManager
+from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+
+# Use OPTIMIZED mode for cloud deployment
+VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
 
 # --- ADDED: Hugging Face Hub Integration ---
 try:

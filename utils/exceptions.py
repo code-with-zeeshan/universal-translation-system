@@ -1,29 +1,40 @@
 # utils/exceptions.py
-"""Custom exceptions for the Universal Translation System"""
+"""
+Custom exceptions for the Universal Translation System
+"""
 
-class TranslationSystemError(Exception):
-    """Base exception for translation system"""
+class UniversalTranslationError(Exception):
+    """Base exception for all universal translation system errors"""
     pass
 
-class VocabularyError(TranslationSystemError):
-    """Vocabulary-related errors"""
+class DataError(UniversalTranslationError):
+    """Raised when there are issues with data processing"""
     pass
 
-class TrainingError(TranslationSystemError):
-    """Training-related errors"""
+class VocabularyError(UniversalTranslationError):
+    """Raised when there are issues with vocabulary management"""
     pass
 
-class ModelError(TranslationSystemError):
-    """Model-related errors"""
+class ModelError(UniversalTranslationError):
+    """Raised when there are issues with model operations"""
     pass
 
-class DataError(TranslationSystemError):
-    """Data processing errors"""
+class ConfigurationError(UniversalTranslationError):
+    """Raised when there are configuration issues"""
     pass
 
-class ConfigurationError(TranslationSystemError):
-    """Configuration errors"""
+class TrainingError(UniversalTranslationError):
+    """Raised when there are training-related issues"""
     pass
 
-# Usage example:
-# raise VocabularyError(f"Vocabulary pack not found: {pack_name}")
+class InferenceError(UniversalTranslationError):
+    """Raised when there are inference-related issues"""
+    pass
+
+class ResourceError(UniversalTranslationError):
+    """Raised when there are resource-related issues (memory, disk, etc.)"""
+    pass
+
+class SecurityError(UniversalTranslationError):
+    """Raised when there are security-related issues"""
+    pass

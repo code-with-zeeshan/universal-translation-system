@@ -87,9 +87,54 @@ final encoded = await encoder.encode(text: 'Hello, world!', sourceLang: 'en', ta
 
 ### 2. Usage Example
 ```tsx
-import { useTranslation } from 'universal-translation-sdk';
-const { translate } = useTranslation({ decoderUrl: 'https://api.example.com/decode' });
-const result = await translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
+import { TranslationClient, TranslationErrorCode } from 'universal-translation-sdk';
+
+// Initialize the client
+const client = new TranslationClient({
+  decoderUrl: 'https://api.example.com/decode',
+  timeout: 30000,
+  retryCount: 2
+});
+
+// Translate text
+async function translateText() {
+  try {
+    const result = await client.translate({
+      text: 'Hello world',
+      sourceLang: 'en',
+      targetLang: 'es'
+    });
+    
+    if (result.success) {
+      console.log('Translation:', result.data.translation);
+      console.log('Confidence:', result.data.confidence);
+    } else {
+      console.error('Error:', result.error.message);
+      console.error('Error code:', result.error.code);
+    }
+  } catch (error) {
+    console.error('Unexpected error:', error);
+  }
+}
+```
+
+### 3. Error Handling
+```tsx
+import { TranslationErrorCode } from 'universal-translation-sdk';
+
+// Handle specific error types
+function handleTranslationError(errorCode) {
+  switch (errorCode) {
+    case TranslationErrorCode.NETWORK_ERROR:
+      return 'Please check your internet connection';
+    case TranslationErrorCode.VOCABULARY_NOT_LOADED:
+      return 'Language pack not available';
+    case TranslationErrorCode.RATE_LIMITED:
+      return 'Too many requests, please try again later';
+    default:
+      return 'An error occurred during translation';
+  }
+}
 ```
 
 ---
@@ -109,8 +154,57 @@ const result = await translate({ text: 'Hello world', sourceLang: 'en', targetLa
 ### 2. Usage Example
 ```js
 import { TranslationClient } from 'universal-translation-sdk';
-const client = new TranslationClient({ decoderUrl: 'https://api.example.com/decode' });
-const result = await client.translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
+
+// Initialize with options
+const client = new TranslationClient({
+  decoderUrl: 'https://api.example.com/decode',
+  timeout: 30000,
+  retryCount: 2,
+  useWasm: true // Enable WebAssembly encoder if available
+});
+
+// Translate text
+async function translateText() {
+  try {
+    const result = await client.translate({
+      text: 'Hello world',
+      sourceLang: 'en',
+      targetLang: 'es'
+    });
+    
+    if (result.success) {
+      console.log('Translation:', result.data.translation);
+      console.log('Confidence:', result.data.confidence);
+      console.log('Translation time:', result.data.duration, 'ms');
+    } else {
+      console.error('Error:', result.error.message);
+      console.error('Error code:', result.error.code);
+    }
+  } catch (error) {
+    console.error('Unexpected error:', error);
+  }
+}
+```
+
+### 3. Advanced Usage with WebAssembly
+```js
+import { TranslationClient } from 'universal-translation-sdk';
+
+// Initialize with WebAssembly support
+const client = new TranslationClient({
+  decoderUrl: 'https://api.example.com/decode',
+  useWasm: true
+});
+
+// Check if WebAssembly is available
+console.log('WebAssembly encoder loaded:', client.wasmLoaded);
+
+// Translate with progress tracking
+const result = await client.translate({
+  text: 'Hello world',
+  sourceLang: 'en',
+  targetLang: 'es'
+});
 ```
 
 ---

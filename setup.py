@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='universal-translation-system',
-    version='0.1.0',
+    version='1.0.0',
     description='Universal Translation System: Edge encoding, cloud decoding, multi-platform SDKs',
     author='Mohammad Zeeshan',
     author_email='your.email@example.com',

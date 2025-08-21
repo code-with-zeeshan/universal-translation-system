@@ -18,16 +18,14 @@ from utils.gpu_utils import optimize_gpu_memory, get_gpu_memory_info
 from utils.shutdown_handler import GracefulShutdown
 from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
-# --- ADDED: Direct imports for in-process training ---
-from training.distributed_train import (
-    train_with_unified_distributed_wrapper,
-    TrainingConfig,
-    setup_distributed_environment
-)
+from training.intelligent_trainer import IntelligentTrainer
 from encoder.universal_encoder import UniversalEncoder
 from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
 from utils.dataset_classes import ModernParallelDataset
-from vocabulary.vocabulary_manager import VocabularyManager
+from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+
+# Use FULL mode for training (needs all features)
+VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.FULL, **kwargs)
 
 # Initialize GPU optimization
 optimize_gpu_memory()

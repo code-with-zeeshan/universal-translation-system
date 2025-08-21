@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="universal-decoder-node",
-    version="0.1.0",
+    version="1.0.0",
     author="Universal Translation System",
     author_email="your.email@example.com",
     description="High-performance translation decoder service for Universal Translation System",

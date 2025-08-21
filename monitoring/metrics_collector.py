@@ -9,7 +9,10 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 try:
-    from vocabulary.vocabulary_manager import VocabularyManager
+    from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+    
+    # Use OPTIMIZED mode for monitoring
+    VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
     HAS_VOCAB_MANAGER = True
 except ImportError:
     HAS_VOCAB_MANAGER = False

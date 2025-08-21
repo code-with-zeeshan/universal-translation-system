@@ -29,8 +29,7 @@ class SystemIntegrator:
             'data.vocabulary_connector': ['VocabularyConnector'],
             
             # Vocabulary
-            'vocabulary.vocabulary_manager': ['VocabularyManager'],
-            'vocabulary.optimized_vocab_manager': ['OptimizedVocabularyManager'],
+            'vocabulary.unified_vocab_manager': ['UnifiedVocabularyManager', 'VocabularyMode'],
             
             # Training
             'training.distributed_train': ['UnifiedDistributedTrainer'],

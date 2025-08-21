@@ -22,7 +22,10 @@ from utils.dataset_classes import ModernParallelDataset, StreamingParallelDatase
 from monitoring.health_service import start_health_service
 import threading
 from utils.validators import InputValidator
-from vocabulary.vocabulary_manager import VocabularyManager, VocabularyPack
+from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyPack, VocabularyMode
+
+# Backward compatibility
+VocabularyManager = UnifiedVocabularyManager
 
 # Metrics
 translation_counter = Counter('translations_total', 'Total translations', ['source_lang', 'target_lang'])
@@ -461,8 +464,8 @@ class UniversalTranslationSystem:
             logger.info("📊 Setting up data pipeline...")
             
             # Import data components
-            from data.pipeline_connector import PipelineConnector
-            from data.practical_data_pipeline import PracticalDataPipeline
+            from connector.pipeline_connector import PipelineConnector
+            from data.unified_data_pipeline import UnifiedDataPipeline as PracticalDataPipeline
             
             # Create pipeline
             self.data_pipeline = PracticalDataPipeline()
@@ -524,8 +527,11 @@ class UniversalTranslationSystem:
             logger.info("📚 Setting up vocabulary system...")
             
             # Import vocabulary components
-            from vocabulary.optimized_vocab_manager import OptimizedVocabularyManager
-            from vocabulary.create_vocabulary_packs_from_data import VocabularyPackCreator
+            from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+            from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+            
+            # Use OPTIMIZED mode for integration
+            OptimizedVocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
             
             # Check if vocabulary packs exist
             vocab_path = Path(self.config.vocab_dir)

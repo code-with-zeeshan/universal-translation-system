@@ -10,8 +10,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from transformers import get_linear_schedule_with_warmup
 import wandb
-import yaml
 import os
+from config.schemas import load_config
 
 # 1. Prepare data using the orchestrated pipeline
 # (Run this step outside Python, or use subprocess if needed)
@@ -32,10 +32,6 @@ def auto_select_config():
     if "T4" in gpu_name:
         return "config/training_t4.yaml"
     return "config/training_t4.yaml"
-
-def load_config(config_path):
-    with open(config_path, "r") as f:
-        return yaml.safe_load(f)
 
 # 3. Define the trainer class
 class UniversalModelTrainer:
@@ -117,7 +113,7 @@ if __name__ == "__main__":
     config_path = auto_select_config()
     config = load_config(config_path)
     # Step 3: Initialize trainer
-    trainer = UniversalModelTrainer(config)
+    trainer = UniversalModelTrainer(config.dict())
     # Step 4: Train (implement data loading as needed)
     # trainer.train(train_data, val_data, num_epochs=20)
     # Step 5: Convert/export models as needed

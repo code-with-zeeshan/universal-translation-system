@@ -1,3 +1,5 @@
+# config/training_v100_finetune.yaml
+# Inherits from the base V100 config but overrides for fine-tuning
 _base_: 'training_v100.yaml'
 
 training:
