@@ -4,15 +4,15 @@
 
 ### **Q1: Why not just use M2M-100 or NLLB-200 quantized?**
 
-**A:** Our system is config-driven, modular, and supports dynamic scaling and monitoring. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**A:** Our system uses an innovative edge-cloud split architecture with a universal encoder (35MB base + 2-4MB vocabulary packs) and cloud decoder infrastructure. This results in a 40MB app with 90% quality of full models. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### **Q2: What makes your vocabulary pack system unique?**
 
-**A:** Packs are managed via a config-driven, orchestrated pipeline, registered with the coordinator, and dynamically loaded by SDKs. See [Vocabulary_Guide.md](Vocabulary_Guide.md).
+**A:** Our vocabulary packs are small (2-4MB each), dynamically loaded, and language-specific. This allows users to download only the languages they need. See [vocabulary/Vocabulary_Guide.md](vocabulary/Vocabulary_Guide.md).
 
 ### **Q3: How do you maintain quality with such a small model?**
 
-**A:** Through smart quantization, adapters, and config-driven training. See [GOAL.md](GOAL.md).
+**A:** Through smart quantization, optimized vocabulary packs, and our edge-cloud split architecture. The heavy lifting is done on the cloud decoder while keeping the client-side encoder lightweight. See [docs/VISION.md](docs/VISION.md) for details.
 
 ---
 
@@ -20,15 +20,15 @@
 
 ### **Q4: Why split encoder and decoder?**
 
-**A:** Enables edge encoding, cloud decoding, and dynamic scaling via the advanced coordinator. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**A:** This split architecture minimizes client app size while maximizing translation quality. The encoder runs on the device, while the decoder runs in the cloud. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### **Q5: How is privacy preserved if you're using cloud?**
 
-**A:** Only embeddings are sent to the cloud; text never leaves the device. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+**A:** Only embeddings are sent to the cloud; the original text never leaves the device. These embeddings are compressed and cannot be reversed to obtain the original text.
 
 ### **Q6: What about offline translation?**
 
-**A:** Planned via config-driven updates and SDK support. See [future_plan.md](Data_Training_markdown/future_plan.md).
+**A:** While our primary architecture is edge-cloud, we're working on a fully offline mode for scenarios where internet connectivity is limited or unavailable.
 
 ---
 
@@ -36,15 +36,15 @@
 
 ### **Q7: Who is this system designed for?**
 
-**A:** Developers, privacy-conscious users, and organizations needing scalable, monitored translation. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md).
+**A:** Developers, privacy-conscious users, and organizations needing scalable, monitored translation. Our SDKs support Android, iOS, Flutter, React Native, and Web. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md).
 
-### **Q8: How does the pricing model work?**
+### **Q8: How does the configuration work?**
 
-**A:** Flexible, with free SDKs and scalable cloud API. See [docs/API.md](docs/API.md).
+**A:** All components are configurable via environment variables, making deployment and customization easy. See [docs/environment-variables.md](docs/environment-variables.md).
 
 ### **Q9: What languages are supported?**
 
-**A:** All languages listed in `data/config.yaml` and visible in the coordinator dashboard.
+**A:** We currently support 20 languages with plans to expand. The coordinator dashboard shows all available languages and their status.
 
 ---
 
@@ -52,15 +52,15 @@
 
 ### **Q10: How hard is it to integrate into existing apps?**
 
-**A:** SDKs are config-driven and easy to integrate. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md).
+**A:** Our SDKs are designed for easy integration with minimal code. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for platform-specific examples.
 
 ### **Q11: Can I use my own vocabulary/terminology?**
 
-**A:** Yes, via the config-driven pipeline and custom vocabulary packs. See [Vocabulary_Guide.md](Vocabulary_Guide.md).
+**A:** Yes, you can create custom vocabulary packs for domain-specific terminology. See [vocabulary/Vocabulary_Guide.md](vocabulary/Vocabulary_Guide.md).
 
-### **Q12: How does this compare to Google Translate API costs?**
+### **Q12: How does deployment work?**
 
-**A:** Significantly lower, with more privacy and flexibility. See [docs/API.md](docs/API.md).
+**A:** We provide Docker and Kubernetes configurations for easy deployment. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
@@ -68,16 +68,16 @@
 
 ### **Q13: What's the roadmap?**
 
-**A:** Dynamic scaling, advanced dashboard, and full offline support. See [future_plan.md](Data_Training_markdown/future_plan.md).
+**A:** We're focusing on improving offline capabilities, adding more languages, and enhancing the monitoring dashboard.
 
 ### **Q14: How do you handle model updates?**
 
-**A:** Config-driven, with seamless updates and monitoring. See [docs/CI_CD.md](docs/CI_CD.md).
+**A:** Updates are managed through our environment variable configuration system, allowing for seamless updates without code changes.
 
-### **Q15: What makes this defensible against big tech?**
+### **Q15: What makes this system unique?**
 
-**A:** Modular, scalable, privacy-first, and open for community contributions. See [CONTRIBUTING.md](CONTRIBUTING.md).
+**A:** Our edge-cloud split architecture, dynamic vocabulary system, and environment variable configuration make this system highly flexible, efficient, and privacy-focused.
 
 ---
 
-For more, see the coordinator dashboard, Prometheus metrics, and all docs in the `/docs` and `/Data_Training_markdown` folders.
+For more information, see the documentation in the `/docs` folder and explore the coordinator dashboard for real-time system status.

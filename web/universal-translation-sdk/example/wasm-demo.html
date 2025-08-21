@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universal Translation SDK - WebAssembly Demo</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    label {
+      font-weight: bold;
+    }
+    textarea, select, button {
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 16px;
+    }
+    textarea {
+      min-height: 100px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .result {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      overflow-x: auto;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .status.success {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+    .status.error {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+    .status.info {
+      background-color: #d9edf7;
+      color: #31708f;
+    }
+    .tabs {
+      display: flex;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #ddd;
+    }
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .tab.active {
+      border: 1px solid #ddd;
+      border-bottom-color: white;
+      border-radius: 4px 4px 0 0;
+      margin-bottom: -1px;
+      background-color: white;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>Universal Translation SDK - WebAssembly Demo</h1>
+  
+  <div class="tabs">
+    <div class="tab active" data-tab="encoder">Encoder</div>
+    <div class="tab" data-tab="info">System Info</div>
+  </div>
+  
+  <div class="tab-content active" id="encoder-tab">
+    <div class="container">
+      <div class="form-group">
+        <label for="source-lang">Source Language:</label>
+        <select id="source-lang">
+          <option value="en">English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="zh">Chinese</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="target-lang">Target Language:</label>
+        <select id="target-lang">
+          <option value="es">Spanish</option>
+          <option value="en">English</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="zh">Chinese</option>
+          <option value="ja">Japanese</option>
+          <option value="ko">Korean</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label for="input-text">Text to Encode:</label>
+        <textarea id="input-text" placeholder="Enter text to encode...">Hello world! This is a test of the WebAssembly encoder.</textarea>
+      </div>
+      
+      <div class="form-group">
+        <button id="encode-btn">Encode with WebAssembly</button>
+        <button id="encode-fallback-btn">Encode with Fallback</button>
+      </div>
+      
+      <div class="status info" id="status">Ready to encode. Click one of the buttons above.</div>
+      
+      <div class="form-group">
+        <label for="result">Encoding Result (first 20 values):</label>
+        <div class="result" id="result">No result yet</div>
+      </div>
+      
+      <div class="form-group">
+        <label for="compressed">Compressed Result (first 20 values):</label>
+        <div class="result" id="compressed">No result yet</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tab-content" id="info-tab">
+    <div class="container">
+      <div class="form-group">
+        <label>WebAssembly Support:</label>
+        <div class="result" id="wasm-support">Checking...</div>
+      </div>
+      
+      <div class="form-group">
+        <label>Supported Languages:</label>
+        <div class="result" id="supported-languages">Loading...</div>
+      </div>
+      
+      <div class="form-group">
+        <label>Performance Metrics:</label>
+        <div class="result" id="performance">No data yet</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { WasmEncoderWrapper } from '../dist/index.esm.js';
+    
+    // DOM elements
+    const sourceLangSelect = document.getElementById('source-lang');
+    const targetLangSelect = document.getElementById('target-lang');
+    const inputTextArea = document.getElementById('input-text');
+    const encodeBtn = document.getElementById('encode-btn');
+    const encodeFallbackBtn = document.getElementById('encode-fallback-btn');
+    const statusDiv = document.getElementById('status');
+    const resultDiv = document.getElementById('result');
+    const compressedDiv = document.getElementById('compressed');
+    const wasmSupportDiv = document.getElementById('wasm-support');
+    const supportedLanguagesDiv = document.getElementById('supported-languages');
+    const performanceDiv = document.getElementById('performance');
+    
+    // Tab handling
+    const tabs = document.querySelectorAll('.tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Remove active class from all tabs and contents
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        
+        // Add active class to clicked tab
+        tab.classList.add('active');
+        
+        // Show corresponding content
+        const tabName = tab.getAttribute('data-tab');
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+      });
+    });
+    
+    // Initialize WebAssembly encoder
+    const wasmEncoder = new WasmEncoderWrapper({
+      wasmPath: '../dist/wasm/encoder.js',
+      useWasm: true,
+      cloudApiEndpoint: 'https://api.universal-translation.com/encode',
+      enableFallback: true
+    });
+    
+    // Check WebAssembly support
+    if (typeof WebAssembly === 'object') {
+      wasmSupportDiv.textContent = 'WebAssembly is supported in this browser.';
+      wasmSupportDiv.parentElement.classList.add('success');
+    } else {
+      wasmSupportDiv.textContent = 'WebAssembly is NOT supported in this browser. Fallback will be used.';
+      wasmSupportDiv.parentElement.classList.add('error');
+    }
+    
+    // Initialize encoder
+    async function initEncoder() {
+      try {
+        updateStatus('Loading WebAssembly encoder...', 'info');
+        await wasmEncoder.load();
+        updateStatus('WebAssembly encoder loaded successfully!', 'success');
+        
+        // Enable buttons
+        encodeBtn.disabled = false;
+        encodeFallbackBtn.disabled = false;
+        
+        // Load supported languages
+        const languages = await wasmEncoder.getSupportedLanguages();
+        supportedLanguagesDiv.textContent = languages.join(', ');
+      } catch (error) {
+        console.error('Failed to initialize encoder:', error);
+        updateStatus(`Failed to initialize encoder: ${error.message}`, 'error');
+      }
+    }
+    
+    // Encode text
+    async function encodeText(useFallback = false) {
+      try {
+        const sourceLang = sourceLangSelect.value;
+        const targetLang = targetLangSelect.value;
+        const text = inputTextArea.value;
+        
+        if (!text.trim()) {
+          updateStatus('Please enter some text to encode.', 'error');
+          return;
+        }
+        
+        updateStatus(`Encoding text with ${useFallback ? 'fallback' : 'WebAssembly'}...`, 'info');
+        
+        // Start timer
+        const startTime = performance.now();
+        
+        // Encode text
+        let embedding;
+        if (useFallback) {
+          embedding = await wasmEncoder.encodeWithFallback(text, sourceLang, targetLang);
+        } else {
+          embedding = await wasmEncoder.encode(text, sourceLang, targetLang);
+        }
+        
+        // End timer
+        const endTime = performance.now();
+        const duration = endTime - startTime;
+        
+        // Display result (first 20 values)
+        const resultStr = Array.from(embedding.slice(0, 20))
+          .map(val => val.toFixed(4))
+          .join(', ');
+        resultDiv.textContent = resultStr;
+        
+        // Compress embedding
+        const compressed = await wasmEncoder.compressEmbedding(embedding);
+        
+        // Display compressed result (first 20 values)
+        const compressedStr = Array.from(compressed.slice(0, 20))
+          .join(', ');
+        compressedDiv.textContent = compressedStr;
+        
+        // Update performance metrics
+        performanceDiv.textContent = `
+Encoding time: ${duration.toFixed(2)} ms
+Embedding size: ${embedding.length * 4} bytes
+Compressed size: ${compressed.length} bytes
+Compression ratio: ${((compressed.length / (embedding.length * 4)) * 100).toFixed(2)}%
+        `;
+        
+        updateStatus(`Encoding completed in ${duration.toFixed(2)} ms!`, 'success');
+      } catch (error) {
+        console.error('Encoding failed:', error);
+        updateStatus(`Encoding failed: ${error.message}`, 'error');
+      }
+    }
+    
+    // Update status message
+    function updateStatus(message, type) {
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+    }
+    
+    // Event listeners
+    encodeBtn.addEventListener('click', () => encodeText(false));
+    encodeFallbackBtn.addEventListener('click', () => encodeText(true));
+    
+    // Initialize
+    encodeBtn.disabled = true;
+    encodeFallbackBtn.disabled = true;
+    initEncoder();
+  </script>
+</body>
+</html>

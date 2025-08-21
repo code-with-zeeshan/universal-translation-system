@@ -205,20 +205,33 @@ class UniversalTranslationSystem:
             return True
     
     def _check_dependencies(self) -> bool:
-        """Check required dependencies"""
-        required = ['numpy', 'sentencepiece', 'msgpack', 'yaml', 'tqdm']
-        missing = []
-        
-        for dep in required:
+        """Check required dependencies using the dependency checker script"""
+        try:
+            # Try to import and use the dependency checker
+            sys.path.insert(0, str(project_root / "scripts"))
             try:
-                __import__(dep)
+                import check_dependencies
+                return check_dependencies.check_dependencies()
             except ImportError:
-                missing.append(dep)
-        
-        if missing:
-            logger.error(f"Missing dependencies: {missing}")
+                logger.warning("Dependency checker not found, falling back to basic check")
+                
+                # Fallback to basic dependency checking
+                required = ['numpy', 'sentencepiece', 'msgpack', 'pyyaml', 'tqdm']
+                missing = []
+                
+                for dep in required:
+                    try:
+                        __import__(dep)
+                    except ImportError:
+                        missing.append(dep)
+                
+                if missing:
+                    logger.error(f"Missing dependencies: {missing}")
+                    return False
+                return True
+        except Exception as e:
+            logger.error(f"Error checking dependencies: {e}")
             return False
-        return True
     
     def _check_data_availability(self) -> bool:
         """Check if data directories exist"""

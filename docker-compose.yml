@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  encoder:
+    build:
+      context: .
+      dockerfile: docker/encoder.Dockerfile
+    environment:
+      - MODEL_VERSION=${MODEL_VERSION:-1.0.0}
+      - ENCODER_MODEL_PATH=${ENCODER_MODEL_PATH:-models/production/encoder.pt}
+      - API_HOST=0.0.0.0
+      - API_PORT=${ENCODER_PORT:-8000}
+      - API_WORKERS=${API_WORKERS:-1}
+    volumes:
+      - ./models:/app/models
+      - ./vocabs:/app/vocabs
+    ports:
+      - "${ENCODER_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  decoder:
+    build:
+      context: .
+      dockerfile: docker/decoder.Dockerfile
+    environment:
+      - MODEL_VERSION=${MODEL_VERSION:-1.0.0}
+      - DECODER_JWT_SECRET=${DECODER_JWT_SECRET:-jwtsecret123}
+      - DECODER_CONFIG_PATH=${DECODER_CONFIG_PATH:-config/decoder_config.yaml}
+      - HF_HUB_REPO_ID=${HF_HUB_REPO_ID:-your-hf-org/universal-translation-system}
+      - API_HOST=0.0.0.0
+      - API_PORT=${DECODER_PORT:-8001}
+      - API_WORKERS=${API_WORKERS:-1}
+      - API_TITLE=${API_TITLE:-Cloud Decoder API}
+      - CUDA_VISIBLE_DEVICES=0
+      - OMP_NUM_THREADS=4
+    volumes:
+      - ./models:/app/models
+      - ./config:/app/config
+      - ./vocabs:/app/vocabs
+    ports:
+      - "${DECODER_PORT:-8001}:8001"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  coordinator:
+    build:
+      context: .
+      dockerfile: docker/coordinator.Dockerfile
+    environment:
+      - MODEL_VERSION=${MODEL_VERSION:-1.0.0}
+      - COORDINATOR_SECRET=${COORDINATOR_SECRET:-a-very-secret-key-for-cookies}
+      - COORDINATOR_JWT_SECRET=${COORDINATOR_JWT_SECRET:-a-super-secret-jwt-key}
+      - COORDINATOR_TOKEN=${COORDINATOR_TOKEN:-changeme123}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN:-internal-secret-token-for-service-auth}
+      - POOL_CONFIG_PATH=${POOL_CONFIG_PATH:-configs/decoder_pool.json}
+      - API_HOST=0.0.0.0
+      - API_PORT=${COORDINATOR_PORT:-8002}
+      - API_WORKERS=${COORDINATOR_WORKERS:-1}
+      - API_TITLE=${COORDINATOR_TITLE:-Universal Translation Coordinator}
+      - DECODER_POOL=${DECODER_POOL:-decoder:8001}
+    volumes:
+      - ./configs:/app/configs
+    ports:
+      - "${COORDINATOR_PORT:-8002}:8002"
+    depends_on:
+      - encoder
+      - decoder
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - encoder
+      - decoder
+      - coordinator
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  grafana-data:

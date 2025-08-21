@@ -1,10 +1,10 @@
 import { trace, context, propagation } from '@opentelemetry/api';
 import { NativeModules, Platform } from 'react-native';
 import LZ4 from 'react-native-lz4';
+import { config } from './config';
 
 const tracer = trace.getTracer('universal-translation-sdk');
-const MODEL_VERSION = process.env.MODEL_VERSION || '1.0.0';
-const DEFAULT_DECODER_URL = 'https://api.yourdomain.com/decode';
+const MODEL_VERSION = config.modelVersion;
 
 // Error codes enum - matching Android implementation
 export enum TranslationErrorCode {
@@ -65,7 +65,7 @@ export class TranslationClient {
   private enableAnalytics: boolean;
   
   constructor(options: TranslationClientOptions = {}) {
-    this.decoderUrl = options.decoderUrl || DEFAULT_DECODER_URL;
+    this.decoderUrl = options.decoderUrl || config.decoderApiUrl;
     this.timeout = options.timeout || 30000; // 30 seconds default
     this.retryCount = options.retryCount || 2;
     this.enableAnalytics = options.enableAnalytics !== false;

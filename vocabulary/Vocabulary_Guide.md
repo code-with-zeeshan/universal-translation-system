@@ -1,49 +1,78 @@
-# Vocabulary Pack Creation Scripts Guide
+# Vocabulary Pack Guide
 
 ## 📋 Overview
 
-The Universal Translation System uses a config-driven, orchestrated pipeline for vocabulary management. Vocabulary packs are created, registered, and integrated with the coordinator and SDKs for seamless language support and monitoring.
+The Universal Translation System uses a dynamic vocabulary system that allows for efficient language support. Vocabulary packs are small (2-4MB each), language-specific, and can be downloaded on-demand, reducing the overall app size while maintaining translation quality.
 
-## 🔧 Available Scripts
+## 🔧 Vocabulary System Architecture
 
-### Script 1: `vocabulary/create_vocabulary_packs.py`
-**Advanced Vocabulary Pack Creator with Corpus Analysis**
+### Core Components
 
-- Use for research, custom optimization, or domain-specific vocabularies
-- Integrates with the config-driven pipeline (see `data/config.yaml`)
+1. **Universal Encoder Base (35MB)**
+   - Language-agnostic encoder that works with any vocabulary pack
+   - Optimized for mobile and web deployment
 
-### Script 2: `vocabulary/create_vocabulary_packs_from_data.py`
-**Production-Ready Vocabulary Pack Creator using SentencePiece**
+2. **Vocabulary Packs (2-4MB each)**
+   - Latin Pack (~3MB): Covers English, Spanish, French, German, Italian, Portuguese, etc.
+   - CJK Pack (~4MB): Covers Chinese, Japanese, Korean
+   - Other language-specific packs
 
-- Use for standard, production deployments
-- Automatically updates vocabulary packs and registers them in the system
+3. **Dynamic Loading System**
+   - Packs are loaded only when needed
+   - Memory-efficient with LRU caching
 
-## 🎯 Use Case Comparison
+## 🚀 Using Vocabulary Packs
 
-- Choose the script based on your need for customization, speed, and integration with the orchestrated pipeline
-- All packs are referenced in `data/config.yaml` and used by the encoder, decoder, and SDKs
+### In SDKs
 
-## 📊 Feature Comparison
+```javascript
+// Web/React Native SDK example
+const translator = new TranslationClient();
 
-- Both scripts support config-driven language groups and can be monitored via Prometheus metrics
-- Packs are dynamically loaded by the encoder and registered with the coordinator for cloud decoding
+// The vocabulary pack will be automatically downloaded if not already available
+const result = await translator.translate({
+  text: "Hello",
+  sourceLang: "en",
+  targetLang: "zh" // Will download CJK pack if not already available
+});
+```
 
-## 🚀 Quick Start Guide
+```swift
+// iOS SDK example
+let translator = TranslationClient()
+let result = try await translator.translate(text: "Hello", from: "en", to: "zh")
+```
 
-- Update `data/config.yaml` with new languages or groups
-- Run the appropriate script to generate packs
-- Packs are automatically integrated with the system and visible in the coordinator dashboard
+### Creating Custom Vocabulary Packs
 
-## 💡 Real-World Examples
+For domain-specific terminology or specialized use cases, you can create custom vocabulary packs:
 
-- See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for how SDKs use vocabulary packs
-- Use the coordinator dashboard to monitor vocabulary usage and health
+1. Use `vocabulary/unified_vocabulary_creator.py` for creating new packs
+2. Configure language settings in your environment variables
+3. Register the pack with the coordinator for cloud decoding
+
+## 📊 Vocabulary Pack Features
+
+- **Efficient Storage**: Small file size (2-4MB per language group)
+- **Dynamic Loading**: Download only what you need
+- **Memory Efficiency**: LRU caching for optimal memory usage
+- **Bloom Filters**: Fast token lookup
+- **Compression**: Optimized for size and performance
+
+## 💡 Best Practices
+
+1. **Preload Common Languages**: For better user experience, preload the most common language packs
+2. **Monitor Usage**: Use the coordinator dashboard to track vocabulary pack usage
+3. **Version Control**: Keep track of vocabulary pack versions for consistency
+4. **Custom Domains**: Consider creating domain-specific vocabulary packs for specialized terminology
 
 ## 🤝 Contributing
 
-- Add new scripts or improvements to support more languages, better compression, or advanced analytics
-- Document your changes and update the config as needed
+- Add support for new languages
+- Improve compression techniques
+- Enhance tokenization for specific languages
+- Document your changes and update configurations as needed
 
 ---
 
-For more details, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/TRAINING.md](docs/TRAINING.md).
+For more details, see [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) and the environment variables documentation [docs/environment-variables.md](../docs/environment-variables.md).

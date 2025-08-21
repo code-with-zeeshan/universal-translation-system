@@ -5,6 +5,7 @@ A Web SDK for the Universal Translation System, supporting config-driven languag
 ## Features
 - Config-driven language and vocabulary management (see `data/config.yaml`)
 - Edge encoding (where supported), cloud decoding (privacy-preserving)
+- **WebAssembly implementation** for faster, more efficient encoding
 - Dynamic vocabulary packs (download only what you need)
 - Coordinator integration for load balancing and health checks
 - Prometheus metrics for monitoring
@@ -19,7 +20,10 @@ A Web SDK for the Universal Translation System, supporting config-driven languag
 2. Initialize and use:
 ```js
 import { TranslationClient } from 'universal-translation-sdk';
-const client = new TranslationClient({ decoderUrl: 'https://coordinator.example.com/decode' });
+const client = new TranslationClient({ 
+  decoderUrl: 'https://coordinator.example.com/decode',
+  useWasmEncoder: true  // Enable WebAssembly encoder for better performance
+});
 const result = await client.translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
 ```
 
@@ -33,6 +37,7 @@ const result = await client.translate({ text: 'Hello world', sourceLang: 'en', t
 
 ## Documentation
 - See [docs/SDK_INTEGRATION.md](../../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
+- For WebAssembly implementation details, see [src/wasm/README.md](src/wasm/README.md)
 
 ## Monitoring
 - All requests and node health are visible in the coordinator dashboard

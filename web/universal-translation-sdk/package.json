@@ -12,9 +12,10 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "rollup -c && npm run copy-wasm",
+    "build": "npm run build:wasm && rollup -c && npm run copy-wasm",
     "build:watch": "rollup -c -w",
-    "copy-wasm": "cp -r node_modules/onnxruntime-web/dist/*.wasm dist/wasm/ 2>/dev/null || true",
+    "build:wasm": "node scripts/build-wasm.js",
+    "copy-wasm": "cp -r node_modules/onnxruntime-web/dist/*.wasm dist/wasm/ 2>/dev/null || true && cp -r public/wasm/*.wasm dist/wasm/ 2>/dev/null || true && cp -r public/wasm/*.js dist/wasm/ 2>/dev/null || true",
     "dev": "vite",
     "test": "jest",
     "test:watch": "jest --watch",

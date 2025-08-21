@@ -12,6 +12,14 @@ import yaml
 from .decoder import create_decoder_service
 from .config import DecoderConfig, load_config, save_config
 
+# Load environment variables with defaults
+DEFAULT_DECODER_ENDPOINT = os.environ.get("DECODER_ENDPOINT", "http://localhost:8000")
+DEFAULT_COORDINATOR_URL = os.environ.get("COORDINATOR_URL", "http://localhost:5100")
+DEFAULT_HOST = os.environ.get("DECODER_HOST", "0.0.0.0")
+DEFAULT_PORT = int(os.environ.get("DECODER_PORT", "8000"))
+DEFAULT_WORKERS = int(os.environ.get("DECODER_WORKERS", "1"))
+DEFAULT_VOCAB_DIR = os.environ.get("VOCAB_DIR", "vocabs")
+
 
 @click.group()
 @click.version_option(version='0.1.0')
@@ -27,11 +35,11 @@ def cli():
 
 
 @cli.command()
-@click.option('--host', default='0.0.0.0', help='Host to bind to')
-@click.option('--port', default=8000, type=int, help='Port to bind to')
-@click.option('--workers', default=1, type=int, help='Number of worker processes')
+@click.option('--host', default=DEFAULT_HOST, help='Host to bind to')
+@click.option('--port', default=DEFAULT_PORT, type=int, help='Port to bind to')
+@click.option('--workers', default=DEFAULT_WORKERS, type=int, help='Number of worker processes')
 @click.option('--model-path', type=click.Path(exists=True), help='Path to model file')
-@click.option('--vocab-dir', default='vocabs', type=click.Path(), help='Directory containing vocabulary packs')
+@click.option('--vocab-dir', default=DEFAULT_VOCAB_DIR, type=click.Path(), help='Directory containing vocabulary packs')
 @click.option('--config', type=click.Path(exists=True), help='Configuration file path')
 @click.option('--docker', is_flag=True, help='Run in Docker container')
 def start(host: str, port: int, workers: int, model_path: Optional[str], 
@@ -66,7 +74,7 @@ def start(host: str, port: int, workers: int, model_path: Optional[str],
 
 
 @cli.command()
-@click.option('--endpoint', default='http://localhost:8000', help='Decoder endpoint')
+@click.option('--endpoint', default=DEFAULT_DECODER_ENDPOINT, help='Decoder endpoint')
 @click.option('--detailed', is_flag=True, help='Show detailed status')
 def status(endpoint: str, detailed: bool):
     """Check decoder status"""
@@ -106,7 +114,7 @@ def status(endpoint: str, detailed: bool):
 @click.option('--region', prompt='Region', default='us-east-1', help='AWS region or location')
 @click.option('--gpu-type', prompt='GPU type', default='T4', help='GPU type (T4, V100, A100, etc)')
 @click.option('--capacity', prompt='Capacity', default=100, type=int, help='Requests per second capacity')
-@click.option('--coordinator-url', default='http://localhost:5100', help='Coordinator service URL')
+@click.option('--coordinator-url', default=DEFAULT_COORDINATOR_URL, help='Coordinator service URL')
 @click.option('--output', type=click.Path(), help='Save registration to file instead of registering')
 def register(name: str, endpoint: str, region: str, gpu_type: str, 
              capacity: int, coordinator_url: str, output: Optional[str]):

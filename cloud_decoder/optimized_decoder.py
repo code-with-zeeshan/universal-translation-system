@@ -66,10 +66,17 @@ span_processor = BatchSpanProcessor(otlp_exporter)
 trace.get_tracer_provider().add_span_processor(span_processor)
 tracer = trace.get_tracer(__name__)
 
+# Environment variables for configuration
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 JWT_SECRET = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "your-hf-org/universal-translation-system")
+
+# API endpoints and server configuration
+API_HOST = os.environ.get("API_HOST", "0.0.0.0")
+API_PORT = int(os.environ.get("API_PORT", "8000"))
+API_WORKERS = int(os.environ.get("API_WORKERS", "1"))
+API_TITLE = os.environ.get("API_TITLE", "Cloud Decoder API")
 
 logger = logging.getLogger(__name__)
 
@@ -476,7 +483,7 @@ class CompositionRequest(BaseModel):
     strategy: str = "average"
 
 # FastAPI application for serving
-app = FastAPI(title="Cloud Decoder API", version=MODEL_VERSION, openapi_url="/openapi.json")
+app = FastAPI(title=API_TITLE, version=MODEL_VERSION, openapi_url="/openapi.json")
 FastAPIInstrumentor.instrument_app(app)
 
 security = HTTPBearer()
@@ -953,4 +960,4 @@ spec:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, workers=1)
+    uvicorn.run(app, host=API_HOST, port=API_PORT, workers=API_WORKERS)

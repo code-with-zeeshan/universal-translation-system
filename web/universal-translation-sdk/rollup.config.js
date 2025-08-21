@@ -65,6 +65,14 @@ export default [
             dest: 'dist/wasm' 
           },
           {
+            src: 'public/wasm/*.wasm',
+            dest: 'dist/wasm'
+          },
+          {
+            src: 'public/wasm/*.js',
+            dest: 'dist/wasm'
+          },
+          {
             src: 'scripts/convert-vocab.js',
             dest: 'dist/scripts'
           }

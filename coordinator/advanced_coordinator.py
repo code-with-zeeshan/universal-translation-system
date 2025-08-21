@@ -35,12 +35,23 @@ from utils.security import validate_model_source, safe_load_model
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-POOL_PATH = os.path.join("configs", "decoder_pool.json")
+# Configuration paths
+POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join("configs", "decoder_pool.json"))
+
+# Version information
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
+
+# Security keys and tokens
 SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "a-very-secret-key-for-cookies")
 JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "a-super-secret-jwt-key")
 AUTH_TOKEN = os.environ.get("COORDINATOR_TOKEN", "changeme123")
 INTERNAL_AUTH_TOKEN = os.environ.get("INTERNAL_SERVICE_TOKEN", "internal-secret-token-for-service-auth")
+
+# API configuration
+API_HOST = os.environ.get("API_HOST", "0.0.0.0")
+API_PORT = int(os.environ.get("API_PORT", "5100"))
+API_WORKERS = int(os.environ.get("API_WORKERS", "1"))
+API_TITLE = os.environ.get("API_TITLE", "Universal Translation Coordinator")
 
 # Initialize utilities
 api_key_manager = APIKeyManager()
@@ -576,4 +587,4 @@ app.include_router(admin_router)
 # --- Main Entry Point ---
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5100)
+    uvicorn.run(app, host=API_HOST, port=API_PORT, workers=API_WORKERS)

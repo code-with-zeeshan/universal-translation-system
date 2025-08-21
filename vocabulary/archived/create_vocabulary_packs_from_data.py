@@ -632,6 +632,8 @@ class VocabularyPackCreator:
 
         # 1. Try to load custom trained model
         model_path = os.environ.get('ENCODER_MODEL_PATH', 'models/production/encoder.pt')
+        fallback_model_path = os.environ.get('FALLBACK_MODEL_PATH', 'models/fallback/encoder.pt')
+        embedding_dim = int(os.environ.get('EMBEDDING_DIM', '768'))
         if os.path.exists(model_path):
             try:
                 logger.info(f"Loading embeddings from trained model: {model_path}")

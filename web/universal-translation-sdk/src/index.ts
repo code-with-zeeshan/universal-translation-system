@@ -1,5 +1,7 @@
 // src/index.ts
 import * as ort from 'onnxruntime-web';
+import { WasmEncoderWrapper } from './wasmEncoder';
+import { config } from './config';
 
 // Types
 export interface TranslationOptions {
@@ -35,6 +37,9 @@ export interface EncoderConfig {
   wasmPaths?: string;
   executionProviders?: Array<'webgl' | 'wasm' | 'webgpu'>;
   graphOptimizationLevel?: 'disabled' | 'basic' | 'extended' | 'all';
+  useWasmEncoder?: boolean;
+  wasmEncoderPath?: string;
+  enableFallback?: boolean;
 }
 
 // Language mapping matching your system
@@ -54,14 +59,18 @@ export class TranslationEncoder {
   private currentVocab: VocabularyPack | null = null;
   private config: Required<EncoderConfig>;
   private initialized = false;
+  private wasmEncoder: WasmEncoderWrapper | null = null;
   
-  constructor(config: EncoderConfig = {}) {
+  constructor(userConfig: EncoderConfig = {}) {
     this.config = {
-      modelUrl: config.modelUrl || '/models/universal_encoder.onnx',
-      vocabUrl: config.vocabUrl || '/vocabs',
-      wasmPaths: config.wasmPaths || '/wasm/',
-      executionProviders: config.executionProviders || ['wasm', 'webgl'],
-      graphOptimizationLevel: config.graphOptimizationLevel || 'all'
+      modelUrl: userConfig.modelUrl || config.modelUrl,
+      vocabUrl: userConfig.vocabUrl || config.vocabUrl,
+      wasmPaths: userConfig.wasmPaths || '/wasm/',
+      executionProviders: userConfig.executionProviders || ['wasm', 'webgl'],
+      graphOptimizationLevel: userConfig.graphOptimizationLevel || 'all',
+      useWasmEncoder: userConfig.useWasmEncoder ?? config.useWasmEncoder,
+      wasmEncoderPath: userConfig.wasmEncoderPath || config.wasmEncoderPath,
+      enableFallback: userConfig.enableFallback ?? config.enableFallback
     };
     
     // Configure ONNX Runtime
@@ -71,13 +80,36 @@ export class TranslationEncoder {
     if (this.config.executionProviders.includes('webgl')) {
       ort.env.webgl.powerPreference = 'high-performance';
     }
+    
+    // Initialize WebAssembly encoder if enabled
+    if (this.config.useWasmEncoder) {
+      this.wasmEncoder = new WasmEncoderWrapper({
+        wasmPath: this.config.wasmEncoderPath,
+        useWasm: true,
+        enableFallback: this.config.enableFallback
+      });
+    }
   }
   
   async initialize(): Promise<void> {
     if (this.initialized) return;
     
     try {
-      console.log('🔄 Loading encoder model...');
+      // Initialize WebAssembly encoder if enabled
+      if (this.config.useWasmEncoder && this.wasmEncoder) {
+        console.log('🔄 Loading WebAssembly encoder...');
+        try {
+          await this.wasmEncoder.load();
+          console.log('✅ WebAssembly encoder loaded successfully');
+          this.initialized = true;
+          return;
+        } catch (wasmError) {
+          console.warn('⚠️ Failed to load WebAssembly encoder, falling back to ONNX:', wasmError);
+          // Continue with ONNX initialization
+        }
+      }
+      
+      console.log('🔄 Loading ONNX encoder model...');
       
       // Create session options
       const sessionOptions: ort.InferenceSession.SessionOptions = {
@@ -95,7 +127,7 @@ export class TranslationEncoder {
       
       this.initialized = true;
       
-      console.log('✅ Encoder model loaded successfully');
+      console.log('✅ ONNX encoder model loaded successfully');
       console.log('📊 Model inputs:', this.session.inputNames);
       console.log('📊 Model outputs:', this.session.outputNames);
       
@@ -265,6 +297,50 @@ export class TranslationEncoder {
   }
   
   async encode(text: string, sourceLang: string, targetLang: string): Promise<Uint8Array> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    // Try WebAssembly encoder first if enabled
+    if (this.config.useWasmEncoder && this.wasmEncoder && this.wasmEncoder.isLoaded()) {
+      try {
+        console.log('🔄 Running WebAssembly encoding...');
+        
+        // Load vocabulary if needed
+        if (!this.wasmEncoder.hasVocabulary(sourceLang)) {
+          await this.wasmEncoder.loadVocabulary(sourceLang);
+        }
+        
+        // Encode with WebAssembly
+        const embedding = await this.wasmEncoder.encode(text, sourceLang, targetLang);
+        
+        // Compress the embedding
+        const compressed = await this.wasmEncoder.compressEmbedding(embedding);
+        
+        console.log('✅ WebAssembly encoding complete. Output size:', compressed.length);
+        
+        // Convert to Uint8Array with metadata header (16 bytes matching your format)
+        const outputSize = 16 + compressed.length;
+        const output = new Uint8Array(outputSize);
+        const view = new DataView(output.buffer);
+        
+        // Write metadata
+        view.setInt32(0, 128, true);                // sequence length (fixed at 128)
+        view.setInt32(4, embedding.length / 128, true);  // hidden dimension
+        view.setFloat32(8, 1.0, true);              // scale factor (already quantized)
+        view.setInt32(12, 0, true);                 // compression flag: 0 = uncompressed
+        
+        // Copy compressed data
+        output.set(compressed, 16);
+        
+        return output;
+      } catch (wasmError) {
+        console.warn('⚠️ WebAssembly encoding failed, falling back to ONNX:', wasmError);
+        // Fall back to ONNX encoding
+      }
+    }
+    
+    // Fall back to ONNX encoding
     if (!this.session) {
       throw new Error('Encoder not initialized. Call initialize() first.');
     }
@@ -304,7 +380,7 @@ export class TranslationEncoder {
       feeds[this.session.inputNames[1]] = maskTensor;
     }
     
-    console.log('🔄 Running inference...');
+    console.log('🔄 Running ONNX inference...');
     
     // Run inference
     const results = await this.session.run(feeds);
@@ -328,7 +404,7 @@ export class TranslationEncoder {
       throw new Error('No encoder output found in results');
     }
     
-    console.log('✅ Inference complete. Output shape:', outputTensor.dims);
+    console.log('✅ ONNX inference complete. Output shape:', outputTensor.dims);
     
     // Compress output (matching your C++ encoder format)
     return this.compressOutput(
@@ -389,6 +465,20 @@ export class TranslationEncoder {
   clearCache(): void {
     this.vocabularyCache.clear();
     this.currentVocab = null;
+    
+    // Clear WebAssembly encoder cache if available
+    if (this.wasmEncoder) {
+      this.wasmEncoder.destroy();
+    }
+  }
+  
+  /**
+   * Check if WebAssembly encoding is available
+   */
+  hasWasmEncoder(): boolean {
+    return this.config.useWasmEncoder && 
+           this.wasmEncoder !== null && 
+           this.wasmEncoder.isLoaded();
   }
 }
 
@@ -408,7 +498,7 @@ export class TranslationClient {
     this.encoder = new TranslationEncoder({
       modelUrl: options.modelUrl
     });
-    this.decoderUrl = options.decoderUrl || 'https://api.yourdomain.com/decode';
+    this.decoderUrl = options.decoderUrl || config.decoderApiUrl;
     this.maxCacheSize = options.maxCacheSize || 100;
     this.headers = options.headers || {};
   }

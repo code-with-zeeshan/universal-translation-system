@@ -26,7 +26,8 @@ Thank you for your interest in contributing!
 - Follow PEP 8 for Python code
 - Use type hints where possible
 - Add docstrings to functions and classes
-- Run `black .` for formatting
+- Run `black .` for formatting Python code
+- Use ESLint for JavaScript/TypeScript code
 
 ### Testing
 
@@ -42,29 +43,44 @@ pytest --cov=. tests/
 ```
 
 ### Areas We Need Help
-1. **Language Support**: Adding more languages
-2. **Mobile SDKs**: Improving iOS/Android implementations
-3. **Optimization**: Making models smaller/faster
+1. **Language Support**: Adding more languages and improving vocabulary packs
+2. **Mobile SDKs**: Enhancing iOS/Android/Flutter/React Native implementations
+3. **Optimization**: Making models smaller/faster through quantization techniques
 4. **Documentation**: Improving guides and examples
-5. **Testing**: Adding more test cases
+5. **Testing**: Adding more test cases and integration tests
 
 ### Development Setup
+
+#### Using Docker (Recommended)
 ```bash
 # Clone repo
-git clone https://github.com/code-with-zeeshan/universal-translation-system
+git clone https://github.com/yourusername/universal-translation-system
+cd universal-translation-system
+
+# Copy and configure environment variables
+cp .env.example .env
+# Edit .env with your configuration
+
+# Start services with Docker Compose
+docker-compose up -d
+```
+
+#### Manual Setup
+```bash
+# Clone repo
+git clone https://github.com/yourusername/universal-translation-system
 cd universal-translation-system
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install requirements
 pip install -r requirements.txt
-# Or install in development mode
-pip install -e .
 
-# Run tests
-pytest
+# Run components individually
+python cloud_decoder/optimized_decoder.py
+python coordinator/advanced_coordinator.py
 ```
 
 ### Contributing Compute Resources
@@ -84,64 +100,62 @@ Want to help by running a decoder node? Here's how:
 
 #### Option 1: Quick Deploy (Managed)
 ```bash
+# Install the universal-decoder-node package
 pip install universal-decoder-node
-universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com" --gpu-type "T4" --capacity 100 --output registration.json
-universal-decoder-node start
+
+# Register your node with the coordinator
+universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com" --gpu-type "T4" --capacity 100 --coordinator-url "https://coordinator.example.com"
+
+# Start the decoder service
+universal-decoder-node start --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-#### Option 2: Custom Deploy
-1. Deploy the decoder to your cloud provider or on-prem server (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))
-2. Ensure it meets minimum requirements (T4 GPU, 16GB RAM)
-3. Register your node by submitting a PR to `configs/decoder_pool.json`:
-
-```json
-{
-  "node_id": "your-unique-id",
-  "endpoint": "https://your-decoder.com",
-  "region": "us-east-1",
-  "gpu_type": "T4",
-  "capacity": 100
-}
-```
+#### Option 2: Custom Deploy with Docker
+1. Clone the repository
+2. Configure environment variables in `.env` file
+3. Run with Docker Compose:
+   ```bash
+   docker-compose up -d decoder
+   ```
+4. Register your node with the coordinator:
+   ```bash
+   docker-compose exec decoder universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com"
+   ```
 
 **Decoder Node Requirements**
-- HTTPS endpoint with valid certificate
-- 99% uptime commitment
-- Response time < 100ms (p95)
+- HTTPS endpoint with valid certificate (for production)
+- GPU support recommended (T4, V100, A100, etc.)
+- Minimum 8GB RAM, 16GB recommended
 - Support for health checks (`/health` endpoint)
 
 **Benefits for Contributors**
 - Recognition in project contributors list
-- Usage statistics dashboard access
+- Access to the coordinator dashboard
 - Priority support for issues
 
 ### How Encoder and Decoder Communicate
 - **Encoder (Edge/SDK)** encodes text to embeddings on device
-- **Decoder (Cloud Node)** exposes a REST API (e.g., `/decode` endpoint, now served by Litserve)
+- **Decoder (Cloud Node)** exposes a REST API (e.g., `/decode` endpoint, served by Litserve)
 - **Communication Protocol**: The encoder sends compressed embeddings (binary) to the decoder's `/decode` endpoint, specifying the target language in the header. The decoder returns the translated text as JSON.
+- **Coordinator** manages the decoder pool, handles load balancing, and monitors health
 - See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/API.md](docs/API.md) for protocol details.
 
 ## 🌍 Our Mission
 
 To break down language barriers by making high-quality translation accessible on every device, regardless of internet speed or hardware limitations.
 
-We believe communication is a human right, not a luxury
+We believe communication is a human right, not a luxury.
 
 ## 📊 Project Health
 
-![Downloads](https://img.shields.io/npm/dt/universal-translation-sdk)
-![Contributors](https://img.shields.io/github/contributors/code-with-zeeshan/universal-translation-system)
 ![Languages Supported](https://img.shields.io/badge/languages-20-brightgreen)
 ![Model Size](https://img.shields.io/badge/encoder%20size-35MB-blue)
 ![Decoder Size](https://img.shields.io/badge/decoder%20size-350MB-blue)
 
 ## Community & Support
 
-- **Issues**: [GitHub Issues](https://github.com/code-with-zeeshan/universal-translation-system/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/code-with-zeeshan/universal-translation-system/discussions)
-- **Email**: opensource@yourdomain.com (checked weekly)
-
-> **Note**: This is a solo developer project. Response times may vary. For urgent issues, please use GitHub Issues.
+- **Issues**: [GitHub Issues](https://github.com/yourusername/universal-translation-system/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/universal-translation-system/discussions)
 
 **[Code of Conduct](CODE_OF_CONDUCT.md)**
 Please be respectful and constructive in all interactions.

@@ -7,6 +7,7 @@ __pycache__/
 
 # Virtual environments
 venv/
+env/
 .env
 .env.*
 
@@ -21,9 +22,15 @@ checkpoints/
 
 # Model outputs
 models/production/
+models/fallback/
+*.onnx
+*.pt
+*.bin
 
 # Test cache
 .pytest_cache/
+.coverage
+htmlcov/
 
 # OS files
 .DS_Store
@@ -33,9 +40,40 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+*.swo
+*.sublime-*
+
+# JavaScript/TypeScript
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+.npm/
+
+# Mobile development
+*.apk
+*.aab
+*.ipa
+*.xcarchive
+*.xcuserstate
+Pods/
+.gradle/
+local.properties
+
+# Monitoring
+grafana-data/
 
 # Gradle wrapper - DO NOT IGNORE!
 !gradle/wrapper/gradle-wrapper.jar
 !gradle/wrapper/gradle-wrapper.properties
 !gradlew
 !gradlew.bat
+
+# Docker
+.dockerignore
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*~

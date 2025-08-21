@@ -1,9 +1,9 @@
 import { trace, context, propagation } from '@opentelemetry/api';
 import { compress } from 'lz4js';
+import { config } from './config';
 
 const tracer = trace.getTracer('universal-translation-sdk');
-const MODEL_VERSION = process.env.MODEL_VERSION || '1.0.0';
-const DEFAULT_DECODER_URL = 'https://api.yourdomain.com/decode';
+const MODEL_VERSION = config.modelVersion;
 
 // Error codes enum - matching other SDKs
 export enum TranslationErrorCode {
@@ -69,7 +69,7 @@ export class TranslationClient {
   private wasmLoading: Promise<void> | null = null;
   
   constructor(options: TranslationClientOptions = {}) {
-    this.decoderUrl = options.decoderUrl || DEFAULT_DECODER_URL;
+    this.decoderUrl = options.decoderUrl || config.decoderApiUrl;
     this.timeout = options.timeout || 30000; // 30 seconds default
     this.retryCount = options.retryCount || 2;
     this.enableAnalytics = options.enableAnalytics !== false;

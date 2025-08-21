@@ -2,7 +2,9 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A flexible and scalable translation platform designed to support multiple languages across diverse applications. This system enables seamless text translation, making it easy to localize content for global audiences. Features include integration with popular translation APIs, customizable language support, user-friendly interfaces, and extensible modules for adding new languages or translation engines. Ideal for developers and organizations looking to streamline multilingual communication and content delivery.
+A flexible and scalable translation platform designed to support multiple languages across diverse applications. This system enables seamless text translation, making it easy to localize content for global audiences. Features include an innovative edge-cloud architecture, customizable language support, and extensible modules for adding new languages or translation engines. Ideal for developers and organizations looking to streamline multilingual communication and content delivery.
+
+> **New**: All configuration is now available through environment variables. See [Environment Variables](docs/environment-variables.md) for details.
 
 ## 🌟 Key Innovation
 
@@ -19,7 +21,8 @@ Unlike traditional translation apps that bundle 200MB+ models, our system uses:
 - ✅ ~85M parameters total (vs 600M+ for traditional models)
 - ✅ Designed for low-end devices (2GB RAM)
 - ✅ Full-system monitoring with Prometheus/Grafana
-- ✅ CI/CD pipelines for encoder/decoder and SDKs
+- ✅ Environment variable configuration for all components
+- ✅ Docker and Kubernetes deployment support
 
 ## 🎯 Usage Modes
 
@@ -29,7 +32,7 @@ You can use `universal-decoder-node` in two ways:
   Run the decoder on your own device or cloud for private translation needs and testing. No registration is required.
 
 - **Contributing Compute Power:**  
-  If you want to support the project and make your node available to the global system, register your node (see below) so it can be added to the public decoder pool.
+  If you want to support the project and make your node available to the global system, register your node with the coordinator so it can be added to the public decoder pool.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions.
 
@@ -37,17 +40,22 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions.
 
 ```bash
 # Clone repository
-git clone https://github.com/code-with-zeeshan/universal-translation-system
+git clone https://github.com/yourusername/universal-translation-system
 cd universal-translation-system
+
+# Set up environment variables (optional)
+cp .env.example .env
+# Edit .env with your configuration
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Download sample data (for testing)
-python data/download_sample_data.py
+# Run with Docker Compose (recommended)
+docker-compose up -d
 
-# Run local test
-pytest tests/
+# Or run components individually
+python cloud_decoder/optimized_decoder.py
+python coordinator/advanced_coordinator.py
 ```
 
 ## 📱 SDK Integration
@@ -76,32 +84,47 @@ const result = await translator.translate({
 });
 ```
 
+### React Native
+```javascript
+import { TranslationClient } from 'universal-translation-sdk';
+
+const translator = new TranslationClient();
+const result = await translator.translate({
+  text: "Hello",
+  sourceLang: "en",
+  targetLang: "es"
+});
+```
+
 ## 🏗️ Architecture
 
 - **Encoder**: Runs on device, converts text to language-agnostic embeddings
 - **Decoder**: Runs on server (Litserve), converts embeddings to target language
+- **Coordinator**: Manages decoder pool, handles load balancing and health monitoring
 - **Vocabulary Packs**: Downloadable language-specific token mappings
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## 📚 Documentation
-- [API Documentation](docs/API.md)
-- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Vision & Architecture](docs/VISION.md)
+- [Architecture Details](docs/ARCHITECTURE.md)
+- [Environment Variables](docs/environment-variables.md)
 - [Training Guide](docs/TRAINING.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
-- [CI/CD Guide](docs/CI_CD.md)
 - [SDK Integration Guide](docs/SDK_INTEGRATION.md)
 - [Monitoring Guide](monitoring/README.md)
 - [Vocabulary Guide](vocabulary/Vocabulary_Guide.md)
+- [API Documentation](docs/API.md)
 - [Acknowledgments](docs/ACKNOWLEDGMENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [License](LICENSE)
 
 ## 📊 Monitoring
-- All services expose Prometheus metrics at `/metrics` (see [monitoring/README.md](monitoring/README.md))
-- System metrics available on port 9000 if `system_metrics.py` is running
-- Visualize with Grafana, set up alerts for latency, errors, and resource usage
+- All services expose Prometheus metrics at `/metrics`
+- Visualize with Grafana dashboards (included in `monitoring/grafana/dashboards`)
+- Set up alerts for latency, errors, and resource usage
+- See [monitoring/README.md](monitoring/README.md) for details
 
 ## 🤝 Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and more details on how to contribute.
@@ -120,10 +143,11 @@ This is a research project in active development. Core components are implemente
 | Android SDK | ✅ Production-Ready | Native implementation with JNI bindings |
 | iOS SDK | ✅ Production-Ready | Swift implementation with C++ interoperability |
 | Flutter SDK | ✅ Production-Ready | FFI bindings to native encoder |
-| React Native SDK | 🟡 Beta | Core functionality implemented, needs more testing |
-| Web SDK | 🟡 Beta | Core functionality implemented, WebAssembly support in progress |
+| React Native SDK | ✅ Production-Ready | Core functionality implemented with config support |
+| Web SDK | ✅ Production-Ready | Core functionality implemented with environment variable support |
 | Monitoring | ✅ Production-Ready | Prometheus metrics and health checks implemented |
-| CI/CD | ✅ Production-Ready | Automated builds and tests for all components |
+| Docker Support | ✅ Production-Ready | Docker Compose and Kubernetes configurations available |
+| Environment Config | ✅ Production-Ready | All components configurable via environment variables |
 
 ## 📄 License
 
