@@ -1,0 +1,100 @@
+# monitoring/prometheus/rules/alerting_rules.yml
+groups:
+  - name: translation_system_alerts
+    rules:
+      # Service availability alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.instance }} is down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+
+      # High error rate alerts
+      - alert: HighErrorRate
+        expr: rate(translation_error_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has a high translation error rate (> 5%)."
+
+      # High latency alerts
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, sum(rate(translation_latency_seconds_bucket[5m])) by (le, instance)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ $labels.instance }}"
+          description: "95th percentile latency is above 1 second on {{ $labels.instance }}."
+
+      # Resource utilization alerts
+      - alert: HighCPUUsage
+        expr: rate(process_cpu_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has high CPU usage (> 80%)."
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / (1024 * 1024 * 1024) > 14
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} is using more than 14GB of memory."
+
+      - alert: HighGPUUsage
+        expr: gpu_utilization_percent > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GPU usage on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has high GPU usage (> 90%)."
+
+      - alert: HighGPUMemoryUsage
+        expr: gpu_memory_used_bytes / gpu_memory_total_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GPU memory usage on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} is using more than 90% of GPU memory."
+
+      # Circuit breaker alerts
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state{state="open"} > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker open for {{ $labels.decoder }}"
+          description: "Circuit breaker for decoder {{ $labels.decoder }} is in open state."
+
+      # Request rate alerts
+      - alert: HighRequestRate
+        expr: sum(rate(translation_requests_total[5m])) by (instance) > 100
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High request rate on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} is processing more than 100 requests per second."
+
+      # Vocabulary alerts
+      - alert: VocabularyLoadFailure
+        expr: vocabulary_load_failures_total > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vocabulary load failures on {{ $labels.instance }}"
+          description: "{{ $labels.instance }} has vocabulary load failures for language {{ $labels.language }}."

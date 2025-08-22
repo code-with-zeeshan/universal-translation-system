@@ -23,9 +23,9 @@ import uvicorn
 from .vocabulary import VocabularyManager
 
 # Import utility modules
-from utils.auth import APIKeyManager
-from utils.rate_limiter import RateLimiter
-from utils.security import validate_model_source, safe_load_model
+from .utils.auth import APIKeyManager
+from .utils.rate_limiter import RateLimiter
+from .utils.security import validate_model_source, safe_load_model
 
 logger = logging.getLogger(__name__)
 
@@ -363,11 +363,19 @@ class DecoderService:
         self.model: Optional[OptimizedUniversalDecoder] = None
         self.vocabulary_manager = VocabularyManager(vocab_dir)
         self.batcher = ContinuousBatcher()
-        self.app = self._create_app()
         
         # Configuration
-        self.jwt_secret = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
+        self.jwt_secret = os.environ.get("DECODER_JWT_SECRET", "")
+        if not self.jwt_secret:
+            # Generate a secure random key if none is provided
+            import secrets
+            self.jwt_secret = secrets.token_hex(32)
+            logger.warning("No JWT secret key provided, generated a random one. This will not persist across restarts.")
+            
         self.model_version = os.environ.get("MODEL_VERSION", "1.0.0")
+        
+        # Create FastAPI app
+        self.app = self._create_app()
         
     def _create_app(self) -> FastAPI:
         """Create FastAPI application"""
@@ -544,7 +552,8 @@ class DecoderService:
     
     def _decode_tokens_to_text(self, tokens: np.ndarray, vocab_pack) -> str:
         """Decode token IDs to text using vocabulary pack"""
-        id_to_token = {idx: tok for tok, idx in vocab_pack.tokens.items()}
+        # Use cached id_to_token mapping from vocabulary pack
+        id_to_token = vocab_pack.id_to_token
         text_tokens = []
         
         for token_id in tokens:

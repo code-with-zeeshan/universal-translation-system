@@ -70,7 +70,7 @@ watchdog>=2.3.0
 # boto3>=1.28.0
 # google-cloud-storage>=2.10.0
 # kubernetes>=28.0.0
-# redis>=5.0.0
+redis>=5.0.0
 
 # == Development & Tooling ==
 black>=23.10.0

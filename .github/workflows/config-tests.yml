@@ -1,0 +1,85 @@
+name: Configuration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'config/**'
+      - 'tests/test_config_models.py'
+      - '.env.example'
+      - '.github/workflows/config-tests.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'config/**'
+      - 'tests/test_config_models.py'
+      - '.env.example'
+      - '.github/workflows/config-tests.yml'
+
+jobs:
+  test-configuration:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov pydantic pyyaml python-dotenv
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    
+    - name: Validate .env.example
+      run: |
+        # Check if all environment variables in .env.example are documented
+        echo "Checking if all environment variables in .env.example are documented in docs/environment-variables.md"
+        
+        # Extract variables from .env.example
+        ENV_VARS=$(grep -v '^#' .env.example | grep '=' | cut -d '=' -f 1)
+        
+        # Check if each variable is documented
+        MISSING_VARS=()
+        for VAR in $ENV_VARS; do
+          if ! grep -q "`\$${VAR}`" docs/environment-variables.md; then
+            MISSING_VARS+=("$VAR")
+          fi
+        done
+        
+        # Report missing variables
+        if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+          echo "The following environment variables are not documented:"
+          for VAR in "${MISSING_VARS[@]}"; do
+            echo "- $VAR"
+          done
+          exit 1
+        else
+          echo "All environment variables are documented!"
+        fi
+    
+    - name: Test configuration models
+      run: |
+        pytest tests/test_config_models.py -v --cov=config
+    
+    - name: Validate configuration schemas
+      run: |
+        # Check if all YAML files in config/ are valid
+        for file in config/*.yaml config/*.yml; do
+          if [ -f "$file" ]; then
+            echo "Validating $file"
+            python -c "import yaml; yaml.safe_load(open('$file'))"
+          fi
+        done
+        
+        # Check if all JSON files in config/ are valid
+        for file in config/*.json; do
+          if [ -f "$file" ]; then
+            echo "Validating $file"
+            python -c "import json; json.load(open('$file'))"
+          fi
+        done

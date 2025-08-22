@@ -23,10 +23,11 @@ Unlike traditional translation apps that bundle 200MB+ models, our system uses:
 - ✅ Full-system monitoring with Prometheus/Grafana
 - ✅ Environment variable configuration for all components
 - ✅ Docker and Kubernetes deployment support
+- ✅ Redis integration for distributed decoder pool management
 
 ## 🎯 Usage Modes
 
-You can use `universal-decoder-node` in two ways:
+You can use `universal-decoder-node` in three ways:
 
 - **Personal Use:**  
   Run the decoder on your own device or cloud for private translation needs and testing. No registration is required.
@@ -34,7 +35,10 @@ You can use `universal-decoder-node` in two ways:
 - **Contributing Compute Power:**  
   If you want to support the project and make your node available to the global system, register your node with the coordinator so it can be added to the public decoder pool.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions.
+- **Hybrid Deployment:**  
+  Run your own encoder locally while using the shared decoder pool, or run your own complete system with encoder, decoder, and coordinator.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions and [REDIS_INTEGRATION.md](docs/REDIS_INTEGRATION.md) for details on the distributed decoder pool.
 
 ## 🚀 Quick Start
 
@@ -43,19 +47,23 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions.
 git clone https://github.com/yourusername/universal-translation-system
 cd universal-translation-system
 
-# Set up environment variables (optional)
+# Set up environment variables (recommended)
 cp .env.example .env
 # Edit .env with your configuration
 
+# Option 1: Run with Docker Compose (recommended)
+docker-compose up -d
+
+# Option 2: Manual Setup
 # Install dependencies
 pip install -r requirements.txt
 
-# Run with Docker Compose (recommended)
-docker-compose up -d
-
-# Or run components individually
+# Run components individually
 python cloud_decoder/optimized_decoder.py
 python coordinator/advanced_coordinator.py
+
+# Option 3: Train from scratch (for research)
+python docs/train_from_scratch.py --config config/training_default.yaml
 ```
 
 ## 📱 SDK Integration
@@ -111,11 +119,17 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [Architecture Details](docs/ARCHITECTURE.md)
 - [Environment Variables](docs/environment-variables.md)
 - [Training Guide](docs/TRAINING.md)
+- [Adding New Languages](docs/Adding_New_languages.md)
+- [Future Roadmap](docs/future_plan.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [SDK Integration Guide](docs/SDK_INTEGRATION.md)
 - [Monitoring Guide](monitoring/README.md)
 - [Vocabulary Guide](vocabulary/Vocabulary_Guide.md)
+- [Decoder Pool Management](docs/DECODER_POOL.md)
 - [API Documentation](docs/API.md)
+- [Troubleshooting Guide](docs/TROUBLESHOOT.md)
+- [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md)
+- [System Improvements](docs/IMPROVEMENTS.md)
 - [Acknowledgments](docs/ACKNOWLEDGMENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [License](LICENSE)

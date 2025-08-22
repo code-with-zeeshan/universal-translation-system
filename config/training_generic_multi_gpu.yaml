@@ -1,0 +1,61 @@
+# Generic multi-GPU training configuration
+# Designed to work with most modern NVIDIA GPUs in multi-GPU setups
+
+training:
+  # Basic training parameters
+  batch_size: 16  # Per GPU batch size
+  gradient_accumulation_steps: 1
+  epochs: 20
+  learning_rate: 5e-5
+  weight_decay: 0.01
+  warmup_steps: 1000
+  
+  # Optimization
+  mixed_precision: true
+  gradient_checkpointing: true  # Enable for multi-GPU to save memory
+  
+  # Logging and checkpoints
+  log_steps: 100
+  save_steps: 1000
+  eval_steps: 1000
+  
+  # Model parameters
+  embedding_dim: 768
+  hidden_dim: 768
+  num_layers: 6
+  num_heads: 12
+  dropout: 0.1
+  
+  # Memory optimization
+  max_sequence_length: 512
+  max_batch_tokens: 8192
+  
+  # Hardware settings
+  device: "cuda"  # Will be set by distributed training
+  num_workers: 4
+  
+  # Distributed training
+  distributed: true
+  find_unused_parameters: false
+  
+  # Checkpointing
+  checkpoint_dir: "checkpoints"
+  resume_from_checkpoint: null
+  
+  # Evaluation
+  eval_batch_size: 32
+  
+  # Vocabulary
+  vocab_dir: "vocabs"
+  
+  # Data
+  train_data: "data/train.jsonl"
+  eval_data: "data/eval.jsonl"
+  
+  # Augmentation
+  augmentation_enabled: true
+  augmentation_probability: 0.1
+  
+  # Multi-GPU specific settings
+  sync_bn: true  # Synchronize batch normalization across GPUs
+  ddp_backend: "nccl"  # Use NCCL for GPU communication

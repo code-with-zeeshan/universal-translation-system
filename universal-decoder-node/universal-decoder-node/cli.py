@@ -278,7 +278,7 @@ def init(output: str):
             'host': '0.0.0.0',
             'port': 8000,
             'workers': 1,
-            'model_path': null,
+            'model_path': None,
             'vocab_dir': 'vocabs',
             'device': 'cuda',
             'max_batch_size': 64,

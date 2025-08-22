@@ -68,7 +68,7 @@
 
 ### **Q13: What's the roadmap?**
 
-**A:** We're focusing on improving offline capabilities, adding more languages, and enhancing the monitoring dashboard.
+**A:** We're focusing on improving offline capabilities, adding more languages, and enhancing the monitoring dashboard. See our [Future Roadmap](docs/future_plan.md) for details.
 
 ### **Q14: How do you handle model updates?**
 

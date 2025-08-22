@@ -10,8 +10,9 @@ import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Union
 from enum import Enum
 
 import torch
@@ -109,11 +110,11 @@ class HardwareConfig:
                         return multi_config
                 return config_path
         
-        # Default configs
+        # Default configs - use generic configs instead of specific GPU models
         if gpu_count == 1:
-            return "config/training_v100.yaml"  # Default single GPU
+            return "config/training_generic_gpu.yaml"  # Default single GPU
         else:
-            return "config/training_v100_multi.yaml"  # Default multi GPU
+            return "config/training_generic_multi_gpu.yaml"  # Default multi GPU
 
 
 class UniversalTranslationSystem:
@@ -426,36 +427,67 @@ class UniversalTranslationSystem:
     
     def _run_command(self, command: List[str]) -> int:
         """
-        Run command with output streaming.
+        Run command with output streaming and enhanced error handling.
         
         Args:
             command: Command to execute
             
         Returns:
-            Exit code
+            int: Exit code (0 for success, non-zero for failure)
         """
         logger.info(f"\n🚀 Executing: {' '.join(command)}\n")
         
         try:
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
-            )
+            # Create a log file for the command output
+            log_dir = Path("logs")
+            log_dir.mkdir(exist_ok=True)
             
-            # Stream output
-            for line in iter(process.stdout.readline, ''):
-                print(line.rstrip())
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            log_file = log_dir / f"command_{timestamp}.log"
             
-            process.wait()
+            with open(log_file, "w") as log_fh:
+                # Log the command
+                log_fh.write(f"Command: {' '.join(command)}\n")
+                log_fh.write(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                # Start the process
+                process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1
+                )
+                
+                # Stream and log output
+                for line in iter(process.stdout.readline, ''):
+                    print(line.rstrip())
+                    log_fh.write(line)
+                    log_fh.flush()  # Ensure log is written immediately
+                
+                # Wait for process to complete
+                process.wait()
+                
+                # Log completion status
+                log_fh.write(f"\nCompleted: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                log_fh.write(f"Exit code: {process.returncode}\n")
             
             if process.returncode != 0:
-                logger.error(f"Command failed with code {process.returncode}")
+                logger.error(f"Command failed with code {process.returncode}. See log: {log_file}")
+            else:
+                logger.info(f"Command completed successfully. Log: {log_file}")
             
             return process.returncode
-            
+        
+        except FileNotFoundError as e:
+            logger.error(f"Command not found: {e}")
+            return 127  # Standard exit code for command not found
+        except PermissionError as e:
+            logger.error(f"Permission denied: {e}")
+            return 126  # Standard exit code for permission denied
+        except KeyboardInterrupt:
+            logger.warning("Command interrupted by user")
+            return 130  # Standard exit code for SIGINT
         except Exception as e:
             logger.error(f"Failed to run command: {e}")
             return 1

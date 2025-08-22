@@ -1,0 +1,59 @@
+# monitoring/prometheus/rules/recording_rules.yml
+groups:
+  - name: translation_system_recording_rules
+    rules:
+      # Request rate by component
+      - record: component:request_rate:sum
+        expr: sum(rate(translation_requests_total[5m])) by (component)
+
+      # Error rate by component
+      - record: component:error_rate:ratio
+        expr: sum(rate(translation_error_total[5m])) by (component) / sum(rate(translation_requests_total[5m])) by (component)
+
+      # 95th percentile latency by component
+      - record: component:latency_p95:histogram_quantile
+        expr: histogram_quantile(0.95, sum(rate(translation_latency_seconds_bucket[5m])) by (le, component))
+
+      # 99th percentile latency by component
+      - record: component:latency_p99:histogram_quantile
+        expr: histogram_quantile(0.99, sum(rate(translation_latency_seconds_bucket[5m])) by (le, component))
+
+      # Average latency by component
+      - record: component:latency_avg:avg
+        expr: sum(rate(translation_latency_seconds_sum[5m])) by (component) / sum(rate(translation_latency_seconds_count[5m])) by (component)
+
+      # Request rate by language pair
+      - record: language_pair:request_rate:sum
+        expr: sum(rate(translation_requests_total[5m])) by (source_lang, target_lang)
+
+      # Error rate by language pair
+      - record: language_pair:error_rate:ratio
+        expr: sum(rate(translation_error_total[5m])) by (source_lang, target_lang) / sum(rate(translation_requests_total[5m])) by (source_lang, target_lang)
+
+      # 95th percentile latency by language pair
+      - record: language_pair:latency_p95:histogram_quantile
+        expr: histogram_quantile(0.95, sum(rate(translation_latency_seconds_bucket[5m])) by (le, source_lang, target_lang))
+
+      # Memory usage by component
+      - record: component:memory_usage:bytes
+        expr: sum(process_resident_memory_bytes) by (component)
+
+      # CPU usage by component
+      - record: component:cpu_usage:rate
+        expr: sum(rate(process_cpu_seconds_total[5m])) by (component)
+
+      # GPU utilization by component
+      - record: component:gpu_utilization:percent
+        expr: avg(gpu_utilization_percent) by (component)
+
+      # GPU memory usage by component
+      - record: component:gpu_memory_usage:ratio
+        expr: sum(gpu_memory_used_bytes) by (component) / sum(gpu_memory_total_bytes) by (component)
+
+      # Vocabulary cache hit ratio
+      - record: vocabulary:cache_hit_ratio:ratio
+        expr: sum(vocabulary_cache_hits_total) by (language) / (sum(vocabulary_cache_hits_total) by (language) + sum(vocabulary_cache_misses_total) by (language))
+
+      # Circuit breaker status by decoder
+      - record: decoder:circuit_breaker_open:count
+        expr: sum(circuit_breaker_state{state="open"}) by (decoder)

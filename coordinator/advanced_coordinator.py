@@ -107,13 +107,79 @@ class PoolReloadHandler(FileSystemEventHandler):
 
 # --- Decoder Pool Management ---
 class DecoderPool:
-    def __init__(self, pool_path=POOL_PATH):
+    def __init__(self, pool_path=POOL_PATH, redis_url=None):
         self.pool_path = pool_path
         self.lock = asyncio.Lock()
         self.nodes: List[Dict] = [] # Renamed from 'pool' for clarity
         self.ab_tests: List[Dict] = []
         self.client = httpx.AsyncClient(timeout=2.0)
+        
+        # Redis configuration
+        self.redis_url = redis_url or os.environ.get("REDIS_URL")
+        self.use_redis = False
+        
+        # Try to initialize Redis if URL is provided
+        if self.redis_url:
+            try:
+                # Import Redis manager
+                from utils.redis_manager import RedisManager
+                self.redis_manager = RedisManager.get_instance()
+                
+                # Test Redis connection
+                if self.redis_manager.get_client():
+                    self.use_redis = True
+                    logger.info(f"Redis connection established via RedisManager")
+                else:
+                    logger.warning("Failed to connect to Redis via RedisManager")
+            except ImportError:
+                logger.warning("Redis manager not available. Install with 'pip install redis'")
+            except Exception as e:
+                logger.error(f"Failed to initialize Redis manager: {e}")
+        
+        # Initial load of configuration
         self.reload_sync()
+
+    def reload_sync(self):
+        """Synchronously reload configuration (used during initialization)"""
+        try:
+            if self.use_redis:
+                # Try Redis first using the manager
+                from utils.redis_manager import RedisManager
+                redis_manager = RedisManager.get_instance()
+                
+                nodes_data = redis_manager.get("decoder_pool:nodes")
+                ab_tests_data = redis_manager.get("decoder_pool:ab_tests")
+                
+                if nodes_data:
+                    self.nodes = nodes_data
+                    logger.info(f"Loaded {len(self.nodes)} nodes from Redis")
+                else:
+                    # If Redis has no data, try loading from disk
+                    logger.info("No nodes found in Redis, trying disk")
+                    self._load_from_disk()
+                    # If we loaded from disk, save to Redis for next time
+                    if self.nodes:
+                        sync_redis.set("decoder_pool:nodes", json.dumps(self.nodes))
+                        logger.info(f"Saved {len(self.nodes)} nodes to Redis")
+                
+                if ab_tests_json:
+                    self.ab_tests = json.loads(ab_tests_json)
+                    logger.info(f"Loaded {len(self.ab_tests)} A/B tests from Redis")
+                else:
+                    # If Redis has no A/B test data, use what we loaded from disk
+                    if not self.ab_tests:  # Only if we haven't loaded them yet
+                        self._load_ab_tests_from_disk()
+                    # Save to Redis for next time
+                    if self.ab_tests:
+                        sync_redis.set("decoder_pool:ab_tests", json.dumps(self.ab_tests))
+                        logger.info(f"Saved {len(self.ab_tests)} A/B tests to Redis")
+            else:
+                # No Redis, load from disk
+                self._load_from_disk()
+        except Exception as e:
+            logger.error(f"Error during sync reload: {e}")
+            # Fallback to disk
+            self._load_from_disk()
 
     def _load_from_disk(self):
         """Synchronously loads the pool nodes and AB tests configuration from the JSON file."""
@@ -124,17 +190,76 @@ class DecoderPool:
                     # Load both nodes and A/B tests
                     self.nodes = config_data.get("nodes", [])
                     self.ab_tests = config_data.get("ab_tests", [])
+                logger.info(f"Loaded {len(self.nodes)} nodes and {len(self.ab_tests)} A/B tests from disk")
             else:
                 self.nodes, self.ab_tests = [], []
+                logger.warning(f"Pool configuration file {self.pool_path} not found, using empty configuration")
         except (json.JSONDecodeError, IOError) as e:
             logger.error(f"Failed to load or parse decoder pool file {self.pool_path}: {e}")
             self.nodes, self.ab_tests = [], []
 
+    def _load_ab_tests_from_disk(self):
+        """Load only A/B tests from disk (used when Redis has nodes but no A/B tests)"""
+        try:
+            if os.path.exists(self.pool_path):
+                with open(self.pool_path, "r") as f:
+                    config_data = json.load(f)
+                    self.ab_tests = config_data.get("ab_tests", [])
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to load A/B tests from disk: {e}")
+            self.ab_tests = []
+
+    async def _load_from_redis(self):
+        """Asynchronously load configuration from Redis"""
+        if not self.use_redis or not self.redis:
+            logger.warning("Redis not configured, falling back to disk")
+            self._load_from_disk()
+            return
+            
+        try:
+            # Get nodes and A/B tests from Redis
+            nodes_json = await self.redis.get("decoder_pool:nodes")
+            ab_tests_json = await self.redis.get("decoder_pool:ab_tests")
+            
+            if nodes_json:
+                self.nodes = json.loads(nodes_json)
+                logger.info(f"Loaded {len(self.nodes)} nodes from Redis")
+            else:
+                # If Redis has no data, try loading from disk
+                logger.info("No nodes found in Redis, trying disk")
+                self._load_from_disk()
+                # If we loaded from disk, save to Redis for next time
+                if self.nodes:
+                    await self.redis.set("decoder_pool:nodes", json.dumps(self.nodes))
+                    logger.info(f"Saved {len(self.nodes)} nodes to Redis")
+            
+            if ab_tests_json:
+                self.ab_tests = json.loads(ab_tests_json)
+                logger.info(f"Loaded {len(self.ab_tests)} A/B tests from Redis")
+            else:
+                # If Redis has no A/B test data, use what we loaded from disk
+                if not self.ab_tests:  # Only if we haven't loaded them yet
+                    self._load_ab_tests_from_disk()
+                # Save to Redis for next time
+                if self.ab_tests:
+                    await self.redis.set("decoder_pool:ab_tests", json.dumps(self.ab_tests))
+                    logger.info(f"Saved {len(self.ab_tests)} A/B tests to Redis")
+                    
+        except Exception as e:
+            logger.error(f"Failed to load from Redis: {e}")
+            # Fallback to disk
+            self._load_from_disk()
+
     async def reload(self):
         """Asynchronously reloads the configuration and checks the health of the new pool."""
         async with self.lock:
-            logger.info("Reloading decoder pool configuration from disk...")
-            self._load_from_disk()
+            if self.use_redis:
+                logger.info("Reloading decoder pool configuration from Redis...")
+                await self._load_from_redis()
+            else:
+                logger.info("Reloading decoder pool configuration from disk...")
+                self._load_from_disk()
+                
         # After reloading, immediately check the health of the new/updated pool
         await self.check_health()
         logger.info("Decoder pool reloaded and health checked.")
@@ -196,8 +321,27 @@ class DecoderPool:
             await self._save()
 
     async def _save(self):
-        with open(self.pool_path, "w") as f:
-            json.dump({
+        """Save configuration to Redis and/or disk"""
+        # First try to save to Redis if configured
+        redis_success = False
+        if self.use_redis and self.redis:
+            try:
+                # Save nodes and A/B tests to Redis
+                await self.redis.set("decoder_pool:nodes", json.dumps(self.nodes))
+                await self.redis.set("decoder_pool:ab_tests", json.dumps(self.ab_tests))
+                redis_success = True
+                logger.info(f"Saved {len(self.nodes)} nodes and {len(self.ab_tests)} A/B tests to Redis")
+            except Exception as e:
+                logger.error(f"Failed to save to Redis: {e}")
+                # Will fall back to disk
+        
+        # Always save to disk (as backup or primary if Redis not configured)
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+            
+            with open(self.pool_path, "w") as f:
+                json.dump({
                 "nodes": self.nodes,
                 "ab_tests": self.ab_tests
             }, f, indent=2)

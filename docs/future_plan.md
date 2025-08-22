@@ -46,4 +46,4 @@ This document outlines the future roadmap for the Universal Translation System, 
 
 ---
 
-For current capabilities and architecture, see [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) and [docs/environment-variables.md](../docs/environment-variables.md).
+For current capabilities and architecture, see [ARCHITECTURE.md](ARCHITECTURE.md) and [environment-variables.md](environment-variables.md).

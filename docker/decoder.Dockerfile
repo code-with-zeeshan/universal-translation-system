@@ -5,6 +5,7 @@ FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu20.04
 RUN apt-get update && apt-get install -y \
     python3.9 \
     python3-pip \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python requirements

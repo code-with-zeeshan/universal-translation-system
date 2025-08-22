@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  labels:
+    app: coordinator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coordinator
+  template:
+    metadata:
+      labels:
+        app: coordinator
+    spec:
+      containers:
+      - name: coordinator
+        image: universal-coordinator:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 5100
+          name: http
+        env:
+        - name: COORDINATOR_HOST
+          value: "0.0.0.0"
+        - name: COORDINATOR_PORT
+          value: "5100"
+        - name: COORDINATOR_WORKERS
+          value: "1"
+        - name: COORDINATOR_TITLE
+          value: "Universal Translation Coordinator"
+        - name: COORDINATOR_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: translation-system-secrets
+              key: coordinator-jwt-secret
+        - name: COORDINATOR_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: translation-system-secrets
+              key: coordinator-secret
+        - name: COORDINATOR_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: translation-system-secrets
+              key: coordinator-token
+        - name: INTERNAL_SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: translation-system-secrets
+              key: internal-service-token
+        - name: DECODER_POOL
+          value: "decoder-service:8001"
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config
+        - name: logs-volume
+          mountPath: /app/logs
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+      volumes:
+      - name: config-volume
+        configMap:
+          name: coordinator-config
+      - name: logs-volume
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator-service
+spec:
+  selector:
+    app: coordinator
+  ports:
+  - port: 5100
+    targetPort: 5100
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coordinator-config
+data:
+  decoder_pool.json: |
+    {
+      "decoders": [
+        {
+          "id": "decoder-1",
+          "url": "http://decoder-service:8001",
+          "health_url": "http://decoder-service:8001/health",
+          "status": "active"
+        }
+      ]
+    }

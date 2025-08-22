@@ -1,0 +1,103 @@
+# monitoring/prometheus/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "rules/recording_rules.yml"
+  - "rules/alerting_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Encoder service
+  - job_name: 'encoder'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['encoder:8000']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+      - source_labels: [__address__]
+        target_label: component
+        replacement: 'encoder'
+
+  # Decoder service
+  - job_name: 'decoder'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['decoder:8001']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+      - source_labels: [__address__]
+        target_label: component
+        replacement: 'decoder'
+
+  # Coordinator service
+  - job_name: 'coordinator'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['coordinator:8002']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+      - source_labels: [__address__]
+        target_label: component
+        replacement: 'coordinator'
+
+  # System metrics
+  - job_name: 'system_metrics'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['monitoring:9000']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+      - source_labels: [__address__]
+        target_label: component
+        replacement: 'system'
+
+  # Vocabulary metrics
+  - job_name: 'vocabulary_metrics'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['vocabulary:9001']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+      - source_labels: [__address__]
+        target_label: component
+        replacement: 'vocabulary'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['localhost:9090']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+)(?::\d+)?'
+        replacement: '${1}'
+      - source_labels: [__address__]
+        target_label: component
+        replacement: 'prometheus'

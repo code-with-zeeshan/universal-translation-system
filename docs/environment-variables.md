@@ -109,6 +109,33 @@ There are several ways to set environment variables:
 | `GRAFANA_ADMIN_PASSWORD` | Admin password for Grafana | `admin` |
 | `DECODER_POOL` | Decoder pool configuration | `decoder:8001` |
 
+## Monitoring Configuration
+
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `METRICS_PATH` | Path for metrics endpoint | `/metrics` |
+| `MONITORING_LOG_LEVEL` | Log level for monitoring | `INFO` |
+| `METRICS_COLLECTION_INTERVAL` | Interval for metrics collection (seconds) | `15` |
+| `ENABLE_SYSTEM_METRICS` | Enable system metrics collection | `true` |
+| `ENABLE_GPU_METRICS` | Enable GPU metrics collection | `true` |
+| `ENABLE_VOCABULARY_METRICS` | Enable vocabulary metrics collection | `true` |
+
+## Training Configuration
+
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `TRAINING_BATCH_SIZE` | Batch size for training | `32` |
+| `TRAINING_EPOCHS` | Number of training epochs | `20` |
+| `TRAINING_LEARNING_RATE` | Learning rate for training | `5e-5` |
+| `TRAINING_WEIGHT_DECAY` | Weight decay for training | `0.01` |
+| `TRAINING_WARMUP_STEPS` | Number of warmup steps | `1000` |
+| `TRAINING_GRADIENT_ACCUMULATION_STEPS` | Gradient accumulation steps | `1` |
+| `TRAINING_MIXED_PRECISION` | Enable mixed precision training | `true` |
+| `TRAINING_GRADIENT_CHECKPOINTING` | Enable gradient checkpointing | `false` |
+| `TRAINING_LOG_STEPS` | Log interval in steps | `100` |
+| `TRAINING_SAVE_STEPS` | Save interval in steps | `1000` |
+| `TRAINING_EVAL_STEPS` | Evaluation interval in steps | `1000` |
+
 ## Security Recommendations
 
 For production environments, we strongly recommend:
@@ -136,4 +163,4 @@ If you encounter issues with environment variables:
 3. Ensure Docker containers have the correct environment variables passed to them
 4. Look for typos in variable names (they are case-sensitive)
 
-For more help, see the [Troubleshooting Guide](troubleshooting.md).
+For more help, see the [Troubleshooting Guide](TROUBLESHOOT.md).

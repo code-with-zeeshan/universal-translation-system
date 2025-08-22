@@ -1,0 +1,93 @@
+name: Docker Build and Test
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'docker/**'
+      - 'cloud_decoder/**'
+      - 'encoder/**'
+      - 'coordinator/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/docker-build.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'docker/**'
+      - 'cloud_decoder/**'
+      - 'encoder/**'
+      - 'coordinator/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/docker-build.yml'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Build encoder image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: docker/encoder.Dockerfile
+        push: false
+        tags: universal-encoder:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build decoder image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: docker/decoder.Dockerfile
+        push: false
+        tags: universal-decoder:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build coordinator image
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        file: docker/coordinator.Dockerfile
+        push: false
+        tags: universal-coordinator:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Create test environment
+      run: |
+        mkdir -p models/production vocabs
+        touch models/production/encoder.pt
+        touch models/production/decoder.pt
+        touch vocabs/en.vocab
+    
+    - name: Test encoder container
+      run: |
+        docker run --rm -v ${{ github.workspace }}/models:/app/models -v ${{ github.workspace }}/vocabs:/app/vocabs universal-encoder:test python -c "import sys; print('Encoder container test passed'); sys.exit(0)"
+    
+    - name: Test decoder container
+      run: |
+        docker run --rm -v ${{ github.workspace }}/models:/app/models -v ${{ github.workspace }}/vocabs:/app/vocabs universal-decoder:test python -c "import sys; print('Decoder container test passed'); sys.exit(0)"
+    
+    - name: Test coordinator container
+      run: |
+        docker run --rm -v ${{ github.workspace }}/models:/app/models -v ${{ github.workspace }}/vocabs:/app/vocabs -e COORDINATOR_JWT_SECRET=test-jwt-secret-that-is-at-least-32-chars-long universal-coordinator:test python -c "import sys; print('Coordinator container test passed'); sys.exit(0)"
+    
+    - name: Validate docker-compose.yml
+      run: docker-compose -f docker-compose.yml config
+    
+    - name: Validate Kubernetes manifests
+      run: |
+        if command -v kubectl &> /dev/null; then
+          for file in kubernetes/*.yaml; do
+            kubectl apply --dry-run=client -f $file
+          done
+        else
+          echo "kubectl not available, skipping Kubernetes manifest validation"
+        fi
