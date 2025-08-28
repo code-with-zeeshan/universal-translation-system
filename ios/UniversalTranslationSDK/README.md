@@ -12,21 +12,51 @@ A native iOS SDK for the Universal Translation System, supporting config-driven 
 
 ## Quick Start
 
-1. Add the SDK to your project:
-   - Add the native encoder library to your Xcode project
-   - Add the SDK via CocoaPods or Swift Package Manager
+1) Install via CocoaPods (dev)
+```ruby
+# Podfile (app)
+platform :ios, '13.0'
+use_frameworks!
 
-2. Initialize and use:
+target 'YourApp' do
+  pod 'UniversalTranslationSDK', :path => '../../ios/UniversalTranslationSDK'
+end
+```
+```bash
+cd ios && pod install && cd ..
+```
+
+Or, install via Swift Package Manager by adding the repo URL in Xcode > Package Dependencies.
+
+2) Initialize and use (Coordinator binary endpoint)
 ```swift
+import UniversalTranslationSDK
+
 let encoder = TranslationEncoder()
 try encoder.loadVocabulary(source: "en", target: "es")
 let encoded = try encoder.encode(text: "Hello world", source: "en", target: "es")
-// Send encoded data to the coordinator's /decode endpoint
 ```
 
-3. Monitor and manage:
-- Use the coordinator dashboard to view node health, load, and analytics
-- Prometheus metrics are available for all translation requests
+Binary POST to Coordinator
+```swift
+import Foundation
+
+let url = URL(string: "http://localhost:8002/api/decode")!
+var req = URLRequest(url: url)
+req.httpMethod = "POST"
+req.addValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+req.addValue("en", forHTTPHeaderField: "X-Source-Language")
+req.addValue("es", forHTTPHeaderField: "X-Target-Language")
+req.httpBody = encoded
+
+let task = URLSession.shared.dataTask(with: req) { data, resp, err in
+  // handle response
+}
+task.resume()
+```
+
+3) Monitoring
+- Use coordinator `/api/status` and Prometheus metrics.
 
 ## Adding New Languages
 - Update `data/config.yaml` and run the pipeline to add new languages
@@ -34,6 +64,7 @@ let encoded = try encoder.encode(text: "Hello world", source: "en", target: "es"
 
 ## Documentation
 - See [docs/SDK_INTEGRATION.md](../../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
+- Publishing steps: [docs/SDK_PUBLISHING.md](../../docs/SDK_PUBLISHING.md)
 
 ## Monitoring
 - All requests and node health are visible in the coordinator dashboard

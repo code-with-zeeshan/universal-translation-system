@@ -24,6 +24,26 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
+# Runtime dependencies inferred from code (FastAPI app, Torch model, compression, etc.)
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.4.0",
+    "PyJWT>=2.8.0",
+    "numpy>=1.24.0,<2.0.0",
+    "msgpack>=1.0.5",
+    "lz4>=4.3.2",
+    "aiofiles>=23.2.0",
+    "httpx>=0.25.0",
+    "prometheus-client>=0.18.0",
+    "python-multipart>=0.0.6",
+    "psutil>=5.9.5",
+    "tenacity>=8.2.3",
+    "orjson>=3.9.10",
+    "uvloop>=0.19.0; platform_system != 'Windows'",
+    "watchdog>=2.3.0",
+    "torch>=2.0.0"
+]
 
 [project.urls]
 Homepage = "https://github.com/yourusername/universal-decoder-node"

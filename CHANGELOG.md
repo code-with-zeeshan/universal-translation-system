@@ -15,6 +15,11 @@ All notable changes to the Universal Translation System will be documented in th
 - Security best practices documentation
 - Kubernetes health probes and resource requests
 - Improved Docker health checks using wget instead of curl
+- SDK_PUBLISHING.md guide (Android Maven, iOS Podspec/SPM, RN linking)
+- Web example Express server with proper WASM headers (COOP/COEP/CORS)
+- README updates for Android/iOS/Flutter/Web SDKs with coordinator usage
+- GitHub Actions workflows: sdk-publish.yml (Android/iOS) and web-npm-publish.yml (web)
+- Coordinator periodic Redis-to-disk mirroring via `COORDINATOR_MIRROR_INTERVAL` (min 5s, logs effective value)
 
 ### Changed
 - Updated README.md with current system capabilities and Docker deployment instructions
@@ -26,6 +31,7 @@ All notable changes to the Universal Translation System will be documented in th
 - Improved .gitignore with more comprehensive patterns for various development environments
 - Moved Adding_New_languages.md to docs folder with updated instructions
 - Updated Quick Start guide in README.md with more comprehensive options
+- Coordinator now uses `RedisManager` for sync access in async paths and mirrors Redis to disk in reload/save flows
 
 ### Removed
 - Outdated GOAL.md file (replaced by docs/VISION.md)

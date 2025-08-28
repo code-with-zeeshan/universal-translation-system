@@ -682,25 +682,51 @@ vocabulary_manager = VocabularyManager()
 @app.on_event("startup")
 async def startup():
     global model, adapter_manager
+
+    # Prefetch artifacts from Hugging Face (models/vocabs/adapters) if configured
+    try:
+        from utils.artifact_store import ArtifactStore
+        store = ArtifactStore()  # requires HF_HUB_REPO_ID (and HF_TOKEN if needed)
+
+        # Ensure base decoder model exists locally
+        store.ensure_model("production/decoder.pt")
+
+        # Optional prefetch via env (comma-separated)
+        packs = os.environ.get("PREFETCH_VOCAB_GROUPS", "").strip()
+        if packs:
+            for p in [x.strip() for x in packs.split(",") if x.strip()]:
+                try:
+                    store.ensure_vocab_pack(p)
+                except Exception as e:
+                    logger.warning(f"Prefetch vocab pack '{p}' failed: {e}")
+        adapters = os.environ.get("PREFETCH_ADAPTERS", "").strip()
+        if adapters:
+            for a in [x.strip() for x in adapters.split(",") if x.strip()]:
+                try:
+                    store.ensure_adapter(a)
+                except Exception as e:
+                    logger.warning(f"Prefetch adapter '{a}' failed: {e}")
+    except Exception as e:
+        logger.warning(f"Artifact prefetch skipped or failed: {e}")
     
     # Load model
     model = OptimizedUniversalDecoder().to(device)
     # Load the base model (without any specific adapters loaded initially)
     # This assumes your production decoder is saved here
-    base_model_path = "models/production/decoder.pt" 
+    base_model_path = "models/production/decoder.pt"
     model = AdapterUniversalEncoder(base_model_path=base_model_path).to(device)
     model.eval()
 
     # Initialize the adapter manager with the model instance
     adapter_manager = AdapterManager(model=model, repo_id=HF_HUB_REPO_ID, max_cache_size=5)
-    
+
     # Compile with torch.compile for faster inference
     if torch.__version__ >= "2.0.0":
         model = torch.compile(model, mode="reduce-overhead")
-    
+
     # Start batch processor
     asyncio.create_task(batcher.process_batches())
-    
+
     logger.info(f"✅ Decoder with Dynamic Adapter Loading is ready on {device}")
     if torch.cuda.is_available():
         logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
@@ -744,6 +770,13 @@ async def get_loaded_adapters_endpoint():
 async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
     """Process batch on GPU with maximum efficiency and dynamic adapter loading"""
 
+    # Ensure artifacts exist for each target language/domain before heavy work
+    try:
+        from utils.artifact_store import ArtifactStore
+        store = ArtifactStore()
+    except Exception:
+        store = None
+
     # Group requests by target language to minimize adapter swapping
     requests_by_lang = defaultdict(list)
     for i, item in enumerate(batch):
@@ -752,6 +785,12 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
         domain = item.get('domain')
         adapter_name = f"{target_lang}_{domain}" if domain else target_lang
         requests_by_lang[adapter_name].append({'original_index': i, 'data': item})
+        # Best-effort ensure packs/adapters
+        if store:
+            try:
+                store.ensure_for_language_pair('en', target_lang, adapter=adapter_name)
+            except Exception as e:
+                logger.debug(f"ensure_for_language_pair skipped: {e}")
 
     all_results = [None] * len(batch)
 

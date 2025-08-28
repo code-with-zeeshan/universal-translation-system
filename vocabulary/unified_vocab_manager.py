@@ -1,21 +1,31 @@
 # vocabulary/unified_vocab_manager.py
+"""
+Unified vocabulary manager for the Universal Translation System.
+This module provides a unified interface for vocabulary management.
+"""
 import mmap
 import msgpack
 import zstandard as zstd
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Any, Union
+from typing import Dict, Optional, List, Tuple, Any, Union, Set
 import threading
 import asyncio
 import aiofiles
 import logging
 from enum import Enum
 from dataclasses import dataclass
+import os
 import json
 
 from utils.exceptions import VocabularyError
 from utils.security import validate_path_component
 from utils.base_classes import BaseVocabularyManager, TokenizerMixin
+from utils.thread_safety import document_thread_safety, THREAD_SAFETY_INTERNAL, thread_safe
+from utils.constants import (
+    VOCAB_SIZE, VOCAB_MIN_FREQUENCY, VOCAB_SPECIAL_TOKENS,
+    VOCAB_PAD_ID, VOCAB_UNK_ID, VOCAB_BOS_ID, VOCAB_EOS_ID
+)
 from config.schemas import RootConfig
 
 class VocabularyMode(Enum):
@@ -39,6 +49,19 @@ class VocabularyPack:
     bloom_filter: Optional[Any] = None
     prefix_tree: Optional[Dict] = None
     compressed_data: Optional[bytes] = None
+
+    def __post_init__(self):
+        """Initialize derived data structures"""
+        self.id_to_token = {v: k for k, v in self.tokens.items()}
+        if self.subwords:
+            self.id_to_subword = {v: k for k, v in self.subwords.items()}
+        
+    def contains_token(self, token: str) -> bool:
+        """Check if token exists in vocabulary"""
+        if self.bloom_filter:
+            if token not in self.bloom_filter:
+                return False
+        return token in self.tokens or token in self.subwords
     
     @property
     def size(self) -> int:
@@ -123,10 +146,15 @@ class VocabularyPack:
                 return False
         return token in self.tokens or token in self.subwords
 
+@document_thread_safety(UnifiedVocabularyManager, THREAD_SAFETY_INTERNAL,
+                      "This class is thread-safe with internal synchronization.")
 class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
     """
     Unified vocabulary manager combining features from both implementations.
     Supports multiple operating modes for different deployment scenarios.
+
+    Thread Safety:
+        All public methods are thread-safe with internal synchronization.
     """
     
     def __init__(self, 

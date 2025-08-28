@@ -12,21 +12,54 @@ A native Android SDK for the Universal Translation System, supporting config-dri
 
 ## Quick Start
 
-1. Add the SDK to your project:
-   - Include the native encoder library (`libuniversal_encoder.so`) in your app's `jniLibs/` directory
-   - Add the SDK as a dependency in your `build.gradle`
+1) Add the SDK to your project
+- Option A: Local Maven (development)
+```bash
+# From repo root
+./gradlew :android:UniversalTranslationSDK:publishToMavenLocal
+```
+```gradle
+// app/build.gradle
+repositories { mavenLocal(); google(); mavenCentral() }
+dependencies { implementation 'com.example:universal-translation-sdk:1.0.0' }
+```
+- Option B: Direct module include (settings.gradle)
+```gradle
+include(':UniversalTranslationSDK')
+project(':UniversalTranslationSDK').projectDir = new File(rootDir, '../android/UniversalTranslationSDK')
+```
+- Option C: AAR
+Place the AAR in `app/libs` and add `implementation files('libs/universal-translation-sdk.aar')`.
 
-2. Initialize and use:
-```java
-val encoder = TranslationEncoder(context);
-encoder.loadVocabulary("en", "es");
-val encoded = encoder.encode("Hello world", "en", "es");
-// Send encoded data to the coordinator's /decode endpoint
+2) Configure Gradle
+```gradle
+// app/build.gradle
+android {
+  defaultConfig { minSdkVersion 23 }
+}
+dependencies { implementation "com.squareup.okhttp3:okhttp:4.12.0" }
 ```
 
-3. Monitor and manage:
-- Use the coordinator dashboard to view node health, load, and analytics
-- Prometheus metrics are available for all translation requests
+3) Initialize and use
+```kotlin
+val encoder = TranslationEncoder(context)
+encoder.loadVocabulary("en", "es")
+val encoded = encoder.encode("Hello world", "en", "es")
+```
+
+4) Binary POST to Coordinator
+```kotlin
+val req = okhttp3.Request.Builder()
+  .url("http://localhost:8002/api/decode")
+  .addHeader("Content-Type", "application/octet-stream")
+  .addHeader("X-Source-Language", "en")
+  .addHeader("X-Target-Language", "es")
+  .post(okhttp3.RequestBody.create(null, encoded))
+  .build()
+```
+
+5) Monitoring
+- Use coordinator `/api/status` and Prometheus metrics.
 
 ## Adding New Languages
 - Update `data/config.yaml` and run the pipeline to add new languages
@@ -34,6 +67,7 @@ val encoded = encoder.encode("Hello world", "en", "es");
 
 ## Documentation
 - See [docs/SDK_INTEGRATION.md](../../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
+- Publishing steps: [docs/SDK_PUBLISHING.md](../../docs/SDK_PUBLISHING.md)
 
 ## Monitoring
 - All requests and node health are visible in the coordinator dashboard

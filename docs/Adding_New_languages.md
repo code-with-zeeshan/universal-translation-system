@@ -61,6 +61,11 @@ pytest tests/test_translation.py -k "<new_language_code>"
 ## 9. Update Documentation
 - Add the new language to all relevant docs and user guides
 
+## 10. Coordinator and Redis Notes
+- If you use Redis (set `REDIS_URL`), the coordinator keeps a shared decoder pool.
+- The pool is mirrored to `configs/decoder_pool.json` periodically.
+- Control the mirroring interval with `COORDINATOR_MIRROR_INTERVAL` (default 60s, minimum enforced at 5s).
+
 ---
 
-For more details, see [SDK_INTEGRATION.md](SDK_INTEGRATION.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
+For more details, see [SDK_INTEGRATION.md](SDK_INTEGRATION.md), [REDIS_INTEGRATION.md](REDIS_INTEGRATION.md), and [ARCHITECTURE.md](ARCHITECTURE.md).

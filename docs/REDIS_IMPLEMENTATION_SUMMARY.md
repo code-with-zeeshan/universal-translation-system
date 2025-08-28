@@ -6,86 +6,70 @@ This document summarizes the changes made to implement Redis integration in the 
 
 The `DecoderPool` class in `coordinator/advanced_coordinator.py` has been updated to:
 
-- Accept a Redis URL parameter
-- Connect to Redis if available
-- Load and save decoder pool configuration to Redis
+- Accept a Redis URL parameter or use `REDIS_URL` from environment
+- Connect to Redis via `utils.redis_manager.RedisManager` if available
+- Load and save decoder pool configuration to Redis (sync API via RedisManager)
 - Fall back to file-based storage if Redis is unavailable
 - Provide better logging for troubleshooting
+- Periodically mirror Redis data to disk for robust fallback
 
-Key methods added:
-- `_load_from_redis()`: Asynchronously load configuration from Redis
-- `_save_to_redis()`: Save configuration to Redis
-- Fallback mechanisms in `reload()` and `_save()`
+Key methods added/updated:
+- `reload_sync()`: Sync reload that reads from RedisManager if available and mirrors to disk
+- `_load_from_redis()`: Asynchronously load configuration using RedisManager; mirrors to disk
+- `_save()`: Save to Redis (via RedisManager) and always mirror to disk
+- `mirror_redis_to_disk()`: Mirror latest Redis state to `configs/decoder_pool.json` without mutating memory
 
-## 2. Register Decoder Node Tool Updates
+## 2. Background Tasks
 
-The `register_decoder_node.py` tool has been enhanced to:
+- The coordinator's background task now:
+  - Handles requested reloads via watchdog
+  - Performs health checks periodically
+  - Mirrors Redis state to disk at a configurable interval
 
-- Accept Redis URL and coordinator URL parameters
-- Try multiple registration methods in order of preference:
-  1. Direct registration with coordinator API
-  2. Registration via Redis
-  3. Fallback to file-based registration
-- Add support for node tags
-- Provide better error handling and logging
-- Return appropriate exit codes
+Environment variable:
+- `COORDINATOR_MIRROR_INTERVAL` (seconds, default 60, minimum 5) controls periodic mirroring
+- The effective interval is validated and logged at startup
 
-New functions added:
-- `register_with_redis()`: Register a node using Redis
-- `register_with_coordinator()`: Register a node directly with the coordinator API
-- `register_with_file()`: Register a node using the local file system
+## 3. Register Decoder Node Tool Updates
 
-## 3. Rate Limiter Updates
+The `tools/register_decoder_node.py` tool continues to support:
 
-The `RateLimiter` class in `utils/rate_limiter.py` has been updated to:
+- Coordinator API registration (preferred)
+- Redis-backed registration when API is unavailable
+- File-based fallback registration
 
-- Support Redis for distributed rate limiting
-- Maintain backward compatibility with in-memory storage
-- Provide automatic fallback if Redis is unavailable
-- Use Redis sorted sets for efficient time-based operations
+Additional logging ensures clarity about which path was taken.
 
-New methods added:
-- `_is_allowed_redis()`: Redis-based rate limiting implementation
-- `_get_client_stats_redis()`: Redis-based client statistics
+## 4. Rate Limiter Updates
 
-## 4. Docker Compose Updates
+The `RateLimiter` class in `utils/rate_limiter.py` supports:
 
-The `docker-compose.yml` file has been updated to:
+- Redis-backed distributed rate limiting (preferred)
+- In-memory fallback with consistent interfaces
 
-- Add a Redis service
-- Configure the coordinator to use Redis
-- Add a Redis data volume for persistence
-- Add health checks for Redis
+## 5. Docker Compose Updates
 
-## 5. Requirements Updates
+The `docker-compose.yml` file includes a Redis service and required health checks.
 
-The `requirements.txt` file has been updated to:
+## 6. Requirements Updates
 
-- Uncomment the Redis dependency
-- Ensure it's installed by default
+The `requirements.txt` ensures the Redis dependency is available.
 
-## 6. Documentation
-
-New documentation has been added:
+## 7. Documentation
 
 - `REDIS_INTEGRATION.md`: Comprehensive guide to the Redis integration
-- Updates to the main README to mention Redis integration
-- This summary document
+- `IMPROVEMENTS.md`: Notes on coordinator + Redis mirroring improvements
+- `ONBOARDING.md` and `Adding_New_languages.md`: Coordinator-Redis notes
 
-## 7. Testing Considerations
+## 8. Testing Considerations
 
-When testing this implementation, consider:
+- Test with and without Redis available
+- Validate mirroring by comparing Redis keys and `configs/decoder_pool.json`
+- Test multiple coordinator instances sharing the same Redis
 
-- Testing with Redis available
-- Testing with Redis unavailable (fallback mechanisms)
-- Testing with multiple coordinator instances
-- Testing with decoders in different regions
-
-## 8. Future Improvements
-
-Potential future improvements:
+## 9. Future Improvements
 
 - Add Redis Sentinel support for high availability
 - Implement Redis Cluster for horizontal scaling
-- Add more caching mechanisms using Redis
-- Implement Redis pub/sub for real-time decoder pool updates
+- Add Redis pub/sub for real-time decoder pool updates
+- Add integration tests to validate mirroring cadence and correctness

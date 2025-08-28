@@ -2,196 +2,160 @@
 
 ## Overview
 
-The Universal Translation System uses a split architecture to minimize client size while maximizing translation quality and performance.
+The Universal Translation System uses an edge–cloud split to keep client apps small while providing high‑quality, scalable translations. Text is encoded on device into compact embeddings, then decoded in the cloud by a pool of GPU‑powered decoder nodes, orchestrated by an advanced coordinator with health checks, load balancing, metrics, and security.
 
-## Interactive Architecture Diagram
-
-```mermaid
-graph TD
-    User[User/App] --> |Text| Encoder[Universal Encoder]
-    Encoder --> |Embeddings| Coordinator[Advanced Coordinator]
-    Coordinator --> |Load Balancing| DecoderPool[Decoder Pool]
-    DecoderPool --> |Translation| Coordinator
-    Coordinator --> |Result| User
-    
-    subgraph "Edge (Client)"
-        Encoder
-        VocabPacks[Vocabulary Packs]
-        Encoder --> VocabPacks
-    end
-    
-    subgraph "Cloud"
-        Coordinator
-        DecoderPool
-        Monitoring[Prometheus/Grafana]
-        Coordinator --> Monitoring
-        DecoderPool --> Monitoring
-    end
-    
-    subgraph "SDK Implementations"
-        Android[Android SDK]
-        iOS[iOS SDK]
-        Flutter[Flutter SDK]
-        ReactNative[React Native SDK]
-        Web[Web SDK]
-        
-        Android & iOS & Flutter & ReactNative & Web --> Encoder
-    end
-```
-
-## Component Relationships
+## Architecture Diagram
 
 ```mermaid
 flowchart LR
-    subgraph Client
-        direction TB
-        App[Application] --> SDK[SDK Implementation]
-        SDK --> Encoder[Universal Encoder]
-        Encoder --> VocabManager[Vocabulary Manager]
-        VocabManager --> VocabPacks[(Vocabulary Packs)]
+    %% Clients / SDKs
+    subgraph SDKs
+        A1[Android]
+        A2[iOS]
+        A3[Flutter]
+        A4[React Native]
+        A5[Web (WASM)]
     end
-    
-    subgraph Server
-        direction TB
-        Coordinator[Advanced Coordinator] --> LoadBalancer[Load Balancer]
-        LoadBalancer --> Decoder1[Decoder Node 1]
-        LoadBalancer --> Decoder2[Decoder Node 2]
-        LoadBalancer --> Decoder3[Decoder Node 3]
-        Coordinator --> HealthMonitor[Health Monitor]
-        HealthMonitor --> Decoder1 & Decoder2 & Decoder3
-        Coordinator --> Metrics[Metrics Collector]
+
+    %% Edge: Universal Encoder + Vocab Packs
+    subgraph Edge (Client)
+        E1[Universal Encoder]
+        E2[Vocabulary Packs\n(2–4MB per language)]
+        E1 --- E2
     end
-    
-    Client -- Embeddings --> Server
-    Server -- Translation --> Client
+
+    %% Cloud: Coordinator and Decoder Pool
+    subgraph Cloud
+        C1[Advanced Coordinator\n- Least-loaded routing\n- Health checks\n- Auth (JWT)\n- Metrics]
+        C2[(Redis)\n(optional)]
+        C3[Decoder Pool\n(Litserve + PyTorch)]
+        M1[Monitoring: Prometheus/Grafana]
+        T1[Tracing: OpenTelemetry]
+
+        C1 --- C2
+        C1 -->|/health, /metrics| M1
+        C3 -->|/metrics| M1
+        C1 --> T1
+        C3 --> T1
+    end
+
+    %% Flow
+    A1 & A2 & A3 & A4 & A5 -->|Text| E1
+    E1 -->|LZ4 + MsgPack Embeddings| C1
+    C1 -->|Route to healthy node| C3
+    C3 -->|Translation| C1
+    C1 -->|Result| A1 & A2 & A3 & A4 & A5
 ```
 
 ## Components
 
-### 1. Universal Encoder (Edge/Client)
+### 1) Universal Encoder (Edge/Client)
 - **Platforms:** Android, iOS, Flutter, React Native, Web
 - **Implementation:**
-  - Android/iOS/Flutter: Native C++ core via FFI (libuniversal_encoder)
-  - React Native/Web: API-based encoding (optionally native in future)
-- **Vocabulary:** Dynamic loading (2-4MB per language pack)
-- **Output:** Compressed embeddings (2-3KB per translation)
+  - Android/iOS/Flutter: native C++ core via FFI (`encoder_core`)
+  - React Native: native modules with fallback to cloud
+  - Web: TypeScript SDK with optional WebAssembly edge encoding and cloud fallback
+- **Vocabulary:** Dynamic packs (2–4MB/language), groups (latin, cjk, etc.)
+- **Output:** Compressed embeddings (LZ4 + MsgPack) typically a few KB per request
 
-### 2. Vocabulary Packs
-- **Latin Pack:** ~3MB (covers 12 languages)
-- **CJK Pack:** ~4MB (Chinese, Japanese, Korean)
-- **Other Packs:** 1-2MB each
+### 2) Vocabulary Packs
+- **Latin:** ~3MB (covers many European languages)
+- **CJK:** ~4MB (Chinese, Japanese, Korean)
+- **Other groups:** 1–4MB each; dynamically downloaded on demand
 
-### 3. Universal Decoder (Cloud)
-- **Implementation:** PyTorch, served via Litserve (2x faster than FastAPI)
-- **Architecture:** 6-layer transformer with cross-attention
-- **Infrastructure:** Runs on GPU servers (T4, 3090, V100, A100)
-- **Deployment:** Docker, Kubernetes, supports horizontal/vertical scaling
+### 3) Decoder Nodes (Cloud)
+- **Implementation:** PyTorch models served via Litserve
+- **Architecture:** 6‑layer transformer with cross‑attention and adapter support
+- **Packaging:** `universal-decoder-node` (standalone node, CLI & library)
+- **Runtime:** GPU-accelerated (e.g., T4, V100, 3090, A100)
 
-### 4. Advanced Coordinator
-- **Role:** Manages communication between multiple edge encoders and a dynamic pool of cloud decoders
-- **Features:**
-  - Least-loaded load balancing (routes requests to the decoder with the lowest current load)
-  - Dynamic decoder pool: add/remove decoders at runtime via REST API or dashboard, no downtime
-  - Health checks: background thread checks each decoder’s `/health` endpoint
-  - Prometheus metrics: exposes coordinator and decoder pool metrics for monitoring
-  - Authentication: token-based for admin endpoints and dashboard actions
-  - Web UI: dashboard for monitoring, manual routing, and node management
-  - **Enhanced Dashboard:**
-    - Authentication UI for admin actions
-    - Real-time charts (load, uptime) using Chart.js
-    - Advanced analytics: uptime, request rates, error rates, per-decoder stats
-    - Manual routing for authenticated users
-- **How it works:**
-  - Encoders send requests to the coordinator’s `/decode` endpoint
-  - Coordinator selects the least-loaded healthy decoder and proxies the request
-  - Decoders can be added/removed at any time; the system automatically adjusts
-  - All activity and health is visible in the dashboard and via Prometheus
+### 4) Advanced Coordinator
+- **Role:** Gatekeeper between encoders and decoder pool
+- **Key features:**
+  - Least‑loaded routing across healthy decoders
+  - Health checks via `/health` and background probes
+  - Prometheus metrics exposure for pool and coordinator
+  - Authentication (JWT) for admin actions and dashboard
+  - Circuit breaker support and robust error handling
+  - Redis integration available for distributed coordination
+  - Web dashboard with real‑time charts (Chart.js)
+- **Flow:** Encoders call `/decode`; coordinator selects a healthy node and proxies; activity visible via dashboard and metrics
+
+### 5) Monitoring & Observability
+- **Metrics:** `prometheus-client` integrated; scrape config included
+- **Dashboards:** Grafana dashboards in `monitoring/grafana/dashboards`
+- **System metrics:** CPU/GPU/Memory via `GPUtil`, `psutil`
+- **Tracing (optional):** OpenTelemetry packages included
 
 ## Data Flow
 
-1. User inputs text
-2. App loads relevant vocabulary pack (if needed)
-3. Encoder converts text → embeddings (on device or via API)
-4. Embeddings compressed and sent to coordinator `/decode` endpoint
-5. Coordinator load-balances and proxies to a healthy decoder
-6. Decoder generates translation (Litserve endpoint)
-7. Translation sent back to app
+1. App loads required vocabulary pack(s) if not cached
+2. Encoder converts text → embeddings on device (or API fallback)
+3. Embeddings are compressed with LZ4 and serialized with MsgPack
+4. Coordinator `/decode` receives request and validates/authenticates if needed
+5. Coordinator routes to the least‑loaded healthy decoder
+6. Decoder generates translation and returns to coordinator
+7. Coordinator returns translation to the client
 
-## SDK Alignment Table
+## SDK Matrix (Edge/Cloud)
 
-| SDK           | Edge Encoding | Cloud Decoding | Native/FFI | API-based | Aligned? |
-|---------------|--------------|---------------|------------|-----------|----------|
-| Android/iOS   | Yes          | Yes           | Yes        | Yes       | Yes      |
-| Flutter       | Yes          | Yes           | Yes        | Yes       | Yes      |
-| React Native  | No           | Yes           | No         | Yes       | Yes      |
-| Web           | No           | Yes           | No         | Yes       | Yes      |
+| SDK            | Edge Encoding | Cloud Decoding | Native/FFI | Notes |
+|----------------|---------------|----------------|------------|-------|
+| Android        | Yes           | Yes            | Yes        | JNI bindings to C++ encoder core |
+| iOS            | Yes           | Yes            | Yes        | Swift + C++ interoperability |
+| Flutter        | Yes           | Yes            | Yes        | FFI to native encoder core |
+| React Native   | Optional      | Yes            | Yes        | Native modules with cloud fallback |
+| Web            | Optional      | Yes            | WASM       | WASM edge encoding with cloud fallback |
 
-## Key Design Decisions
+## Configuration & Tooling
 
-- **Split Architecture:** Small client, heavy compute on server
-- **Universal Encoder:** One encoder, dynamic vocab, zero-shot
-- **Litserve for Inference:** Fast, production-grade AI serving
-- **Advanced Coordinator:** Scalable, dynamic, observable, and secure routing for all decoders
-- **CI/CD:** Automated builds for encoder/decoder, artifact storage
-- **Config Auto-Detection:** Training scripts auto-select best config for detected GPU
+- Config helpers live in `scripts/`:
+  1. `scripts/config_wizard.py` – interactive creation, hardware‑aware suggestions
+  2. `scripts/validate_config.py` – schema, references, consistency, GPU checks
+  3. Auto‑detection logic used by training utilities for best defaults
+- Example usage:
+```bash
+python scripts/config_wizard.py
+python scripts/validate_config.py config/my_config.yaml --check-references --check-consistency --suggest-improvements
+```
 
-## Configuration Management
+## Security
+- JWT support for protected endpoints and admin actions
+- Optional HTTPS middleware and security headers
+- Rate limiting and circuit breaker patterns available
 
-The Universal Translation System uses a comprehensive configuration management system to ensure consistency, reliability, and ease of use.
+## Dependencies (Key)
+- Core: `torch`, `transformers`, `sentencepiece`, `tokenizers`
+- Serialization/Compression: `msgpack`, `lz4`, `zstandard`
+- Serving: `litserve`, `fastapi`, `uvicorn`
+- Monitoring: `prometheus-client`, `GPUtil`, `psutil`, OpenTelemetry
+- Integration: `requests`, `httpx`, `redis`
 
-### Configuration Structure
+## Repository Mapping
+- `encoder/` – Python encoder logic, adapters, training helpers
+- `encoder_core/` – C++ encoder core + headers and examples
+- `cloud_decoder/` – Litserve decoder service (Docker/K8s ready)
+- `universal-decoder-node/` – Standalone decoder node package (CLI + utils)
+- `coordinator/` – Advanced coordinator, load balancing, circuit breaker
+- `monitoring/` – Prometheus, Grafana dashboards, and metrics utilities
+- `vocabulary/` – Vocabulary creation and management utilities
+- `web/universal-translation-sdk/` – Web SDK with WASM build
+- `react-native/UniversalTranslationSDK/` – RN SDK with native bridges
+- `flutter/universal_translation_sdk/` – Flutter SDK with FFI
 
-Configurations are stored in YAML or JSON format and include the following sections:
+## Ports & Endpoints
 
-- **Version:** Configuration version for tracking changes
-- **Training:** Parameters for model training (batch size, learning rate, etc.)
-- **Model:** Model architecture parameters (dimensions, layers, etc.)
-- **Deployment:** Deployment-specific settings (Docker, Kubernetes, local)
-- **Monitoring:** Monitoring configuration (Prometheus, Grafana)
-- **Logging:** Logging configuration (level, rotation, etc.)
+- **Decoder Node**
+  - Port: `8000` (Kubernetes defaults)
+  - Endpoints: `/decode` (translation), `/health` (liveness/readiness), `/metrics` (Prometheus)
+- **Coordinator**
+  - Port: `5100` (Kubernetes defaults)
+  - Endpoints: `/decode` (entrypoint), `/health`, `/metrics`, admin endpoints as configured
+- **Notes**
+  - Probes and services are configured under `kubernetes/` manifests.
+  - If HTTPS is enforced at the app layer, ensure load balancers forward scheme headers to avoid redirect loops.
 
-### Configuration Tools
-
-The system provides several tools for managing configurations:
-
-1. **Configuration Wizard (`scripts/config_wizard.py`):**
-   - Interactive wizard for creating new configurations
-   - Detects hardware capabilities and suggests optimal settings
-   - Validates configurations as they are created
-
-2. **Configuration Validator (`scripts/validate_config.py`):**
-   - Validates configurations against schemas
-   - Checks for file and directory references
-   - Verifies internal consistency
-   - Suggests improvements
-   - Checks GPU compatibility
-
-3. **Auto-Detection:**
-   - Training scripts automatically detect hardware and select the best configuration
-   - Supports various GPU types (A100, V100, RTX series, etc.)
-   - Adjusts batch size, precision, and other parameters based on available resources
-
-### Configuration Best Practices
-
-1. **Use the Wizard for New Configurations:**
-   ```bash
-   python scripts/config_wizard.py
-   ```
-
-2. **Validate Configurations Before Use:**
-   ```bash
-   python scripts/validate_config.py config/my_config.yaml --check-references --check-consistency --suggest-improvements
-   ```
-
-3. **Use Environment-Specific Configurations:**
-   - `config/training_cpu.yaml` for CPU-only environments
-   - `config/training_v100.yaml` for V100 GPUs
-   - `config/training_rtx3090.yaml` for RTX 3090 GPUs
-
-4. **Override with Command-Line Arguments:**
-   ```bash
-   python main.py train --config config/training_v100.yaml --batch-size 32 --learning-rate 1e-4
-   ```
-
-## Directory Structure
-(see project root for up-to-date structure)
+## Notes
+- All services expose `/metrics` for Prometheus scraping
+- Embedding payloads are compact and designed for low‑bandwidth scenarios
+- WASM builds enable true edge encoding in modern browsers with fallback to cloud when unavailable

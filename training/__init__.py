@@ -6,19 +6,16 @@ Provides various training strategies including progressive training,
 distributed training, memory-efficient training, and quantization.
 """
 
-from .train_universal_system import ModernUniversalSystemTrainer
-from .progressive_training import ProgressiveTrainingStrategy
-from .distributed_train import UnifiedDistributedTrainer, TrainingConfig
+from .intelligent_trainer import IntelligentTrainer
+from .progressive_training import  ProgressiveTrainingOrchestrator
 from .memory_efficient_training import MemoryOptimizedTrainer, MemoryConfig
 from .quantization_pipeline import EncoderQuantizer, QualityPreservingQuantizer
 from .bootstrap_from_pretrained import PretrainedModelBootstrapper
 from .convert_models import ModelConverter
 
 __all__ = [
-    "ModernUniversalSystemTrainer",
-    "ProgressiveTrainingStrategy",
-    "UnifiedDistributedTrainer",
-    "TrainingConfig",
+    "IntelligentTrainer",
+    "ProgressiveTrainingOrchestrator",
     "MemoryOptimizedTrainer",
     "MemoryConfig",
     "EncoderQuantizer",

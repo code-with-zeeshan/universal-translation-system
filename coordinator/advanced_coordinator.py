@@ -1,19 +1,22 @@
 # coordinator/advanced_coordinator.py
-import asyncio
+import etcd3
 import json
+import uuid
+from typing import List, Dict, Any, Optional, Tuple
+import asyncio
+import time
 import logging
 import os
 import threading
-import time
+
 import random
 from datetime import datetime, timedelta
 from functools import wraps
-from typing import Dict, List, Optional
 
 import httpx
 import jwt
 from fastapi import (FastAPI, Request, Depends, HTTPException, Form, Header, Response, status, APIRouter)
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jinja2 import Template
 from opentelemetry import trace
@@ -25,10 +28,12 @@ from prometheus_client import Counter, Gauge, generate_latest
 from pydantic import BaseModel, Field
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+from starlette.middleware.sessions import SessionMiddleware
 
 # Import utility modules
 from utils.auth import APIKeyManager
 from utils.rate_limiter import RateLimiter
+from utils.exceptions import ConfigurationError, NetworkError
 from utils.security import validate_model_source, safe_load_model
 
 # --- Configuration and Constants ---
@@ -52,6 +57,25 @@ API_HOST = os.environ.get("API_HOST", "0.0.0.0")
 API_PORT = int(os.environ.get("API_PORT", "5100"))
 API_WORKERS = int(os.environ.get("API_WORKERS", "1"))
 API_TITLE = os.environ.get("API_TITLE", "Universal Translation Coordinator")
+
+# Add these constants
+ETCD_HOST = os.environ.get("ETCD_HOST", "localhost")
+ETCD_PORT = int(os.environ.get("ETCD_PORT", "2379"))
+USE_ETCD = os.environ.get("USE_ETCD", "false").lower() == "true"
+SERVICE_TTL = int(os.environ.get("SERVICE_TTL", "60"))  # seconds
+ETCD_PREFIX = os.environ.get("ETCD_PREFIX", "/universal-translation/decoders/")
+
+# Mirroring configuration
+try:
+    MIRROR_INTERVAL_SECONDS = int(os.environ.get("COORDINATOR_MIRROR_INTERVAL", "60"))
+except ValueError:
+    logger.warning("Invalid COORDINATOR_MIRROR_INTERVAL; defaulting to 60s")
+    MIRROR_INTERVAL_SECONDS = 60
+# Enforce a sensible minimum
+if MIRROR_INTERVAL_SECONDS < 5:
+    logger.warning(f"COORDINATOR_MIRROR_INTERVAL too low ({MIRROR_INTERVAL_SECONDS}s); clamping to 5s")
+    MIRROR_INTERVAL_SECONDS = 5
+logger.info(f"Coordinator mirror interval: {MIRROR_INTERVAL_SECONDS}s")
 
 # Initialize utilities
 api_key_manager = APIKeyManager()
@@ -80,6 +104,49 @@ app = FastAPI(
     version=MODEL_VERSION,
     description="Coordinates requests across a pool of decoder nodes."
 )
+
+# Service discovery API endpoints
+@app.post("/api/v1/register")
+async def register_decoder(node: DecoderNodeSchema):
+    """Register a decoder node with the pool."""
+    try:
+        node_id = await pool.register_node(node.dict())
+        return {"success": True, "node_id": node_id}
+    except Exception as e:
+        logger.error(f"Error registering node: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/v1/unregister/{node_id}")
+async def unregister_decoder(node_id: str):
+    """Unregister a decoder node from the pool."""
+    try:
+        await pool.unregister_node(node_id)
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Error unregistering node: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/node/{node_id}")
+async def get_node(node_id: str):
+    """Get information about a specific node."""
+    node = await pool.get_node_by_id(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return node
+
+@app.put("/api/v1/node/{node_id}/status")
+async def update_node_status(
+    node_id: str, 
+    healthy: bool = Form(...), 
+    load: int = Form(...)
+):
+    """Update a node's status."""
+    try:
+        await pool.update_node_status(node_id, healthy, load)
+        return {"success": True}
+    except Exception as e:
+        logger.error(f"Error updating node status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- OpenTelemetry Tracing ---
 trace.set_tracer_provider(TracerProvider(resource=Resource.create({SERVICE_NAME: "coordinator-service"})))
@@ -117,6 +184,23 @@ class DecoderPool:
         # Redis configuration
         self.redis_url = redis_url or os.environ.get("REDIS_URL")
         self.use_redis = False
+
+        # Service discovery with etcd
+        self.use_etcd = USE_ETCD
+        self.etcd_client = None
+        self.service_ttl = SERVICE_TTL
+        self.lease = None
+        self.node_watchers = {}
+        self.discovery_thread = None
+        
+        if self.use_etcd:
+            self._setup_etcd()
+        
+        # Load initial configuration
+        self._load_config()
+        
+        # Start background health check
+        self.health_check_task = None
         
         # Try to initialize Redis if URL is provided
         if self.redis_url:
@@ -138,6 +222,147 @@ class DecoderPool:
         
         # Initial load of configuration
         self.reload_sync()
+        
+    def _setup_etcd(self):
+        """Set up etcd client for service discovery"""
+        try:
+            self.etcd_client = etcd3.client(host=ETCD_HOST, port=ETCD_PORT)
+            self.lease = self.etcd_client.lease(self.service_ttl)
+            
+            # Start discovery thread
+            self.discovery_thread = threading.Thread(
+                target=self._run_discovery_loop,
+                daemon=True
+            )
+            self.discovery_thread.start()
+            
+            logger.info(f"Connected to etcd at {ETCD_HOST}:{ETCD_PORT}")
+        except Exception as e:
+            logger.error(f"Failed to connect to etcd: {e}")
+            self.use_etcd = False
+    
+    def _run_discovery_loop(self):
+        """Background thread for service discovery"""
+        while True:
+            try:
+                # Refresh lease
+                self.lease.refresh()
+                
+                # Discover nodes
+                self._discover_nodes()
+                
+                # Sleep
+                time.sleep(self.service_ttl / 2)
+            except Exception as e:
+                logger.error(f"Error in discovery loop: {e}")
+                time.sleep(5)  # Backoff on error
+    
+    def _discover_nodes(self):
+        """Discover decoder nodes from etcd"""
+        if not self.use_etcd or not self.etcd_client:
+            return
+            
+        try:
+            # Get all nodes
+            nodes = []
+            for value, metadata in self.etcd_client.get_prefix(ETCD_PREFIX):
+                if value:
+                    try:
+                        node_data = json.loads(value.decode('utf-8'))
+                        nodes.append(node_data)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid node data: {value}")
+            
+            # Update nodes (thread-safe)
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(self._update_nodes_from_discovery(nodes))
+            loop.close()
+        except Exception as e:
+            logger.error(f"Error discovering nodes: {e}")
+    
+    async def _update_nodes_from_discovery(self, discovered_nodes: List[Dict]):
+        """Update nodes from discovery (thread-safe)"""
+        async with self.lock:
+            # Map existing nodes by ID
+            existing_nodes = {node['node_id']: node for node in self.nodes}
+            
+            # Update existing nodes and add new ones
+            updated_nodes = []
+            for node in discovered_nodes:
+                node_id = node['node_id']
+                if node_id in existing_nodes:
+                    # Preserve load and health status
+                    node['load'] = existing_nodes[node_id].get('load', 0)
+                    node['healthy'] = existing_nodes[node_id].get('healthy', False)
+                    updated_nodes.append(node)
+                else:
+                    # New node, initialize with default values
+                    node['load'] = 0
+                    node['healthy'] = False
+                    updated_nodes.append(node)
+            
+            # Keep nodes that are in the config file but not discovered
+            for node in self.nodes:
+                node_id = node['node_id']
+                if not any(n['node_id'] == node_id for n in discovered_nodes):
+                    # Only keep if it's from the config file
+                    if node.get('from_config', False):
+                        updated_nodes.append(node)
+            
+            self.nodes = updated_nodes
+            logger.info(f"Updated nodes from discovery: {len(self.nodes)} nodes")
+    
+    async def register_node(self, node: Dict):
+        """Register a decoder node with the pool"""
+        node_id = node.get('node_id')
+        if not node_id:
+            node_id = str(uuid.uuid4())
+            node['node_id'] = node_id
+        
+        # Add to local pool
+        async with self.lock:
+            # Check if node already exists
+            for i, existing in enumerate(self.nodes):
+                if existing['node_id'] == node_id:
+                    # Update existing node
+                    self.nodes[i] = {**existing, **node, 'healthy': True}
+                    logger.info(f"Updated existing node: {node_id}")
+                    break
+            else:
+                # Add new node
+                node['healthy'] = True
+                node['load'] = 0
+                node['from_config'] = False
+                self.nodes.append(node)
+                logger.info(f"Added new node: {node_id}")
+        
+        # Register with etcd if enabled
+        if self.use_etcd and self.etcd_client and self.lease:
+            try:
+                key = f"{ETCD_PREFIX}{node_id}"
+                value = json.dumps(node)
+                self.etcd_client.put(key, value, lease=self.lease)
+                logger.info(f"Registered node with etcd: {node_id}")
+            except Exception as e:
+                logger.error(f"Failed to register node with etcd: {e}")
+        
+        return node_id
+    
+    async def unregister_node(self, node_id: str):
+        """Unregister a decoder node from the pool"""
+        # Remove from local pool
+        async with self.lock:
+            self.nodes = [node for node in self.nodes if node['node_id'] != node_id]
+            logger.info(f"Removed node: {node_id}")
+        
+        # Unregister from etcd if enabled
+        if self.use_etcd and self.etcd_client:
+            try:
+                key = f"{ETCD_PREFIX}{node_id}"
+                self.etcd_client.delete(key)
+                logger.info(f"Unregistered node from etcd: {node_id}")
+            except Exception as e:
+                logger.error(f"Failed to unregister node from etcd: {e}")    
 
     def reload_sync(self):
         """Synchronously reload configuration (used during initialization)"""
@@ -145,10 +370,10 @@ class DecoderPool:
             if self.use_redis:
                 # Try Redis first using the manager
                 from utils.redis_manager import RedisManager
-                redis_manager = RedisManager.get_instance()
+                rm = RedisManager.get_instance()
                 
-                nodes_data = redis_manager.get("decoder_pool:nodes")
-                ab_tests_data = redis_manager.get("decoder_pool:ab_tests")
+                nodes_data = rm.get("decoder_pool:nodes")
+                ab_tests_data = rm.get("decoder_pool:ab_tests")
                 
                 if nodes_data:
                     self.nodes = nodes_data
@@ -159,11 +384,11 @@ class DecoderPool:
                     self._load_from_disk()
                     # If we loaded from disk, save to Redis for next time
                     if self.nodes:
-                        sync_redis.set("decoder_pool:nodes", json.dumps(self.nodes))
+                        rm.set("decoder_pool:nodes", self.nodes)
                         logger.info(f"Saved {len(self.nodes)} nodes to Redis")
                 
-                if ab_tests_json:
-                    self.ab_tests = json.loads(ab_tests_json)
+                if ab_tests_data:
+                    self.ab_tests = ab_tests_data
                     logger.info(f"Loaded {len(self.ab_tests)} A/B tests from Redis")
                 else:
                     # If Redis has no A/B test data, use what we loaded from disk
@@ -171,8 +396,19 @@ class DecoderPool:
                         self._load_ab_tests_from_disk()
                     # Save to Redis for next time
                     if self.ab_tests:
-                        sync_redis.set("decoder_pool:ab_tests", json.dumps(self.ab_tests))
+                        rm.set("decoder_pool:ab_tests", self.ab_tests)
                         logger.info(f"Saved {len(self.ab_tests)} A/B tests to Redis")
+                
+                # Always mirror to disk so fallback stays up-to-date
+                try:
+                    os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+                    with open(self.pool_path, "w") as f:
+                        json.dump({
+                            "nodes": self.nodes,
+                            "ab_tests": self.ab_tests
+                        }, f, indent=2)
+                except Exception as e:
+                    logger.error(f"Failed to mirror decoder pool to disk: {e}")
             else:
                 # No Redis, load from disk
                 self._load_from_disk()
@@ -209,20 +445,47 @@ class DecoderPool:
             logger.error(f"Failed to load A/B tests from disk: {e}")
             self.ab_tests = []
 
-    async def _load_from_redis(self):
-        """Asynchronously load configuration from Redis"""
-        if not self.use_redis or not self.redis:
-            logger.warning("Redis not configured, falling back to disk")
-            self._load_from_disk()
-            return
-            
+    def mirror_redis_to_disk(self) -> bool:
+        """Mirror the latest Redis state to disk without mutating in-memory state."""
         try:
-            # Get nodes and A/B tests from Redis
-            nodes_json = await self.redis.get("decoder_pool:nodes")
-            ab_tests_json = await self.redis.get("decoder_pool:ab_tests")
-            
-            if nodes_json:
-                self.nodes = json.loads(nodes_json)
+            if not self.use_redis:
+                return False
+            try:
+                from utils.redis_manager import RedisManager
+                rm = getattr(self, "redis_manager", None) or RedisManager.get_instance()
+            except Exception:
+                return False
+            if not rm or not rm.get_client():
+                return False
+
+            nodes_data = rm.get("decoder_pool:nodes") or []
+            ab_tests_data = rm.get("decoder_pool:ab_tests") or []
+
+            os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+            with open(self.pool_path, "w") as f:
+                json.dump({"nodes": nodes_data, "ab_tests": ab_tests_data}, f, indent=2)
+            logger.info(f"Mirrored Redis decoder pool to disk: nodes={len(nodes_data)}, ab_tests={len(ab_tests_data)}")
+            return True
+        except Exception as e:
+            logger.warning(f"Mirror Redis->disk failed: {e}")
+            return False
+
+    async def _load_from_redis(self):
+        """Asynchronously load configuration from Redis (via RedisManager)"""
+        try:
+            from utils.redis_manager import RedisManager
+            rm = RedisManager.get_instance()
+            if not self.use_redis or not rm.get_client():
+                logger.warning("Redis not configured, falling back to disk")
+                self._load_from_disk()
+                return
+
+            # Get nodes and A/B tests from Redis (already deserialized)
+            nodes_data = rm.get("decoder_pool:nodes")
+            ab_tests_data = rm.get("decoder_pool:ab_tests")
+
+            if nodes_data:
+                self.nodes = nodes_data
                 logger.info(f"Loaded {len(self.nodes)} nodes from Redis")
             else:
                 # If Redis has no data, try loading from disk
@@ -230,11 +493,11 @@ class DecoderPool:
                 self._load_from_disk()
                 # If we loaded from disk, save to Redis for next time
                 if self.nodes:
-                    await self.redis.set("decoder_pool:nodes", json.dumps(self.nodes))
+                    rm.set("decoder_pool:nodes", self.nodes)
                     logger.info(f"Saved {len(self.nodes)} nodes to Redis")
-            
-            if ab_tests_json:
-                self.ab_tests = json.loads(ab_tests_json)
+
+            if ab_tests_data:
+                self.ab_tests = ab_tests_data
                 logger.info(f"Loaded {len(self.ab_tests)} A/B tests from Redis")
             else:
                 # If Redis has no A/B test data, use what we loaded from disk
@@ -242,9 +505,16 @@ class DecoderPool:
                     self._load_ab_tests_from_disk()
                 # Save to Redis for next time
                 if self.ab_tests:
-                    await self.redis.set("decoder_pool:ab_tests", json.dumps(self.ab_tests))
+                    rm.set("decoder_pool:ab_tests", self.ab_tests)
                     logger.info(f"Saved {len(self.ab_tests)} A/B tests to Redis")
-                    
+
+            # Mirror to disk so file fallback is always up-to-date
+            try:
+                os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+                with open(self.pool_path, "w") as f:
+                    json.dump({"nodes": self.nodes, "ab_tests": self.ab_tests}, f, indent=2)
+            except Exception as e:
+                logger.error(f"Failed to mirror decoder pool to disk: {e}")
         except Exception as e:
             logger.error(f"Failed to load from Redis: {e}")
             # Fallback to disk
@@ -323,17 +593,17 @@ class DecoderPool:
     async def _save(self):
         """Save configuration to Redis and/or disk"""
         # First try to save to Redis if configured
-        redis_success = False
-        if self.use_redis and self.redis:
-            try:
-                # Save nodes and A/B tests to Redis
-                await self.redis.set("decoder_pool:nodes", json.dumps(self.nodes))
-                await self.redis.set("decoder_pool:ab_tests", json.dumps(self.ab_tests))
-                redis_success = True
-                logger.info(f"Saved {len(self.nodes)} nodes and {len(self.ab_tests)} A/B tests to Redis")
-            except Exception as e:
-                logger.error(f"Failed to save to Redis: {e}")
-                # Will fall back to disk
+        try:
+            if self.use_redis:
+                from utils.redis_manager import RedisManager
+                rm = RedisManager.get_instance()
+                if rm.get_client():
+                    rm.set("decoder_pool:nodes", self.nodes)
+                    rm.set("decoder_pool:ab_tests", self.ab_tests)
+                    logger.info(f"Saved {len(self.nodes)} nodes and {len(self.ab_tests)} A/B tests to Redis")
+        except Exception as e:
+            logger.error(f"Failed to save to Redis: {e}")
+            # Will fall back to disk
         
         # Always save to disk (as backup or primary if Redis not configured)
         try:
@@ -351,7 +621,24 @@ class DecoderPool:
         return [
             node for node in nodes_list
             if all(tag in node.get("tags", []) for tag in tags)
-        ]        
+        ]    
+
+    async def get_node_by_id(self, node_id: str) -> Optional[Dict]:
+        """Get a node by ID"""
+        async with self.lock:
+            for node in self.nodes:
+                if node['node_id'] == node_id:
+                    return node
+        return None
+    
+    async def update_node_status(self, node_id: str, healthy: bool, load: int):
+        """Update a node's status"""
+        async with self.lock:
+            for i, node in enumerate(self.nodes):
+                if node['node_id'] == node_id:
+                    self.nodes[i]['healthy'] = healthy
+                    self.nodes[i]['load'] = load
+                    break        
 
     # --- THE CORE A/B LOGIC ---
     def pick_best_node(
@@ -464,12 +751,22 @@ def get_session(request: Request) -> bool:
 
 # --- Background Tasks ---
 async def background_tasks():
-    """Runs periodic health checks and handles config reloads."""
+    """Runs periodic health checks and handles config reloads and periodic mirroring."""
+    last_mirror = 0.0
     while True:
+        now = time.time()
         # Check if a reload has been signaled by the watchdog
         if CONFIG_NEEDS_RELOAD.is_set():
             await pool.reload()
             CONFIG_NEEDS_RELOAD.clear()  # Reset the event after handling
+
+        # Periodically mirror Redis state to disk every MIRROR_INTERVAL_SECONDS
+        if now - last_mirror >= MIRROR_INTERVAL_SECONDS:
+            try:
+                pool.mirror_redis_to_disk()
+            except Exception as e:
+                logger.debug(f"Periodic mirror failed: {e}")
+            last_mirror = now
 
         logger.info("Running background health check...")
         await pool.check_health()

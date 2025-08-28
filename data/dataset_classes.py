@@ -19,7 +19,7 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
     Extracted from train_universal_system.py
     """
     
-    def __init__(self, data_path: str, cache_dir: Optional[str] = None, vocab_dir: str = 'vocabs'):
+    def __init__(self, data_path: str, cache_dir: Optional[str] = None, vocab_dir: str = 'vocabs', config: Optional[RootConfig] = None):
         self.data_path = Path(data_path)
         self.cache_dir = Path(cache_dir) if cache_dir else self.data_path.parent / "cache"
         self.cache_dir.mkdir(exist_ok=True)
@@ -29,9 +29,13 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         
         # Initialize VocabularyManager
         from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+        from config.schemas import load_config as load_pydantic_config
+        
+        # Ensure we have a valid config for the vocab manager
+        self.config = config or load_pydantic_config()
         
         # Use OPTIMIZED mode for dataset processing
-        self.vocab_manager = UnifiedVocabularyManager(vocab_dir=vocab_dir, mode=VocabularyMode.OPTIMIZED)
+        self.vocab_manager = UnifiedVocabularyManager(config=self.config, vocab_dir=vocab_dir, mode=VocabularyMode.OPTIMIZED)
         
         logger.info(f"📚 Dataset loaded: {len(self.data)} samples")
     

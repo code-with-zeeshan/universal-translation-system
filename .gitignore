@@ -38,10 +38,13 @@ Thumbs.db
 
 # IDE/project files
 .vscode/
+.qodo/
+.zencoder/
 .idea/
 *.swp
 *.swo
 *.sublime-*
+_file_inventory.txt
 
 # JavaScript/TypeScript
 node_modules/
@@ -49,6 +52,10 @@ npm-debug.log
 yarn-error.log
 yarn-debug.log
 .npm/
+# Built web artifacts
+web/universal-translation-sdk/dist/
+web/universal-translation-sdk/example/.cache/
+web/universal-translation-sdk/example/node_modules/
 
 # Mobile development
 *.apk
@@ -59,6 +66,10 @@ yarn-debug.log
 Pods/
 .gradle/
 local.properties
+# RN example
+react-native/UniversalTranslationSDK/example/node_modules/
+react-native/UniversalTranslationSDK/example/android/
+react-native/UniversalTranslationSDK/example/ios/
 
 # Monitoring
 grafana-data/

@@ -54,8 +54,21 @@ def setup_environment():
         torch.backends.cudnn.allow_tf32 = True
 
 
-def load_configuration(config_path: str) -> RootConfig:
-    """Load and validate configuration"""
+def load_configuration_dynamic_or_yaml(config_path: str, dynamic: bool) -> RootConfig:
+    """Load configuration from YAML or build a dynamic default when requested."""
+    if dynamic or (config_path and config_path.strip().lower() == 'dynamic'):
+        # Build a default RootConfig; trainer will refine based on hardware
+        from config.schemas import RootConfig, DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
+        cfg = RootConfig(
+            data=DataConfig(training_distribution={}),
+            model=ModelConfig(),
+            training=TrainingConfig(),
+            memory=MemoryConfig(),
+            vocabulary=VocabularyConfig()
+        )
+        logger.info("✅ Using dynamic configuration (no YAML)")
+        return cfg
+    # Fallback: load YAML
     try:
         config = load_pydantic_config(config_path)
         logger.info(f"✅ Configuration loaded from: {config_path}")
@@ -123,14 +136,16 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     
     train_dataset = ModernParallelDataset(
         str(train_path),
-        cache_dir=config.data.cache_dir,
-        vocab_dir=config.vocabulary.vocab_dir
+        cache_dir=getattr(config.data, 'cache_dir', None),
+        vocab_dir=config.vocabulary.vocab_dir,
+        config=config
     )
     
     val_dataset = ModernParallelDataset(
         str(val_path),
-        cache_dir=config.data.cache_dir,
-        vocab_dir=config.vocabulary.vocab_dir
+        cache_dir=getattr(config.data, 'cache_dir', None),
+        vocab_dir=config.vocabulary.vocab_dir,
+        config=config
     )
     
     logger.info(f"✅ Loaded {len(train_dataset)} training samples")
@@ -154,8 +169,8 @@ def launch_training(args: argparse.Namespace):
     # Setup environment
     setup_environment()
     
-    # Load configuration
-    config = load_configuration(args.config)
+    # Load configuration (dynamic or YAML)
+    config = load_configuration_dynamic_or_yaml(args.config, args.dynamic)
     
     # Override config with CLI args
     if args.batch_size:
@@ -176,8 +191,8 @@ def launch_training(args: argparse.Namespace):
     
     shutdown_handler = GracefulShutdown(cleanup_func=cleanup)
     
-    # Setup model versioning
-    versioning = ModelVersion(model_dir=config.model_dir)
+    # Setup model versioning (default directory: "models")
+    versioning = ModelVersion()
     
     # Determine experiment name
     experiment_name = args.experiment_name or f"intelligent_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -372,7 +387,9 @@ def main():
     # Training command
     train_parser = subparsers.add_parser('train', help='Train the model')
     train_parser.add_argument('--config', type=str, required=True,
-                            help='Path to configuration file')
+                            help="Path to configuration file or 'dynamic'")
+    train_parser.add_argument('--dynamic', action='store_true',
+                            help='Use dynamic config generation (no YAML)')
     train_parser.add_argument('--experiment-name', type=str,
                             help='Name for this experiment')
     train_parser.add_argument('--checkpoint', type=str,

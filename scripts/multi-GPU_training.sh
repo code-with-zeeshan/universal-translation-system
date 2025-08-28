@@ -12,7 +12,7 @@ echo "🚀 Starting distributed training on $NUM_GPUS GPUs..."
 python -m torch.distributed.launch \
     --nproc_per_node=$NUM_GPUS \
     --master_port=29500 \
-    training/distributed_train.py
+    training.launch train --distributed --config config/training_generic_multi_gpu.yaml
 
 # Monitor GPU usage
 echo "🔍 Monitoring GPU usage..."

@@ -1,28 +1,82 @@
 # Deployment Guide
 
-## Encoder Deployment (Mobile/Edge)
+## Overview
+This guide covers local (Docker Compose) and Kubernetes deployment for the Universal Translation System. It aligns with the current docker-compose.yml and Kubernetes manifests.
 
-### Android/iOS/Flutter
-- Include the native encoder library (`libuniversal_encoder.so`/`.dylib`/`.dll`) in your app bundle.
-- Use the SDK's FFI wrapper to call the encoder from Dart/Swift/Kotlin.
-- Vocabulary packs are loaded dynamically as needed.
+## 1) Local Stack (Docker Compose)
 
-### React Native/Web
-- Use the SDK to send text to the cloud decoder via API.
-- (Optional: future support for native encoding via WASM/FFI)
+### Prerequisites
+- **Docker** and **Docker Compose**
+- **NVIDIA drivers + CUDA + NVIDIA Container Toolkit** (for GPU decoder)
+- **.env** (optional) based on `.env.example`
 
-## Decoder Deployment (Cloud)
-
-### Docker Deployment (Litserve)
+### Bring up the stack
 ```bash
-docker build -f cloud_decoder/Dockerfile -t universal-decoder:latest .
-docker run --gpus all -p 8000:8000 universal-decoder:latest
+# From repo root
+# Optional: create .env and set secrets (JWTs, tokens) before running
+
+# Build and start encoder, decoder, redis, coordinator, prometheus, grafana
+docker compose up -d --build encoder decoder redis coordinator prometheus grafana
+
+# View logs for a service
+docker compose logs -f decoder
 ```
 
-### Kubernetes Deployment
-- Use `kubernetes/decoder-deployment.yaml` and `decoder-service.yaml`.
-- For CI/CD encoder builds, use `encoder-build.yaml` and `encoder-artifacts-pvc.yaml`.
+### Default ports
+- **Encoder**: http://localhost:8000
+- **Decoder**: http://localhost:8001
+- **Coordinator**: http://localhost:8002
+- **Prometheus**: http://localhost:9090
+- **Grafana**: http://localhost:3000
 
+### Health endpoints
+- **Decoder**: `GET /health` (required by compose)
+- **Coordinator**: `GET /api/status` (health summary)
+  - Note: docker-compose.yml currently checks `GET /health` for coordinator. If using the current codebase, change the compose healthcheck to `/api/status` or add a trivial `/health` endpoint to the coordinator.
+
+### Relevant files
+- `docker-compose.yml`
+- `docker/encoder.Dockerfile`, `docker/decoder.Dockerfile`, `docker/coordinator.Dockerfile`
+- `monitoring/prometheus/*`, `monitoring/grafana/*`
+- `configs/decoder_pool.json` (file-based pool config)
+
+### Configuration via environment variables
+See `docs/environment-variables.md` and `.env.example`.
+- **Ports**: `ENCODER_PORT`, `DECODER_PORT`, `COORDINATOR_PORT`
+- **Coordinator**: `POOL_CONFIG_PATH` (default: `configs/decoder_pool.json`), `REDIS_URL`
+- **Secrets**: `DECODER_JWT_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN`
+
+### Volumes and artifacts
+- **Models**: `./models` mounted to `/app/models`
+- **Vocabulary**: `./vocabulary` mounted to `/app/vocabs`
+  - If you previously used `./vocabs`, either rename to `vocabulary` or update mounts consistently.
+- Ensure directories exist locally before starting containers.
+
+### GPU notes
+- The `decoder` service requests one NVIDIA GPU and sets `CUDA_VISIBLE_DEVICES=0`.
+- Install NVIDIA Container Toolkit and confirm `--gpus all` support: `docker run --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi`.
+
+### Preflight check (recommended)
+```bash
+python -m tools.cloud_preflight
+```
+Exit code 0 indicates you’re good to proceed.
+
+## 2) Decoder only (Standalone Docker)
+```bash
+# Build
+docker build -f docker/decoder.Dockerfile -t universal-decoder:latest .
+
+# Run (GPU required)
+docker run --gpus all -p 8001:8001 \
+  -e DECODER_JWT_SECRET=replace-with-strong-secret \
+  -v "$(pwd)/models:/app/models" \
+  -v "$(pwd)/vocabulary:/app/vocabs" \
+  universal-decoder:latest
+```
+
+## 3) Kubernetes Deployment
+Manifests live in `kubernetes/`.
 ```bash
 kubectl apply -f kubernetes/namespace.yaml
 kubectl apply -f kubernetes/encoder-artifacts-pvc.yaml
@@ -30,26 +84,38 @@ kubectl apply -f kubernetes/encoder-build.yaml
 kubectl apply -f kubernetes/decoder-deployment.yaml
 kubectl apply -f kubernetes/decoder-service.yaml
 ```
+Notes:
+- **GPU resources**: Configure node selectors/taints and NVIDIA device plugin on nodes.
+- **Secrets/Configs**: Use Kubernetes Secrets for tokens/keys; ConfigMaps for non-secret configs.
+- **Coordinator + Redis**: Create corresponding Deployment/Service objects (compose shows env expectations).
 
-### Cloud Platforms
-- AWS: EC2 with GPU, SageMaker, or EKS
-- GCP: Compute Engine with T4, Vertex AI, or GKE
-- Azure: NC-series VMs, Azure ML, or AKS
+## 4) Monitoring and scaling
+- **Health**: `/health` (decoder), `/api/status` (coordinator)
+- **Metrics**: `/metrics` on decoder and coordinator (Prometheus scrapes)
+- **Horizontal scaling**: run multiple `decoder` replicas; Coordinator routes to least-loaded
+- **Vertical scaling**: larger GPUs; tune batch size and workers
 
-## Environment Variables
-- **MAX_BATCH_SIZE**: Maximum batch size (default: 64)
-- **MODEL_PATH**: Path to decoder model
-- **VOCAB_DIR**: Path to vocabulary packs
-- **PORT**: Service port (default: 8000)
+## 5) Security
+- **Secrets**: Set strong values in `.env` (JWTs, tokens) and in K8s Secrets
+- **Transport**: Terminate TLS at ingress/proxy
+- **Access**: Restrict coordinator admin endpoints; require `COORDINATOR_TOKEN`/JWT
+- **Abuse protection**: Enable rate limiting; validate inputs
 
-## Monitoring & Scaling
-- Health: `/health` endpoint
-- Metrics: `/metrics` (Prometheus)
-- Horizontal scaling: add more decoder replicas
-- Vertical scaling: use larger GPUs, increase batch size
+## 6) Migration tips and known mismatches
+- **Coordinator port**: Compose sets container API port to `8002` (older docs referenced `5100`).
+- **Vocabulary path**: Use `./vocabulary` locally and mount to `/app/vocabs` in containers.
+- **Decoder model filename**: Default in code expects `models/production/decoder.pt`. Update your model export or set envs/configs accordingly.
+- **Coordinator healthcheck**: Update compose healthcheck to `/api/status` or add `/health` to coordinator.
 
-## Security
-- API authentication (keys/JWT)
-- Rate limiting
-- HTTPS/TLS
-- Input validation
+## 7) Artifacts expected at runtime
+- **Models** (mounted to `/app/models`):
+  - `models/production/decoder.pt` (default expected by decoder)
+  - `models/model_registry.json` (optional registry)
+- **Vocabulary packs** (mounted to `/app/vocabs`):
+  - Files created by vocab tooling; a `manifest.json` if produced
+- **Checkpoints/logs** (optional for runtime): under `checkpoints/` and `logs/`
+
+### How services use them
+- **Decoder**: loads weights from `/app/models/production/decoder.pt`; loads vocabulary packs from `/app/vocabs` based on requested languages.
+- **Coordinator**: routes to least-loaded healthy decoder using configured pool (file or discovery).
+- **SDKs**: encode on-device where supported; call coordinator `/api/decode` (binary) for decoding, or decoder directly in single-node setups.

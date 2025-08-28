@@ -6,7 +6,7 @@ alwaysApply: true
 # Universal Translation System Information
 
 ## Summary
-A flexible and scalable translation platform designed to support multiple languages across diverse applications. The system uses an innovative edge encoding, cloud decoding architecture with a universal encoder (35MB base + 2-4MB vocabulary packs) and cloud decoder infrastructure, resulting in a 40MB app with 90% quality of full models. The key innovation is splitting the translation process between lightweight client-side encoding and powerful server-side decoding.
+A flexible and scalable translation platform designed to support multiple languages across diverse applications. The system uses an innovative edge encoding, cloud decoding architecture with a universal encoder (35MB base + 2-4MB vocabulary packs) and cloud decoder infrastructure, resulting in a 40MB app with 90% quality of full models. The key innovation is splitting the translation process between lightweight client-side encoding and powerful server-side decoding. Version 1.0.0 includes enhanced dependency management, improved build processes, and better logging.
 
 ## Key Features
 - **Edge-Cloud Split Architecture**: Minimizes client app size while maximizing translation quality
@@ -50,17 +50,18 @@ A flexible and scalable translation platform designed to support multiple langua
 
 ## Dependencies
 **Main Dependencies**:
-- PyTorch 2.1.0+: Deep learning framework for model implementation
-- Transformers 4.38.0+: Provides transformer architecture components
+- PyTorch 2.0.0+: Deep learning framework for model implementation
+- Transformers 4.21.0+: Provides transformer architecture components
 - ONNX Runtime 1.16.0+: Cross-platform inference acceleration
 - LitServe 0.2.0+: High-performance model serving
 - sentencepiece 0.2.0+: Tokenization for multiple languages
-- msgpack 1.0.5+: Efficient binary serialization
+- msgpack 1.0.0+: Efficient binary serialization
 - lz4 4.3.2+: Fast compression for embeddings
 - zstandard: Advanced compression for vocabulary packs
 - aiofiles: Asynchronous file operations
 - opentelemetry: Distributed tracing and monitoring
 - triton_python_backend_utils: GPU optimization utilities
+- redis 5.0.0+: Caching and message queue support
 
 **Development Dependencies**:
 - pytest 7.4.0+: Testing framework
@@ -90,12 +91,13 @@ The system uses a split architecture with:
 - LRU caching for efficient memory usage
 
 ### 3. Cloud Decoder
-- Runs on GPU servers (T4, 3090, V100, A100)
+- Runs on GPU servers (T4, 3090, V100, A100, or generic GPU)
 - 6-layer transformer with cross-attention
 - Served via Litserve for high performance
 - Supports dynamic adapter loading for language-specific tuning
 - Asynchronous processing for high concurrency
 - Hugging Face Hub integration for model distribution
+- Enhanced logging with timestamped output
 
 ### 4. Advanced Coordinator
 - Load balancing across decoder pool using least-loaded routing algorithm
@@ -115,6 +117,7 @@ pip install -r requirements.txt
 # Web SDK
 cd web/universal-translation-sdk
 npm install
+npm run build:wasm  # Build WebAssembly components
 npm run build
 
 # React Native SDK
@@ -135,7 +138,7 @@ make
 
 ## Docker
 **Encoder Dockerfile**: docker/encoder.Dockerfile
-**Decoder Dockerfile**: docker/decoder.Dockerfile
+**Decoder Dockerfile**: docker/decoder.Dockerfile (includes wget for downloading models)
 **Configuration**: docker-compose.yml with separate services for encoder and decoder
 
 ## Testing
@@ -199,12 +202,13 @@ ctest
 
 ### Web SDK
 - Pure TypeScript implementation
-- WebAssembly support for browser-based encoding (optional)
+- WebAssembly support for browser-based encoding with custom build process
 - Fallback to cloud-based encoding
 - Promise-based async API
 - Comprehensive error handling
 - Bundle size optimization
 - Support for all modern browsers
+- Custom WASM build and copy scripts
 
 ## Data Flow
 1. User inputs text in source language
@@ -224,3 +228,5 @@ The system includes comprehensive monitoring:
 - Error rate monitoring
 - Vocabulary usage analytics
 - Grafana dashboards for visualization
+- Enhanced logging with timestamped output and log file rotation
+- Dependency checking with fallback mechanisms

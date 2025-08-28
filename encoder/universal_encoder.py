@@ -150,52 +150,74 @@ class UniversalEncoder(nn.Module):
             
             return hidden_states  # [batch, seq, 1024]
     
-    def load_vocabulary_pack(self, vocab_pack):
+    def load_vocabulary_pack(self, vocab_pack, quantize=False):
+        """
+        Load a vocabulary pack into the model.
+    
+        Args:
+            vocab_pack: VocabularyPack instance
+            quantize: Whether to quantize the embeddings
+        """
         with tracer.start_as_current_span("UniversalEncoder.load_vocabulary_pack") as span:
-            span.set_attribute("model_version", MODEL_VERSION)
-            """Dynamically load vocabulary embeddings"""
-            self.current_vocab = vocab_pack
+            span.set_attribute("vocab_size", len(vocab_pack.tokens))
+            span.set_attribute("quantize", quantize)
         
-            # Resize embedding layer to match pack
-            pack_size = len(vocab_pack.tokens)
-
-            # Save device before creating new embedding
+            # Get current device
             device = self.embedding_layer.weight.device
-
-            # Save old embeddings if needed
-            old_embeddings = self.embedding_layer.weight.data.clone()
-
-            # Create new embedding layer
-            self.embedding_layer = nn.Embedding(pack_size, self.hidden_dim)
-            self.embedding_layer.to(device)
         
-            # Load pre-computed embeddings if available
-            if hasattr(vocab_pack, 'embeddings') and vocab_pack.embeddings:
-                # This maintains quality even with smaller vocab!
+            # Get pack size
+            pack_size = len(vocab_pack.tokens) + len(vocab_pack.special_tokens)
+        
+            # Create new embedding layer with correct size
+            new_embedding_layer = nn.Embedding(pack_size, self.hidden_dim)
+            new_embedding_layer.to(device)
+        
+            # Initialize embeddings
+            if hasattr(vocab_pack, 'embeddings') and vocab_pack.embeddings is not None:
+                # Use pre-trained embeddings
                 if isinstance(vocab_pack.embeddings, dict):
-                    # If embeddings are stored as dict
+                    # Initialize with zeros
+                    nn.init.zeros_(new_embedding_layer.weight)
+                
+                    # Set embeddings for each token
                     for token, token_id in vocab_pack.tokens.items():
                         if token in vocab_pack.embeddings:
-                            self.embedding_layer.weight.data[token_id] = torch.tensor(
-                                vocab_pack.embeddings[token]
+                            new_embedding_layer.weight.data[token_id] = torch.tensor(
+                                vocab_pack.embeddings[token], device=device
                             )
                 else:
-                    # If embeddings are stored as tensor
-                    self.embedding_layer.weight.data = torch.tensor(vocab_pack.embeddings)
-            else:        
-                # Initialize with random embeddings
-                nn.init.normal_(self.embedding_layer.weight, mean=0.0, std=0.02)
-                # Using logger from the global scope if available
-                logger.warning(f"No pre-computed embeddings in vocab pack {vocab_pack.name}, using random initialization")
-        
-            # Re-apply quantization if model was quantized
-            if self.is_quantized:
-                """Crucial for quantized models"""
-                self.embedding_layer = torch.quantization.quantize_dynamic(
-                    self.embedding_layer,
-                    qconfig_spec={torch.nn.Embedding}, 
+                    # Use full embedding matrix
+                    new_embedding_layer.weight.data = torch.tensor(
+                        vocab_pack.embeddings, device=device
+                    )
+            else:
+                # Initialize randomly
+                nn.init.normal_(new_embedding_layer.weight, mean=0.0, std=0.02)
+            
+            # Quantize if requested
+            if quantize:
+                new_embedding_layer = torch.quantization.quantize_dynamic(
+                    new_embedding_layer,
+                    {nn.Embedding},
                     dtype=torch.qint8
                 )
+                self.is_quantized = True
+            
+            # Replace the embedding layer
+            self.embedding_layer = new_embedding_layer
+        
+            # Update vocabulary info
+            self.vocab_size = pack_size
+            self.vocab_pack_name = getattr(vocab_pack, 'name', 'custom')
+        
+            # Force garbage collection to clean up old embeddings
+            import gc
+            gc.collect()
+        
+            logger.info(
+                f"Loaded vocabulary pack with {pack_size} tokens "
+                f"(quantized={quantize})"
+            )
 
     def add_language_adapter(self, language: str):
         """Add a language-specific adapter"""

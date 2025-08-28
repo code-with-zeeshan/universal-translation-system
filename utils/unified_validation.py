@@ -6,16 +6,23 @@ Combines input validation, configuration validation, and data validation.
 
 import os
 import re
+import functools
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import Any, Dict, List, Optional, Union, Callable, Type, TypeVar, Tuple
 from enum import Enum
 import yaml
 
-from pydantic import BaseModel, Field, validator, ValidationError
+from pydantic import BaseModel, ValidationError, create_model
+from fastapi import Depends, Request, HTTPException, status
 import torch
+import json
+import html
+from .exceptions import ValidationError as UTSValidationError
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar('T')
 
 
 # ============= VALIDATION TYPES =============
@@ -216,6 +223,213 @@ class InputValidator:
         
         return result
 
+    def validate_json(self, data: str) -> Dict[str, Any]:
+        """
+        Validate that a string is valid JSON.
+    
+        Args:
+            data: JSON string to validate
+        
+        Returns:
+            Parsed JSON data
+        
+        Raises:
+            ValidationError: If the data is not valid JSON
+        """
+        try:
+            return json.loads(data)
+        except json.JSONDecodeError as e:
+            raise UTSValidationError(f"Invalid JSON: {str(e)}")
+
+    def validate_model(self, data: Dict[str, Any], model: Type[BaseModel]) -> BaseModel:
+        """
+        Validate data against a Pydantic model.
+    
+        Args:
+            data: Data to validate
+            model: Pydantic model class
+        
+        Returns:
+            Validated model instance
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        try:
+            return model(**data)
+        except ValidationError as e:
+            errors = e.errors()
+            error_details = {error["loc"][0]: error["msg"] for error in errors}
+            raise UTSValidationError("Validation failed", details=error_details)
+
+    def sanitize_html(self, text: str) -> str:
+        """
+        Sanitize HTML to prevent XSS attacks.
+    
+        Args:
+            text: Text that may contain HTML
+        
+        Returns:
+            Sanitized text
+        """
+        return html.escape(text)
+
+    def validate_regex(self, text: str, pattern: str, error_message: str = "Invalid format") -> str:
+        """
+        Validate text against a regex pattern.
+    
+        Args:
+            text: Text to validate
+            pattern: Regex pattern
+            error_message: Error message if validation fails
+        
+        Returns:
+           The validated text
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        if not re.match(pattern, text):
+            raise UTSValidationError(error_message)
+        return text
+
+    def validate_range(self, value: Union[int, float], min_value: Optional[Union[int, float]] = None, 
+                      max_value: Optional[Union[int, float]] = None, 
+                      error_message: str = "Value out of range") -> Union[int, float]:
+        """
+        Validate that a value is within a range.
+    
+        Args:
+            value: Value to validate
+            min_value: Minimum allowed value
+            max_value: Maximum allowed value
+            error_message: Error message if validation fails
+        
+        Returns:
+            The validated value
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        if min_value is not None and value < min_value:
+            raise UTSValidationError(f"{error_message}: {value} < {min_value}")
+        if max_value is not None and value > max_value:
+            raise UTSValidationError(f"{error_message}: {value} > {max_value}")
+        return value
+
+    def validate_length(self, value: Union[str, List, Dict], min_length: Optional[int] = None,
+                       max_length: Optional[int] = None,
+                       error_message: str = "Length out of range") -> Union[str, List, Dict]:
+        """
+        Validate that a value's length is within a range.
+    
+        Args:
+            value: Value to validate
+            min_length: Minimum allowed length
+            max_length: Maximum allowed length
+            error_message: Error message if validation fails
+        
+        Returns:
+            The validated value
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        length = len(value)
+        if min_length is not None and length < min_length:
+            raise UTSValidationError(f"{error_message}: {length} < {min_length}")
+        if max_length is not None and length > max_length:
+            raise UTSValidationError(f"{error_message}: {length} > {max_length}")
+        return value
+
+
+    def validate_enum(self, value: Any, allowed_values: List[Any],
+                     error_message: str = "Value not allowed") -> Any:
+        """
+        Validate that a value is one of the allowed values.
+    
+        Args:
+            value: Value to validate
+            allowed_values: List of allowed values
+            error_message: Error message if validation fails
+        
+        Returns:
+            The validated value
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        if value not in allowed_values:
+            raise UTSValidationError(f"{error_message}: {value} not in {allowed_values}")
+        return value
+
+    def validate_type(self, value: Any, expected_type: Type[T],
+                     error_message: str = "Invalid type") -> T:
+        """
+        Validate that a value is of the expected type.
+    
+        Args:
+            value: Value to validate
+            expected_type: Expected type
+            error_message: Error message if validation fails
+        
+        Returns:
+            The validated value
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        if not isinstance(value, expected_type):
+            raise UTSValidationError(f"{error_message}: {type(value).__name__} is not {expected_type.__name__}")
+        return value
+
+    def validate_schema(self, data: Any, schema: Dict[str, Any]) -> Any:
+        """
+        Validate data against a JSON Schema.
+    
+        Args:
+            data: Data to validate
+            schema: JSON Schema
+        
+        Returns:
+            Validated data
+        
+        Raises:
+            ValidationError: If validation fails
+        """
+        try:
+            import jsonschema
+            jsonschema.validate(data, schema)
+            return data
+        except jsonschema.exceptions.ValidationError as e:
+            raise UTSValidationError(f"Schema validation failed: {e}")
+
+    def validate_if(self, condition: Callable[[Any], bool], 
+                   validator: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        """
+        Apply a validator only if a condition is met.
+    
+        Args:
+            condition: Function that returns True if validation should be applied
+            validator: Validator function
+        
+        Returns:
+            Conditional validator function
+        """
+        def conditional_validator(value: Any) -> Any:
+            if condition(value):
+                return validator(value)
+            return value
+        return conditional_validator
+
+    def chain(self, *validators: Callable[[Any], Any]) -> Callable[[Any], Any]:
+        """Chain multiple validators together."""
+        def chained_validator(value: Any) -> Any:
+            result = value
+            for validator in validators:
+                result = validator(result)
+            return result
+        return chained_validator
 
 # ============= PATH VALIDATION =============
 

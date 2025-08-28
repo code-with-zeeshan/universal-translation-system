@@ -43,6 +43,10 @@ let translator = TranslationClient()
 let result = try await translator.translate(text: "Hello", from: "en", to: "zh")
 ```
 
+### From Data Pipeline
+- After data is processed into `data/processed`, the pipeline can trigger vocabulary creation via `VocabularyConnector`.
+- See `connector/vocabulary_connector.py` and `vocabulary/unified_vocabulary_creator.py` for details.
+
 ### Creating Custom Vocabulary Packs
 
 For domain-specific terminology or specialized use cases, you can create custom vocabulary packs:

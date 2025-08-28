@@ -1,0 +1,33 @@
+name: Web SDK - Publish to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Version to publish (e.g., 1.0.1)'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Set version
+        working-directory: web/universal-translation-sdk
+        run: |
+          npm version ${{ github.event.inputs.release_version }} --no-git-tag-version
+      - name: Install deps
+        working-directory: web/universal-translation-sdk
+        run: npm install
+      - name: Build
+        working-directory: web/universal-translation-sdk
+        run: npm run build
+      - name: Publish
+        working-directory: web/universal-translation-sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

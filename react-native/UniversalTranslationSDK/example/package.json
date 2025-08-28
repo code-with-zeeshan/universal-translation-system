@@ -1,0 +1,16 @@
+{
+  "name": "rn-universal-translation-example",
+  "private": true,
+  "version": "0.0.1",
+  "main": "index.js",
+  "scripts": {
+    "ios": "react-native run-ios",
+    "android": "react-native run-android",
+    "start": "react-native start"
+  },
+  "dependencies": {
+    "@universal-translation/react-native-sdk": "file:..",
+    "react": "18.2.0",
+    "react-native": "0.73.6"
+  }
+}

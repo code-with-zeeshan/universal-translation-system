@@ -1799,8 +1799,58 @@ def launch_distributed_intelligent_training(
 
 
 if __name__ == "__main__":
-    # Example usage
+    import argparse
     from utils.logging_config import setup_logging
+    from config.schemas import RootConfig, DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
+
+    parser = argparse.ArgumentParser(description="Intelligent Trainer Entry Point")
+    parser.add_argument("--config", type=str, help="Path to YAML config or 'dynamic'")
+    parser.add_argument("--device", type=str, default=None, help="Force device (cpu/cuda)")
+    parser.add_argument("--dynamic", action="store_true", help="Use dynamic config generation")
+    parser.add_argument("--experiment-name", type=str, default="intelligent-universal")
+    parser.add_argument("--checkpoint", type=str, default=None)
+    args = parser.parse_args()
+
     setup_logging(log_dir="logs/intelligent_training", log_level="INFO")
-    
-    logger.info("Intelligent Trainer Module Ready")
+
+    # Build config
+    use_dynamic = args.dynamic or (args.config and args.config.strip().lower() == "dynamic")
+    if use_dynamic:
+        # Minimal dynamic defaults; trainer refines strategy internally
+        dynamic_cfg = RootConfig(
+            data=DataConfig(training_distribution={}),
+            model=ModelConfig(),
+            training=TrainingConfig(),
+            memory=MemoryConfig(),
+            vocabulary=VocabularyConfig()
+        )
+        cfg = dynamic_cfg
+    else:
+        from config.schemas import load_config
+        cfg = load_config(args.config or "config/base.yaml")
+
+    # Device override
+    if args.device:
+        # training/launch.py consumes device via config; mirror simple behavior by setting env hint
+        os.environ["UTS_FORCE_DEVICE"] = args.device
+
+    # Initialize lightweight models and data via launch helpers to avoid duplication
+    from training.launch import initialize_models, load_datasets
+
+    encoder, decoder = initialize_models(cfg)
+    train_dataset, val_dataset = load_datasets(cfg)
+
+    # Start training
+    shutdown_handler = GracefulShutdown()
+    results = train_intelligent(
+        encoder=encoder,
+        decoder=decoder,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        config=cfg,
+        experiment_name=args.experiment_name,
+        resume_from=args.checkpoint,
+        shutdown_handler=shutdown_handler
+    )
+
+    logger.info("Intelligent training completed")

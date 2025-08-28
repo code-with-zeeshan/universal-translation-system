@@ -40,7 +40,23 @@ pytest tests/test_encoder.py
 
 # Run with coverage
 pytest --cov=. tests/
+
+# Web SDK
+cd web/universal-translation-sdk && npm install && npm test
+
+# React Native SDK
+cd react-native/UniversalTranslationSDK && npm install && npm test
+
+# Android SDK (unit tests)
+cd android/UniversalTranslationSDK && ./gradlew test
+
+# iOS SDK (SwiftPM tests)
+cd ios/UniversalTranslationSDK && swift test
 ```
+
+### Publishing (SDKs)
+- See docs/SDK_PUBLISHING.md for publishing Android (Maven), iOS (CocoaPods/SPM), and RN linking.
+- Web SDK publishing to npm is available via GitHub Actions (web-npm-publish.yml) with NPM_TOKEN secret.
 
 ### Areas We Need Help
 1. **Language Support**: Adding more languages and improving vocabulary packs

@@ -17,6 +17,24 @@ class ModelConfig:
     dropout: float = 0.1
 
 @dataclass
+class MemoryConfig:
+    """Memory management configuration"""
+    enable_monitoring: bool = True
+    monitoring_interval_seconds: int = 60
+    memory_threshold_percent: float = 85
+    gpu_memory_threshold_percent: float = 85
+    auto_cleanup: bool = True
+    cleanup_threshold_percent: float = 80
+
+@dataclass
+class ProfilingConfig:
+    """Profiling configuration"""
+    enable_profiling: bool = False
+    profile_output_dir: str = "profiles"
+    bottleneck_threshold_ms: float = 100.0
+    export_format: str = "json"
+
+@dataclass
 class DecoderConfig:
     """Decoder configuration"""
     host: str = '0.0.0.0'
@@ -32,7 +50,11 @@ class DecoderConfig:
     prometheus_port: int = 9200
     enable_tracing: bool = False
     redis_url: Optional[str] = None
+    enforce_https: bool = True
+    https_port: int = 443
     model: ModelConfig = field(default_factory=ModelConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
+    profiling: ProfilingConfig = field(default_factory=ProfilingConfig)
 
 
 def load_config(config_path: str) -> DecoderConfig:
@@ -45,6 +67,9 @@ def load_config(config_path: str) -> DecoderConfig:
     monitoring_cfg = data.get('monitoring', {})
     model_cfg = data.get('model', {})
     redis_cfg = data.get('redis', {})
+    memory_cfg = data.get('memory', {})
+    profiling_cfg = data.get('profiling', {})
+    https_cfg = data.get('https', {})
     
     # Create model config
     model_config = ModelConfig(
@@ -55,6 +80,24 @@ def load_config(config_path: str) -> DecoderConfig:
         vocab_size=model_cfg.get('vocab_size', 50000),
         max_length=model_cfg.get('max_length', 256),
         dropout=model_cfg.get('dropout', 0.1)
+    )
+    
+    # Create memory config
+    memory_config = MemoryConfig(
+        enable_monitoring=memory_cfg.get('enable_monitoring', True),
+        monitoring_interval_seconds=memory_cfg.get('monitoring_interval_seconds', 60),
+        memory_threshold_percent=memory_cfg.get('memory_threshold_percent', 85),
+        gpu_memory_threshold_percent=memory_cfg.get('gpu_memory_threshold_percent', 85),
+        auto_cleanup=memory_cfg.get('auto_cleanup', True),
+        cleanup_threshold_percent=memory_cfg.get('cleanup_threshold_percent', 80)
+    )
+    
+    # Create profiling config
+    profiling_config = ProfilingConfig(
+        enable_profiling=profiling_cfg.get('enable_profiling', False),
+        profile_output_dir=profiling_cfg.get('profile_output_dir', 'profiles'),
+        bottleneck_threshold_ms=profiling_cfg.get('bottleneck_threshold_ms', 100.0),
+        export_format=profiling_cfg.get('export_format', 'json')
     )
     
     return DecoderConfig(
@@ -71,7 +114,11 @@ def load_config(config_path: str) -> DecoderConfig:
         prometheus_port=monitoring_cfg.get('prometheus_port', 9200),
         enable_tracing=monitoring_cfg.get('enable_tracing', False),
         redis_url=redis_cfg.get('url'),
-        model=model_config
+        enforce_https=https_cfg.get('enforce', True),
+        https_port=https_cfg.get('port', 443),
+        model=model_config,
+        memory=memory_config,
+        profiling=profiling_config
     )
 
 
@@ -95,6 +142,24 @@ def save_config(config: DecoderConfig, config_path: str):
         'monitoring': {
             'prometheus_port': config.prometheus_port,
             'enable_tracing': config.enable_tracing
+        },
+        'https': {
+            'enforce': config.enforce_https,
+            'port': config.https_port
+        },
+        'memory': {
+            'enable_monitoring': config.memory.enable_monitoring,
+            'monitoring_interval_seconds': config.memory.monitoring_interval_seconds,
+            'memory_threshold_percent': config.memory.memory_threshold_percent,
+            'gpu_memory_threshold_percent': config.memory.gpu_memory_threshold_percent,
+            'auto_cleanup': config.memory.auto_cleanup,
+            'cleanup_threshold_percent': config.memory.cleanup_threshold_percent
+        },
+        'profiling': {
+            'enable_profiling': config.profiling.enable_profiling,
+            'profile_output_dir': config.profiling.profile_output_dir,
+            'bottleneck_threshold_ms': config.profiling.bottleneck_threshold_ms,
+            'export_format': config.profiling.export_format
         }
     }
     

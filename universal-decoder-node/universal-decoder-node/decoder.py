@@ -15,6 +15,7 @@ import logging
 import os
 import yaml
 import threading
+import random
 from pathlib import Path
 import jwt
 import uvicorn
@@ -26,12 +27,21 @@ from .vocabulary import VocabularyManager
 from .utils.auth import APIKeyManager
 from .utils.rate_limiter import RateLimiter
 from .utils.security import validate_model_source, safe_load_model
+from .utils.memory_manager import MemoryManager
+from .utils.profiler import profile, profile_section, function_profiler
+from .utils.https_middleware import add_https_middleware
+from .config import DecoderConfig, MemoryConfig, ProfilingConfig
 
 logger = logging.getLogger(__name__)
 
-# Initialize utilities
+# Load configuration from environment variables
+config = DecoderConfig()
+
+# Initialize utilities with configuration
 api_key_manager = APIKeyManager()
 rate_limiter = RateLimiter(requests_per_minute=60, requests_per_hour=1000)
+memory_manager = MemoryManager.get_instance(config=config.memory)
+function_profiler = function_profiler.get_instance(config=config.profiling)
 
 
 class OptimizedUniversalDecoder(nn.Module):
@@ -356,13 +366,18 @@ class ContinuousBatcher:
 class DecoderService:
     """Main decoder service with FastAPI integration"""
     
-    def __init__(self, model_path: Optional[str] = None, vocab_dir: str = "vocabs"):
+    def __init__(self, model_path: Optional[str] = None, vocab_dir: str = "vocabs", config=None):
+        self.start_time = time.time()
         self.model_path = model_path
         self.vocab_dir = vocab_dir
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Optional[OptimizedUniversalDecoder] = None
         self.vocabulary_manager = VocabularyManager(vocab_dir)
         self.batcher = ContinuousBatcher()
+        
+        # Load configuration
+        from .config import DecoderConfig, ModelConfig
+        self.config = config or DecoderConfig()
         
         # Configuration
         self.jwt_secret = os.environ.get("DECODER_JWT_SECRET", "")
@@ -385,6 +400,13 @@ class DecoderService:
             description="High-performance translation decoder service"
         )
         
+        # Add HTTPS middleware with configuration
+        add_https_middleware(
+            app, 
+            enforce_https=self.config.enforce_https,
+            https_port=self.config.https_port
+        )
+        
         security = HTTPBearer()
         
         def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -399,6 +421,13 @@ class DecoderService:
             await self._initialize()
             asyncio.create_task(self.batcher.process_batches(self._process_batch_gpu))
             
+            # Export profiling data periodically if enabled
+            if self.config.profiling.enable_profiling:
+                async def export_profiling_data():
+                    while True:
+                        await asyncio.sleep(3600)  # Export every hour
+                        function_profiler.export_stats()
+            
         @app.get("/health")
         async def health():
             """Health check endpoint"""
@@ -409,14 +438,45 @@ class DecoderService:
             }
         
         @app.get("/status")
+        @profile
         async def status():
             """Status endpoint with model info"""
+            # Get memory stats
+            memory_stats = memory_manager.get_memory_stats()
+            
             return {
                 "model_version": self.model_version,
                 "healthy": True,
                 "device": str(self.device),
                 "gpu_available": torch.cuda.is_available(),
-                "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None
+                "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                "memory": {
+                    "system_memory_percent": memory_stats.get("system_memory_percent", 0),
+                    "gpu_memory_percent": memory_stats.get("gpu_memory_percent", 0),
+                    "gpu_memory_allocated_gb": memory_stats.get("gpu_memory_allocated_gb", 0),
+                    "gpu_memory_total_gb": memory_stats.get("gpu_memory_total_gb", 0)
+                },
+                "uptime": time.time() - self.start_time
+            }
+            
+        @app.get("/profiling")
+        async def profiling_stats(credentials: HTTPAuthorizationCredentials = Depends(security)):
+            """Get profiling statistics (admin only)"""
+            # Validate admin access
+            try:
+                payload = jwt.decode(credentials.credentials, self.jwt_secret, algorithms=["HS256"])
+                if payload.get("role") != "admin":
+                    raise HTTPException(status_code=403, detail="Admin access required")
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid token")
+                
+            # Get profiling stats
+            stats = function_profiler.get_sorted_stats(limit=20)
+            bottlenecks = function_profiler.identify_bottlenecks()
+            
+            return {
+                "stats": stats,
+                "bottlenecks": bottlenecks
             }
         
         @app.post("/decode")
@@ -454,73 +514,107 @@ class DecoderService:
         if torch.cuda.is_available():
             logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
     
+    @profile
     async def _load_model(self):
         """Load or reload the model"""
-        if self.model_path and os.path.exists(self.model_path):
-            self.model = torch.load(self.model_path, map_location=self.device)
-        else:
-            self.model = OptimizedUniversalDecoder().to(self.device)
+        # Clean up memory before loading model
+        memory_manager.cleanup(force=True)
         
-        self.model.eval()
+        with profile_section("model_loading"):
+            if self.model_path and os.path.exists(self.model_path):
+                # Use safe_load_model from security utils
+                self.model, metadata = safe_load_model(self.model_path, self.device)
+                logger.info(f"Loaded model from {self.model_path} (trusted: {metadata['trusted']})")
+            else:
+                # Create new model with parameters from config
+                logger.info("Creating new model")
+                self.model = OptimizedUniversalDecoder(
+                    encoder_dim=getattr(self.config.model, 'encoder_dim', 1024),
+                    decoder_dim=getattr(self.config.model, 'decoder_dim', 512),
+                    num_layers=getattr(self.config.model, 'num_layers', 6),
+                    num_heads=getattr(self.config.model, 'num_heads', 8),
+                    vocab_size=getattr(self.config.model, 'vocab_size', 50000),
+                    max_length=getattr(self.config.model, 'max_length', 256),
+                    dropout=getattr(self.config.model, 'dropout', 0.1)
+                ).to(self.device)
         
-        # Compile with torch.compile for faster inference
-        if torch.__version__ >= "2.0.0":
-            self.model = torch.compile(self.model, mode="reduce-overhead")
+        # Optimize model for inference
+        with profile_section("model_optimization"):
+            # Set to eval mode
+            self.model.eval()
+            
+            # Optimize with memory manager
+            self.model = memory_manager.optimize_for_inference(self.model)
+            
+            # Log model size
+            model_size = memory_manager.get_model_size(self.model)
+            logger.info(f"Model size: {model_size:.2f}GB")
     
+    @profile
     async def _process_batch_gpu(self, batch: List[Dict]) -> List[Dict]:
         """Process batch on GPU with maximum efficiency"""
         
         with torch.cuda.amp.autocast():  # Mixed precision for speed
             # Prepare batch tensors
-            encoder_outputs = []
-            encoder_masks = []
-            target_langs = []
-            
-            for item in batch:
-                # Decompress encoder output
-                decompressed = self._decompress_encoder_output(item['compressed_data'])
+            with profile_section("batch_preparation"):
+                encoder_outputs = []
+                encoder_masks = []
+                target_langs = []
                 
-                encoder_outputs.append(decompressed['hidden_states'])
-                encoder_masks.append(decompressed['attention_mask'])
-                target_langs.append(item['target_lang'])
-            
-            # Stack tensors
-            encoder_hidden = torch.tensor(np.stack(encoder_outputs)).to(self.device)
-            encoder_mask = torch.tensor(np.stack(encoder_masks)).to(self.device)
-            
-            # Get target language IDs
-            target_lang_ids = [
-                self.vocabulary_manager.language_to_pack.get(lang, 3) 
-                for lang in target_langs
-            ]
+                for item in batch:
+                    # Decompress encoder output
+                    decompressed = self._decompress_encoder_output(item['compressed_data'])
+                    
+                    encoder_outputs.append(decompressed['hidden_states'])
+                    encoder_masks.append(decompressed['attention_mask'])
+                    target_langs.append(item['target_lang'])
+                
+                # Stack tensors
+                encoder_hidden = torch.tensor(np.stack(encoder_outputs)).to(self.device)
+                encoder_mask = torch.tensor(np.stack(encoder_masks)).to(self.device)
+                
+                # Get target language IDs
+                target_lang_ids = [
+                    self.vocabulary_manager.language_to_pack.get(lang, 3) 
+                    for lang in target_langs
+                ]
             
             # Generate translations
-            with torch.no_grad():
-                output_ids, scores = self.model.generate(
-                    encoder_hidden,
-                    encoder_mask,
-                    target_lang_ids[0],
-                    max_length=128,
-                    temperature=0.7,
-                    top_k=50,
-                    top_p=0.9
-                )
+            with profile_section("model_inference"):
+                with torch.no_grad():
+                    output_ids, scores = self.model.generate(
+                        encoder_hidden,
+                        encoder_mask,
+                        target_lang_ids[0],
+                        max_length=128,
+                        temperature=0.7,
+                        top_k=50,
+                        top_p=0.9
+                    )
             
             # Decode to text
-            results = []
-            for i, output in enumerate(output_ids):
-                # Get vocabulary pack for target language
-                vocab_pack = self.vocabulary_manager.get_vocab_for_pair('en', target_langs[i])
-                
-                # Decode tokens to text
-                tokens = output.cpu().numpy()
-                text = self._decode_tokens_to_text(tokens, vocab_pack)
-                
-                results.append({
-                    'translation': text,
-                    'target_lang': target_langs[i],
-                    'scores': scores[i] if i < len(scores) else None
+            with profile_section("text_decoding"):
+                results = []
+                for i, output in enumerate(output_ids):
+                    # Get vocabulary pack for target language
+                    vocab_pack = self.vocabulary_manager.get_vocab_for_pair('en', target_langs[i])
+                    
+                    # Decode tokens to text
+                    tokens = output.cpu().numpy()
+                    text = self._decode_tokens_to_text(tokens, vocab_pack)
+                    
+                    results.append({
+                        'translation': text,
+                        'target_lang': target_langs[i],
+                        'scores': scores[i] if i < len(scores) else None
                 })
+            
+            # Periodically clean up memory if needed
+            import random
+            if random.random() < 0.05:  # ~5% of batches
+                memory_stats = memory_manager.get_memory_stats()
+                if memory_stats.get('gpu_memory_percent', 0) > 80:
+                    memory_manager.cleanup()
             
             return results
     

@@ -25,7 +25,7 @@ This integration enables better scalability across multiple regions and provides
 
 - **Distributed Decoder Pool**: Decoders running in any region can register with the central Redis instance
 - **Consistent Rate Limiting**: Rate limits are enforced consistently across all coordinator instances
-- **Improved Reliability**: Automatic fallback to file-based storage if Redis is unavailable
+- **Improved Reliability**: Automatic fallback to file-based storage if Redis is unavailable, plus periodic Redis-to-disk mirroring
 - **Horizontal Scaling**: Multiple coordinator instances can share the same decoder pool
 - **Real-time Updates**: Changes to the decoder pool are immediately visible to all components
 
@@ -33,11 +33,12 @@ This integration enables better scalability across multiple regions and provides
 
 ### Environment Variables
 
-The following environment variables can be used to configure Redis:
+The following environment variables can be used to configure Redis and mirroring:
 
 - `REDIS_URL`: Redis connection URL (e.g., `redis://localhost:6379/0`)
 - `REDIS_PORT`: Redis port (default: `6379`)
 - `REDIS_PASSWORD`: Redis password (if authentication is enabled)
+- `COORDINATOR_MIRROR_INTERVAL`: Seconds between periodic Redis-to-disk mirrors (default: 60, minimum: 5)
 
 ### Docker Compose
 
@@ -123,7 +124,10 @@ The coordinator service uses Redis to:
 2. Track decoder health status
 3. Store A/B test configurations
 
-If Redis is unavailable, it falls back to using the local file system.
+If Redis is unavailable, it falls back to using the local file system. In addition, the coordinator:
+
+- Periodically mirrors Redis data to `configs/decoder_pool.json` via `DecoderPool.mirror_redis_to_disk()`
+- Validates and logs the mirror interval at startup (`COORDINATOR_MIRROR_INTERVAL`, min 5s)
 
 ### Rate Limiter
 
@@ -169,7 +173,7 @@ If you experience Redis connection issues:
 If you notice inconsistencies in the decoder pool:
 
 1. Check Redis data: `redis-cli get decoder_pool:nodes`
-2. Compare with file data: `cat configs/decoder_pool.json`
+2. Compare with file data: `type configs/decoder_pool.json` (Windows) or `cat configs/decoder_pool.json` (Unix)
 3. Restart the coordinator to force a reload: `docker restart coordinator`
 
 ### Performance Issues

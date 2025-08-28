@@ -74,7 +74,7 @@ do {
 ```javascript
 const translator = new TranslationClient({
     useWasm: true,  // Will fall back to API if WASM fails
-    decoderUrl: "https://api.example.com/decode"
+    decoderUrl: "https://api.example.com" // Use base if your decoder exposes /translate
 });
 ```
 
@@ -116,7 +116,10 @@ await encoder.download_vocabulary(source_lang)
 **Solutions**:
 1. Check decoder endpoint availability:
 ```bash
-curl -v https://your-decoder-endpoint.com/health
+# Decoder direct health (compose defaults)
+curl -v http://localhost:8001/health
+# Coordinator status (health summary)
+curl -v http://localhost:8002/api/status
 ```
 
 2. Verify network connectivity and firewall settings
@@ -153,9 +156,18 @@ async def translate_batch(client, texts, source_lang, target_lang):
 3. Download vocabulary manually:
 ```python
 # Python
-from vocabulary.downloader import VocabularyDownloader
-downloader = VocabularyDownloader()
-await downloader.download_vocabulary(language_code)
+from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode
+
+creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabs')
+# Create or update a pack that includes the language
+creator.create_pack(pack_name='latin', languages=['en','es','fr','de','it','pt','nl','sv','pl'], mode=CreationMode.PRODUCTION)
+
+# Then load via manager in your app
+from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+from config.schemas import RootConfig
+
+manager = UnifiedVocabularyManager(config=RootConfig(), vocab_dir='vocabs', mode=VocabularyMode.OPTIMIZED)
+pack = manager.get_vocab_for_pair(source_lang='en', target_lang='fr')
 ```
 
 ### Vocabulary Format Issues
@@ -177,7 +189,24 @@ python vocabulary/create_vocabulary.py --lang <language_code> --data <path_to_da
 2. Verify decoder GPU utilization
 3. Implement batching for multiple translations
 4. Consider using a closer decoder node
-5. Check for memory leaks:
+5. Use the profiling system to identify bottlenecks:
+```python
+# Python
+from universal_decoder_node.utils.profiler import profile, profile_section, function_profiler
+
+# Profile a function
+@profile
+def my_translation_function():
+    # Perform translation
+    pass
+
+# Get profiling stats
+stats = function_profiler.get_stats()
+
+# Identify bottlenecks
+bottlenecks = function_profiler.identify_bottlenecks()
+```
+6. Check for memory leaks:
 ```python
 # Monitor memory usage over time
 import psutil
@@ -197,7 +226,51 @@ for i in range(100):
 1. Reduce batch size
 2. Implement memory-efficient vocabulary loading
 3. Use streaming for large translations
-4. Check for memory leaks in vocabulary management
+4. Use the memory management system:
+```python
+# Python
+from universal_decoder_node.utils.memory_manager import MemoryManager
+
+# Get memory manager instance
+memory_manager = MemoryManager.get_instance()
+
+# Get current memory stats
+memory_stats = memory_manager.get_memory_stats()
+
+# Perform manual cleanup if needed
+memory_manager.cleanup()
+```
+5. Check for memory leaks in vocabulary management
+
+### HTTPS Enforcement Issues
+**Symptoms**: Redirect loops, mixed content warnings, certificate errors
+**Solutions**:
+1. Check that your load balancer or proxy is properly configured
+2. Ensure all resources are served over HTTPS
+3. Configure HTTPS enforcement:
+```python
+# Python
+from universal_decoder_node.utils.https_middleware import add_https_middleware
+
+# Add HTTPS middleware to FastAPI app
+add_https_middleware(app, enforce_https=True, https_port=443)
+```
+4. Verify SSL certificate validity and installation
+
+### Profiling Overhead
+**Symptoms**: Performance degradation when profiling is enabled
+**Solutions**:
+1. Enable profiling only for specific functions or sections
+2. Disable profiling in production environments
+3. Use selective profiling:
+```python
+# Python
+# Only profile specific sections
+with profile_section("critical_section"):
+    # Code to profile
+    result = process_complex_data(data)
+```
+4. Configure profiling through environment variables or config files
 
 ## Deployment Issues
 

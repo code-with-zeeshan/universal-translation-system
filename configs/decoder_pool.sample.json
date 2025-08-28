@@ -1,0 +1,27 @@
+{
+  "nodes": [
+    {
+      "node_id": "decoder-1",
+      "endpoint": "http://decoder:8001",
+      "health_url": "http://decoder:8001/health",
+      "status": "active",
+      "languages": ["en", "es", "fr"],
+      "priority": 1,
+      "region": "us-east-1",
+      "gpu_type": "T4",
+      "capacity": 100,
+      "tags": ["production", "general-purpose", "stable","experimental", "es_v2_adapter"],
+      "hot_adapters": ["en-es", "en-fr"]
+    }
+  ],
+  "ab_tests": [
+    {
+      "id": "new-model-test",
+      "description": "Testing new model version",
+      "control_group": { "node_ids": ["decoder-1"] },
+      "test_group": { "node_ids": ["decoder-1"] },
+      "traffic_split": 0.1,
+      "active": false
+    }
+  ]
+}

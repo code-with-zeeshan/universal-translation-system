@@ -12,20 +12,36 @@ A React Native SDK for the Universal Translation System, supporting config-drive
 
 ## Quick Start
 
-1. Add the SDK to your project:
-   - Install via npm or yarn
-   - Configure the decoder/coordinator endpoint in your app
-
-2. Initialize and use:
-```tsx
-import { useTranslation } from 'universal-translation-sdk';
-const { translate } = useTranslation({ decoderUrl: 'https://coordinator.example.com/decode' });
-const result = await translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
+1) Install the package
+```bash
+npm install @universal-translation/react-native-sdk
+# or
+yarn add @universal-translation/react-native-sdk
 ```
 
-3. Monitor and manage:
-- Use the coordinator dashboard to view node health, load, and analytics
-- Prometheus metrics are available for all translation requests
+2) iOS pods
+```bash
+cd ios && pod install && cd ..
+```
+
+3) Initialize and use (Coordinator binary endpoint)
+```tsx
+import { TranslationClient } from '@universal-translation/react-native-sdk';
+
+const client = new TranslationClient({
+  decoderUrl: 'http://localhost:8002/api/decode',
+  apiKey: process.env.API_KEY,
+});
+
+const result = await client.translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
+```
+
+4) Linking notes
+- Autolinking works for RN 0.60+.
+- If adding a native encoder module, ensure Android NDK/CMake and iOS Podspec are configured.
+
+5) Monitoring
+- Use coordinator `/api/status` and Prometheus metrics.
 
 ## Adding New Languages
 - Update `data/config.yaml` and run the pipeline to add new languages

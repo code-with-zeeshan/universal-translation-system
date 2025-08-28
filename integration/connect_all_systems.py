@@ -623,7 +623,7 @@ class UniversalTranslationSystem:
             from training.memory_efficient_training import MemoryOptimizedTrainer, MemoryConfig
             
             # Create datasets
-            from training.train_universal_system import ModernParallelDataset
+            from data.dataset_classes import ModernParallelDataset
             
             train_path = Path(self.config.data_dir) / "processed" / "train_final.txt"
             val_path = Path(self.config.data_dir) / "processed" / "val_final.txt"
@@ -874,10 +874,16 @@ class UniversalTranslationSystem:
                 'gradient_clip': trial.suggest_uniform('gradient_clip', 0.5, 2.0)
             }
         
-            # Train with config
-            trainer = ModernUniversalSystemTrainer(
-                encoder, decoder, train_path, val_path,
-                config=MemoryConfig(**config)
+            # Train with config using IntelligentTrainer
+            from training.intelligent_trainer import IntelligentTrainer
+            train_dataset = ModernParallelDataset(str(train_path))
+            val_dataset = ModernParallelDataset(str(val_path)) if Path(val_path).exists() else None
+            trainer = IntelligentTrainer(
+                encoder=encoder,
+                decoder=decoder,
+                train_dataset=train_dataset,
+                val_dataset=val_dataset,
+                config=self.config
             )
         
             # Train for few epochs

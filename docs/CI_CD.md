@@ -29,7 +29,8 @@ docker build -f docker/encoder.Dockerfile -t universal-encoder-core:latest .
 
 ### Docker Build
 ```bash
-docker build -f cloud_decoder/Dockerfile -t universal-decoder:latest .
+# Current Dockerfile path
+docker build -f docker/decoder.Dockerfile -t universal-decoder:latest .
 ```
 
 ### Kubernetes Deployment
@@ -44,10 +45,13 @@ docker build -f cloud_decoder/Dockerfile -t universal-decoder:latest .
 - Build SDKs using platform-native tools (Gradle, Xcode, Flutter).
 - Link against the encoder core artifact (from Docker image or K8s PVC).
 - Publish to internal or public package repositories (Maven, CocoaPods, pub.dev).
+- Publishing reference: docs/SDK_PUBLISHING.md
 
 ### React Native/Web
 - Build and test using Node.js, TypeScript, and bundlers (Webpack, Vite, etc.).
 - Publish to npm or internal registry.
+- Web SDK GitHub Actions: .github/workflows/web-npm-publish.yml
+- Android/iOS SDK GitHub Actions: .github/workflows/sdk-publish.yml
 
 ---
 
@@ -115,4 +119,5 @@ jobs:
 ## See Also
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
-- [SDK READMEs] in each SDK folder 
+- SDK READMEs in each SDK folder
+- [API.md](./API.md) for endpoints used by SDKs and coordinator

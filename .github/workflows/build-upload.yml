@@ -1,0 +1,70 @@
+name: Build and Upload Artifacts
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      repo_id:
+        description: 'HF repo id (e.g., your-username/universal-translation-system)'
+        required: true
+      create_vocabs:
+        description: 'Create vocabulary packs before upload'
+        required: false
+        default: 'true'
+      convert_models:
+        description: 'Convert models before upload'
+        required: false
+        default: 'true'
+      vocab_groups:
+        description: 'Space-separated vocab groups (e.g., "latin cjk")'
+        required: false
+        default: ''
+      vocab_mode:
+        description: 'production | research | hybrid'
+        required: false
+        default: ''
+
+jobs:
+  build-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install huggingface_hub
+
+      - name: Hugging Face login
+        if: env.HF_TOKEN != ''
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - <<'PY'
+          import os
+          tok = os.environ.get('HF_TOKEN')
+          if tok:
+              from huggingface_hub import HfApi
+              HfApi().set_access_token(tok)
+          PY
+
+      - name: Build and Upload
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_HUB_REPO_ID: ${{ github.event.inputs.repo_id || secrets.HF_HUB_REPO_ID }}
+        run: |
+          args="--repo_id ${HF_HUB_REPO_ID}"
+          if [ "${{ github.event.inputs.create_vocabs || 'true' }}" = "true" ]; then args="$args --create-vocabs"; fi
+          if [ "${{ github.event.inputs.convert_models || 'true' }}" = "true" ]; then args="$args --convert-models"; fi
+          if [ -n "${{ github.event.inputs.vocab_groups }}" ]; then args="$args --vocab-groups ${{ github.event.inputs.vocab_groups }}"; fi
+          if [ -n "${{ github.event.inputs.vocab_mode }}" ]; then args="$args --vocab-mode ${{ github.event.inputs.vocab_mode }}"; fi
+          python scripts/build_and_upload_pipeline.py $args

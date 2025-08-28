@@ -1,0 +1,65 @@
+name: SDK Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Version to publish (e.g., 1.0.1)'
+        required: true
+      publish_android:
+        description: 'Publish Android SDK'
+        required: true
+        default: 'true'
+      publish_ios:
+        description: 'Publish iOS Pod'
+        required: true
+        default: 'false'
+
+jobs:
+  android-publish:
+    if: ${{ github.event.inputs.publish_android == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Set version
+        working-directory: android/UniversalTranslationSDK
+        run: |
+          sed -i "s/version = '.*'/version = '${{ github.event.inputs.release_version }}'/" build.gradle || true
+      - name: Publish to Maven Local (dry-run default)
+        working-directory: android/UniversalTranslationSDK
+        run: ./gradlew publishToMavenLocal
+      - name: Publish to Maven Repository (optional)
+        if: ${{ secrets.MAVEN_URL && secrets.MAVEN_USERNAME && secrets.MAVEN_PASSWORD }}
+        env:
+          MAVEN_URL: ${{ secrets.MAVEN_URL }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        working-directory: android/UniversalTranslationSDK
+        run: |
+          ./gradlew publish \
+            -PmavenRepoUrl="$MAVEN_URL" \
+            -PmavenUser="$MAVEN_USERNAME" \
+            -PmavenPass="$MAVEN_PASSWORD"
+
+  ios-pod-lint:
+    if: ${{ github.event.inputs.publish_ios == 'true' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CocoaPods
+        run: sudo gem install cocoapods
+      - name: Lint Podspec
+        working-directory: ios/UniversalTranslationSDK
+        run: |
+          pod lib lint --allow-warnings --verbose
+      - name: Push to trunk (optional)
+        if: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        working-directory: ios/UniversalTranslationSDK
+        run: |
+          pod trunk push UniversalTranslationSDK.podspec --allow-warnings --verbose

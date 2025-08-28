@@ -1,166 +1,73 @@
 # Environment Variables
 
-This document provides a comprehensive list of all environment variables used in the Universal Translation System. These variables can be configured to customize the behavior of various components.
+This document lists the key environment variables used across services and SDKs. Use a `.env` file, shell exports, Docker Compose, or K8s Secrets/ConfigMaps to set these.
 
-## How to Use Environment Variables
+## General
+- **MODEL_VERSION**: Model version string (default: 1.0.0)
 
-There are several ways to set environment variables:
+## Decoder Node (cloud_decoder)
+- **API_HOST**: Bind host (default: 0.0.0.0)
+- **API_PORT**: Port (default: 8001)
+- **API_WORKERS**: Workers (default: 1)
+- **API_TITLE**: Title (default: Cloud Decoder API)
+- **DECODER_JWT_SECRET**: JWT secret for admin endpoints
+- **DECODER_CONFIG_PATH**: Path to YAML config (default: config/decoder_config.yaml)
+- **HF_HUB_REPO_ID**: HF repo for adapters/models (default: your-hf-org/universal-translation-system)
+- **CUDA_VISIBLE_DEVICES**: GPU selection (e.g., 0)
+- **OMP_NUM_THREADS**: Inference CPU threads
+- **PREFETCH_VOCAB_GROUPS**: Comma‑separated vocab packs to prefetch (optional)
+- **PREFETCH_ADAPTERS**: Comma‑separated adapters to prefetch (optional)
 
-1. **Using a .env file**:
-   - Copy the `.env.example` file to `.env` in the project root
-   - Modify the values as needed
-   - The system will automatically load these values at runtime
+## Coordinator
+- **API_HOST**: Bind host (default: 0.0.0.0)
+- **API_PORT**: Port (default: 8002 under Compose)
+- **API_WORKERS**: Workers (default: 1)
+- **API_TITLE**: Title (default: Universal Translation Coordinator)
+- **COORDINATOR_SECRET**: Cookie/session secret
+- **COORDINATOR_JWT_SECRET**: JWT secret for admin APIs
+- **COORDINATOR_TOKEN**: Admin login token (dashboard)
+- **INTERNAL_SERVICE_TOKEN**: Token for internal calls to decoder (e.g., compose_adapter)
+- **POOL_CONFIG_PATH**: File path for decoder pool (default: configs/decoder_pool.json)
+- **REDIS_URL**: Redis connection URL (optional, enables Redis features)
+- **COORDINATOR_MIRROR_INTERVAL**: Seconds between Redis→disk mirrors of decoder pool (default: 60; minimum enforced: 5; effective value logged at startup)
+- **ETCD_HOST**: etcd host (optional)
+- **ETCD_PORT**: etcd port (optional)
+- **USE_ETCD**: enable etcd service discovery (true/false)
+- **SERVICE_TTL**: service discovery TTL seconds
 
-2. **Setting in your shell**:
-   ```bash
-   # Linux/macOS
-   export DECODER_API_URL=https://your-custom-domain.com/decode
-   
-   # Windows PowerShell
-   $env:DECODER_API_URL = "https://your-custom-domain.com/decode"
-   ```
+## Docker Compose Ports
+- **ENCODER_PORT**: 8000 by default
+- **DECODER_PORT**: 8001 by default
+- **COORDINATOR_PORT**: 8002 by default
+- **PROMETHEUS_PORT**: 9090 by default
+- **GRAFANA_PORT**: 3000 by default
 
-3. **In Docker Compose**:
-   - Environment variables can be set in the `docker-compose.yml` file
-   - You can also create a `.env` file in the same directory as your `docker-compose.yml`
+## SDKs
+- Web SDK:
+  - **DECODER_API_URL**: Point to coordinator `/api/decode` or decoder `/decode`
+  - **WASM_ENCODER_PATH**: Path to WASM artifacts (if using WASM)
+  - Optional toggles: `USE_WASM_ENCODER`, `ENABLE_FALLBACK`
+- React Native SDK:
+  - **USE_NATIVE_ENCODER**: true/false
 
-4. **In Kubernetes**:
-   - Use ConfigMaps and Secrets to manage environment variables
-   - See `kubernetes/` directory for example configurations
+## Vocabulary/Training (commonly used)
+- **ENCODER_MODEL_PATH**: models/production/encoder.pt
+- **FALLBACK_MODEL_PATH**: models/fallback/encoder.pt
+- **EMBEDDING_DIM**: 768 (example)
 
-## General Configuration
+## Monitoring
+- **METRICS_PATH**: /metrics
+- **METRICS_COLLECTION_INTERVAL**: seconds (default: 15)
+- **ENABLE_SYSTEM_METRICS**: true/false
+- **ENABLE_GPU_METRICS**: true/false
+- **ENABLE_VOCABULARY_METRICS**: true/false
 
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `MODEL_VERSION` | Version of the model being used | `1.0.0` |
-
-## Web SDK Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `DECODER_API_URL` | URL for the decoder API | `https://api.yourdomain.com/decode` |
-| `ENCODER_API_URL` | URL for the encoder API | `https://api.universal-translation.com/encode` |
-| `MODEL_URL` | Path to the model file | `/models/universal_encoder.onnx` |
-| `VOCAB_URL` | Path to vocabulary files | `/vocabs` |
-| `WASM_ENCODER_PATH` | Path to WebAssembly encoder | `/wasm/encoder.js` |
-| `USE_WASM_ENCODER` | Whether to use WebAssembly encoder | `true` |
-| `ENABLE_FALLBACK` | Enable fallback to cloud API | `true` |
-
-## React Native SDK Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `USE_NATIVE_ENCODER` | Whether to use native encoder | `true` |
-
-## Cloud Decoder Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `API_HOST` | Host to bind the API server | `0.0.0.0` |
-| `API_PORT` | Port for the API server | `8000` |
-| `API_WORKERS` | Number of worker processes | `1` |
-| `API_TITLE` | Title for the API documentation | `Cloud Decoder API` |
-| `DECODER_JWT_SECRET` | Secret key for JWT authentication | `jwtsecret123` |
-| `DECODER_CONFIG_PATH` | Path to decoder configuration | `config/decoder_config.yaml` |
-| `HF_HUB_REPO_ID` | Hugging Face Hub repository ID | `your-hf-org/universal-translation-system` |
-
-## Coordinator Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `COORDINATOR_HOST` | Host to bind the coordinator | `0.0.0.0` |
-| `COORDINATOR_PORT` | Port for the coordinator | `5100` |
-| `COORDINATOR_WORKERS` | Number of worker processes | `1` |
-| `COORDINATOR_TITLE` | Title for the coordinator API | `Universal Translation Coordinator` |
-| `COORDINATOR_SECRET` | Secret key for cookies | `a-very-secret-key-for-cookies` |
-| `COORDINATOR_JWT_SECRET` | Secret key for JWT authentication | `a-super-secret-jwt-key` |
-| `COORDINATOR_TOKEN` | Admin token for coordinator | `changeme123` |
-| `INTERNAL_SERVICE_TOKEN` | Token for internal service auth | `internal-secret-token-for-service-auth` |
-| `POOL_CONFIG_PATH` | Path to decoder pool configuration | `configs/decoder_pool.json` |
-
-## Universal Decoder Node Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `DECODER_ENDPOINT` | Endpoint for the decoder | `http://localhost:8000` |
-| `COORDINATOR_URL` | URL for the coordinator | `http://localhost:5100` |
-| `DECODER_HOST` | Host to bind the decoder | `0.0.0.0` |
-| `DECODER_PORT` | Port for the decoder | `8000` |
-| `DECODER_WORKERS` | Number of worker processes | `1` |
-| `VOCAB_DIR` | Directory for vocabulary files | `vocabs` |
-
-## Vocabulary Creation Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `ENCODER_MODEL_PATH` | Path to encoder model | `models/production/encoder.pt` |
-| `FALLBACK_MODEL_PATH` | Path to fallback model | `models/fallback/encoder.pt` |
-| `EMBEDDING_DIM` | Dimension of embeddings | `768` |
-
-## Docker Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `ENCODER_PORT` | Port for the encoder service | `8000` |
-| `DECODER_PORT` | Port for the decoder service | `8001` |
-| `COORDINATOR_PORT` | Port for the coordinator service | `8002` |
-| `PROMETHEUS_PORT` | Port for Prometheus | `9090` |
-| `GRAFANA_PORT` | Port for Grafana | `3000` |
-| `GRAFANA_ADMIN_PASSWORD` | Admin password for Grafana | `admin` |
-| `DECODER_POOL` | Decoder pool configuration | `decoder:8001` |
-
-## Monitoring Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `METRICS_PATH` | Path for metrics endpoint | `/metrics` |
-| `MONITORING_LOG_LEVEL` | Log level for monitoring | `INFO` |
-| `METRICS_COLLECTION_INTERVAL` | Interval for metrics collection (seconds) | `15` |
-| `ENABLE_SYSTEM_METRICS` | Enable system metrics collection | `true` |
-| `ENABLE_GPU_METRICS` | Enable GPU metrics collection | `true` |
-| `ENABLE_VOCABULARY_METRICS` | Enable vocabulary metrics collection | `true` |
-
-## Training Configuration
-
-| Variable | Description | Default Value |
-|----------|-------------|---------------|
-| `TRAINING_BATCH_SIZE` | Batch size for training | `32` |
-| `TRAINING_EPOCHS` | Number of training epochs | `20` |
-| `TRAINING_LEARNING_RATE` | Learning rate for training | `5e-5` |
-| `TRAINING_WEIGHT_DECAY` | Weight decay for training | `0.01` |
-| `TRAINING_WARMUP_STEPS` | Number of warmup steps | `1000` |
-| `TRAINING_GRADIENT_ACCUMULATION_STEPS` | Gradient accumulation steps | `1` |
-| `TRAINING_MIXED_PRECISION` | Enable mixed precision training | `true` |
-| `TRAINING_GRADIENT_CHECKPOINTING` | Enable gradient checkpointing | `false` |
-| `TRAINING_LOG_STEPS` | Log interval in steps | `100` |
-| `TRAINING_SAVE_STEPS` | Save interval in steps | `1000` |
-| `TRAINING_EVAL_STEPS` | Evaluation interval in steps | `1000` |
-
-## Security Recommendations
-
-For production environments, we strongly recommend:
-
-1. **Change all default secrets and tokens**
-2. **Use environment-specific values for different deployments**
-3. **Store sensitive values in secure vaults or secret managers**
-4. **Rotate JWT secrets periodically**
-5. **Use HTTPS for all API endpoints**
+## Security Tips
+1. Replace all defaults in production; store secrets in a vault/Secrets.
+2. Terminate TLS at your ingress/proxy.
+3. Rotate JWT secrets periodically.
 
 ## Troubleshooting
-
-If you encounter issues with environment variables:
-
-1. Verify that the variables are correctly set using:
-   ```bash
-   # Linux/macOS
-   printenv | grep DECODER
-   
-   # Windows PowerShell
-   Get-ChildItem Env: | Where-Object { $_.Name -like "*DECODER*" }
-   ```
-
-2. Check that the application is loading from the expected location
-3. Ensure Docker containers have the correct environment variables passed to them
-4. Look for typos in variable names (they are case-sensitive)
-
-For more help, see the [Troubleshooting Guide](TROUBLESHOOT.md).
+- Verify envs are set inside containers: `docker compose exec <svc> env | sort`
+- In K8s, check `kubectl describe deploy <name>` and ConfigMaps/Secrets mounting.
+- See TROUBLESHOOT.md for more.

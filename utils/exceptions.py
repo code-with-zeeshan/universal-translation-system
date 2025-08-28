@@ -38,3 +38,41 @@ class ResourceError(UniversalTranslationError):
 class SecurityError(UniversalTranslationError):
     """Raised when there are security-related issues"""
     pass
+
+class LoggingError(UniversalTranslationError):
+    """Raised when there are logging-related issues"""
+    pass
+class NetworkError(UniversalTranslationError):
+    """Raised when there are network-related issues"""
+    pass
+
+class TimeoutError(UniversalTranslationError):
+    """Raised when an operation times out"""
+    pass
+
+class AuthenticationError(UniversalTranslationError):
+    """Raised when there are authentication issues"""
+    pass
+
+class AuthorizationError(UniversalTranslationError):
+    """Raised when there are authorization issues"""
+    pass
+
+class ResourceError(UniversalTranslationError):
+    """Raised when there are issues with resource management"""
+    pass
+
+class MemoryError(ResourceError):
+    """Raised when there are memory-related issues"""
+    pass
+
+class ThreadingError(UniversalTranslationError):
+    """Raised when there are threading-related issues"""
+    pass
+
+class ValidationError(UniversalTranslationError):
+    """Raised when validation fails"""
+    
+    def __init__(self, message: str, details: Optional[dict] = None):
+        super().__init__(message)
+        self.details = details or {}

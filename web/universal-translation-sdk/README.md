@@ -13,22 +13,36 @@ A Web SDK for the Universal Translation System, supporting config-driven languag
 
 ## Quick Start
 
-1. Add the SDK to your project:
-   - Install via npm or yarn
-   - Configure the decoder/coordinator endpoint in your app
+1) Install and build
+```bash
+npm install
+npm run build
+```
 
-2. Initialize and use:
-```js
-import { TranslationClient } from 'universal-translation-sdk';
-const client = new TranslationClient({ 
-  decoderUrl: 'https://coordinator.example.com/decode',
-  useWasmEncoder: true  // Enable WebAssembly encoder for better performance
+2) Run example
+- Vite dev server:
+```bash
+npm run example
+# Open http://localhost:3000
+```
+- Express server with WASM headers:
+```bash
+node example/server.js
+# Open http://localhost:3000
+```
+
+3) Initialize and use in your app
+```ts
+import { TranslationClient } from '@universal-translation/web-sdk';
+const client = new TranslationClient({
+  decoderUrl: 'http://localhost:8002/api/decode',
+  useWasm: true,
 });
 const result = await client.translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
 ```
 
-3. Monitor and manage:
-- Use the coordinator dashboard to view node health, load, and analytics
+4) Monitor and manage
+- Use the coordinator status endpoint and dashboard
 - Prometheus metrics are available for all translation requests
 
 ## Adding New Languages
@@ -37,6 +51,7 @@ const result = await client.translate({ text: 'Hello world', sourceLang: 'en', t
 
 ## Documentation
 - See [docs/SDK_INTEGRATION.md](../../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
+- Publishing steps: [docs/SDK_PUBLISHING.md](../../docs/SDK_PUBLISHING.md)
 - For WebAssembly implementation details, see [src/wasm/README.md](src/wasm/README.md)
 
 ## Monitoring

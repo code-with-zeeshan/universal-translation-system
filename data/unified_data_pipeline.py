@@ -29,7 +29,7 @@ from utils.logging_config import setup_logging
 from utils.common_utils import DirectoryManager
 
 # Import data modules (these would use the unified versions we created earlier)
-from data.unified_downloader import UnifiedDataDownloader, DatasetType
+from data.unified_data_downloader import UnifiedDataDownloader, DatasetType
 from data.smart_sampler import SmartDataSampler
 from data.synthetic_augmentation import SyntheticDataAugmenter
 from connector.pipeline_connector import PipelineConnector

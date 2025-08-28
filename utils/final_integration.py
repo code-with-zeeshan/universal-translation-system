@@ -32,9 +32,9 @@ class SystemIntegrator:
             'vocabulary.unified_vocab_manager': ['UnifiedVocabularyManager', 'VocabularyMode'],
             
             # Training
-            'training.distributed_train': ['UnifiedDistributedTrainer'],
+            'training.intelligent_trainer': ['IntelligentTrainer'],
             'training.memory_efficient_training': ['MemoryOptimizedTrainer'],
-            'training.progressive_training': ['ProgressiveTrainingOrchestrator'], # Corrected class name
+            'training.progressive_training': ['ProgressiveTrainingOrchestrator'],
             'training.quantization_pipeline': ['EncoderQuantizer'],
             
             # Evaluation

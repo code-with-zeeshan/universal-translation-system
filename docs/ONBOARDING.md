@@ -1,252 +1,169 @@
 # Developer Onboarding Guide
 
-Welcome to the Universal Translation System! This guide will help you get started with development and understand the system architecture.
+Welcome to the Universal Translation System! This guide helps you get set up and understand the system.
 
 ## Table of Contents
-1. [System Overview](#system-overview)
-2. [Getting Started](#getting-started)
-3. [Development Environment Setup](#development-environment-setup)
-4. [Key Components](#key-components)
-5. [Common Workflows](#common-workflows)
-6. [Troubleshooting](#troubleshooting)
-7. [Resources](#resources)
+1. System Overview
+2. Getting Started
+3. Development Environment Setup
+4. Key Components
+5. Common Workflows
+6. Troubleshooting
+7. Resources
 
 ## System Overview
-
-The Universal Translation System uses an innovative edge-cloud split architecture:
-
-- **Edge (Client)**: A lightweight universal encoder (35MB base + 2-4MB vocabulary packs) runs on the device
-- **Cloud**: A powerful decoder infrastructure processes the encoded embeddings and returns translations
-
-This approach allows us to deliver high-quality translations with minimal client-side resources.
-
-### Key Features
-
-- **Edge-Cloud Split Architecture**: Minimizes client app size while maximizing translation quality
-- **Universal Encoder**: 35MB base model + 2-4MB vocabulary packs per language
-- **Cloud Decoder**: Shared infrastructure using Litserve (2x faster than FastAPI)
-- **Multiple SDK Support**: Native implementations for Android, iOS, Flutter, React Native, and Web
-- **Dynamic Vocabulary System**: Download only the languages you need (2-4MB each)
-- **Advanced Coordinator**: Load balancing, health monitoring, and dynamic decoder pool management
+- **Edge (Client)**: Lightweight universal encoder (35MB base + 2–4MB vocabulary packs)
+- **Cloud**: Decoder infrastructure returns translations
+- **Coordinator**: Routes requests to least-loaded healthy decoders; shares pool via Redis with periodic mirroring to disk
 
 ## Getting Started
 
 ### Prerequisites
-
 - Python 3.8+
 - Git
-- Docker (optional, for containerized development)
-- GPU with CUDA support (optional, for training and local decoder testing)
+- Docker (optional, for local stack)
+- CUDA GPU (optional, for training/decoder)
 
 ### Quick Start
-
 ```bash
-# Clone repository
+# Clone
 git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-translation-system
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Windows: .\venv\Scripts\activate
+# Linux/macOS: source venv/bin/activate
 
-# Install dependencies
+# Install
 pip install -r requirements.txt
 
-# Run system validation
-python main.py validate
+# Validate system
+python main.py --mode setup --validate-only --verbose
 
 # Run tests
 pytest tests/
 ```
 
+### Local stack (Docker Compose)
+```bash
+docker compose up -d --build encoder decoder redis coordinator prometheus grafana
+# Encoder:     http://localhost:8000
+# Decoder:     http://localhost:8001
+# Coordinator: http://localhost:8002
+# Prometheus:  http://localhost:9090
+# Grafana:     http://localhost:3000
+```
+
 ## Development Environment Setup
 
-### Python Environment
-
-We recommend using a virtual environment for development:
-
+### Python
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Windows: .\venv\Scripts\activate
+# Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### IDE Setup
+### Recommended VS Code extensions
+- Python, Pylance, Black Formatter, Mermaid Preview, Docker
 
-We recommend using Visual Studio Code with the following extensions:
-- Python
-- Pylance
-- Black Formatter
-- Mermaid Preview
-- Docker
-
-### Docker Setup (Optional)
-
-For containerized development:
-
+### Docker (optional)
 ```bash
-# Build and run the encoder
+# Encoder
 docker build -t universal-encoder -f docker/encoder.Dockerfile .
 docker run -p 8000:8000 universal-encoder
 
-# Build and run the decoder (requires GPU)
+# Decoder (GPU required)
 docker build -t universal-decoder -f docker/decoder.Dockerfile .
 docker run --gpus all -p 8001:8001 universal-decoder
 ```
 
 ## Key Components
-
-### 1. Universal Encoder
-
-The encoder converts text to language-agnostic embeddings. It's implemented in Python (for training) and C++ (for deployment).
-
-**Key Files:**
-- `encoder/`: Python implementation
-- `encoder_core/`: C++ core implementation
-- `vocabulary/`: Language-specific vocabulary management
-
-### 2. Cloud Decoder
-
-The decoder converts embeddings to translated text. It runs on GPU servers and is served via Litserve.
-
-**Key Files:**
-- `cloud_decoder/`: Server-side decoder implementation
-- `universal-decoder-node/`: Standalone decoder node implementation
-
-### 3. Coordinator
-
-The coordinator manages communication between encoders and decoders, handling load balancing and health monitoring.
-
-**Key Files:**
-- `coordinator/`: Advanced routing system implementation
-- `monitoring/`: Prometheus metrics collection and Grafana dashboards
-
-### 4. SDKs
-
-The system includes SDKs for multiple platforms:
-
-**Key Directories:**
-- `android/`: Android native SDK
-- `ios/`: iOS native SDK
-- `flutter/universal_translation_sdk/`: Flutter SDK
-- `react-native/UniversalTranslationSDK/`: React Native SDK
-- `web/universal-translation-sdk/`: Web SDK
+- `encoder/`: Python encoder (training-time)
+- `encoder_core/`: C++ encoder core (deployment)
+- `vocabulary/`: Vocabulary management (unified_vocabulary_creator.py, evolve_vocabulary.py)
+- `cloud_decoder/`: Server-side decoder
+- `coordinator/`: Advanced routing, health, metrics, Redis-backed pool with disk mirroring
+- `monitoring/`: Prometheus/Grafana configs and collectors
+- SDKs: `android/`, `ios/`, `flutter/universal_translation_sdk/`, `react-native/UniversalTranslationSDK/`, `web/universal-translation-sdk/`
 
 ## Common Workflows
 
-### 1. Adding a New Language
-
-To add support for a new language:
-
-1. Prepare training data for the language pair
-2. Update the vocabulary system:
+### 1) Add a new language
+1. Prepare data
+2. Update/create vocabulary:
    ```bash
-   python vocabulary/create_vocabulary.py --lang <new_lang_code> --data <path_to_data>
+   python vocabulary/unified_vocabulary_creator.py
+   # or
+   python vocabulary/evolve_vocabulary.py
    ```
-3. Train the model with the new language:
+3. Train with the unified launcher:
    ```bash
-   python main.py train --config config/training_new_lang.yaml
+   python -m training.launch train --config config/training_generic_gpu.yaml
    ```
-4. Update SDK vocabulary lists
-5. Test the new language pair
+   - Deprecated: `training/train_universal_system.py` (use the launcher instead)
 
-### 2. Making Changes to the Encoder
-
-1. Modify the encoder code in `encoder/` or `encoder_core/`
-2. Run unit tests:
+### 2) Modify Encoder
+1. Change code in `encoder/` or C++ in `encoder_core/`
+2. Tests:
    ```bash
    pytest tests/test_encoder.py
    ```
-3. Build the encoder core (if C++ changes were made):
+3. Build C++ core if needed:
    ```bash
-   cd encoder_core
-   mkdir build && cd build
-   cmake ..
-   make
+   cd encoder_core && mkdir build && cd build
+   cmake .. && make
    ```
-4. Update the SDKs if the interface changed
 
-### 3. Making Changes to the Decoder
-
-1. Modify the decoder code in `cloud_decoder/`
-2. Run unit tests:
+### 3) Modify Decoder
+1. Change code in `cloud_decoder/`
+2. Tests:
    ```bash
    pytest tests/test_decoder.py
    ```
-3. Build and test the decoder:
-   ```bash
-   python main.py benchmark --component decoder
-   ```
+3. (Optional) Benchmark locally or deploy via Docker
 
-### 4. Working with SDKs
+### 4) Training/Evaluation/Profile
+- Train:
+  ```bash
+  python -m training.launch train --config config/base.yaml
+  ```
+- Evaluate:
+  ```bash
+  python -m training.launch evaluate --config config/base.yaml --checkpoint checkpoints/.../best_model.pt
+  ```
+- Profile/benchmark:
+  ```bash
+  python -m training.launch profile --config config/base.yaml --profile-steps 20 --benchmark
+  ```
 
-Each SDK has its own build process:
-
-**Android:**
-```bash
-cd android
-./gradlew build
-```
-
-**iOS:**
-```bash
-cd ios
-swift build
-```
-
-**Flutter:**
-```bash
-cd flutter/universal_translation_sdk
-flutter pub get
-flutter test
-```
-
-**React Native:**
-```bash
-cd react-native/UniversalTranslationSDK
-npm install
-npm test
-```
-
-**Web:**
-```bash
-cd web/universal-translation-sdk
-npm install
-npm run build
-```
+## Coordinator and Redis
+- Set `REDIS_URL` for Redis-backed pool.
+- File fallback at `configs/decoder_pool.json` is auto-mirrored.
+- Mirror interval via `COORDINATOR_MIRROR_INTERVAL` (default 60s, min 5s). Logged at startup.
 
 ## Troubleshooting
-
-### Common Issues
-
-1. **Missing Dependencies**
-   ```bash
-   python scripts/check_dependencies.py
-   ```
-
-2. **CUDA Issues**
-   ```bash
-   python -c "import torch; print(torch.cuda.is_available())"
-   ```
-
-3. **Vocabulary Loading Failures**
-   ```bash
-   python vocabulary/validate_vocabulary.py --lang <lang_code>
-   ```
-
-4. **Decoder Connection Issues**
-   ```bash
-   curl -v http://localhost:8001/health
-   ```
-
-For more detailed troubleshooting, see [TROUBLESHOOT.md](TROUBLESHOOT.md).
+- Dependency check:
+  ```bash
+  python scripts/check_dependencies.py
+  ```
+- CUDA available:
+  ```bash
+  python -c "import torch; print(torch.cuda.is_available())"
+  ```
+- Decoder health:
+  ```bash
+  curl -v http://localhost:8001/health
+  ```
+More in [TROUBLESHOOT.md](TROUBLESHOOT.md).
 
 ## Resources
-
-- [Architecture Overview](ARCHITECTURE.md)
-- [API Documentation](API.md)
-- [Training Guide](TRAINING.md)
-- [Deployment Guide](DEPLOYMENT.md)
-- [SDK Integration Guide](SDK_INTEGRATION.md)
-- [Troubleshooting Guide](TROUBLESHOOT.md)
-- [Contributing Guidelines](../CONTRIBUTING.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [API.md](API.md)
+- [TRAINING.md](TRAINING.md)
+- [DEPLOYMENT.md](DEPLOYMENT.md)
+- [SDK_INTEGRATION.md](SDK_INTEGRATION.md)
+- [REDIS_INTEGRATION.md](REDIS_INTEGRATION.md)
+- [TROUBLESHOOT.md](TROUBLESHOOT.md)
+- [Contributing](../CONTRIBUTING.md)

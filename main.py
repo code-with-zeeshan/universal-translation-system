@@ -82,39 +82,42 @@ class HardwareConfig:
             Path to recommended config file
         """
         if gpu_count == 0:
-            return "config/training_cpu.yaml"
+            return "config/archived_gpu_configs/training_cpu.yaml"
         
         # Detect GPU type from name
         primary_gpu = gpu_names[0].lower() if gpu_names else ""
         
-        # Map GPU names to config files
+        # Map GPU names to archived config files
+        base = "config/archived_gpu_configs"
         gpu_configs = {
-            'h100': 'config/training_h100.yaml',
-            'a100': 'config/training_a100.yaml',
-            'v100': 'config/training_v100.yaml',
-            't4': 'config/training_t4.yaml',
-            'l4': 'config/training_l4.yaml',
-            'rtx 4090': 'config/training_rtx4090.yaml',
-            'rtx 3090': 'config/training_rtx3090.yaml',
-            'rtx 3080': 'config/training_rtx3080.yaml',
-            'rtx 3060': 'config/training_rtx3060.yaml',
+            'h100': f'{base}/training_h100.yaml',
+            'a100': f'{base}/training_a100.yaml',
+            'v100': f'{base}/training_v100.yaml',
+            't4': f'{base}/training_t4.yaml',
+            'l4': f'{base}/training_l4.yaml',
+            'rtx 4090': f'{base}/training_rtx4090.yaml',
+            'rtx 3090': f'{base}/training_rtx3090.yaml',
+            'rtx 3080': f'{base}/training_rtx3080.yaml',
+            'rtx 3060': f'{base}/training_rtx3060.yaml',
+            'amd mi250': f'{base}/training_amd_mi250.yaml',
+            'colab free': f'{base}/training_colab_free.yaml',
         }
         
         # Find matching config
         for gpu_key, config_path in gpu_configs.items():
             if gpu_key in primary_gpu:
                 if gpu_count > 1:
-                    # Check for multi-GPU specific config
+                    # Check for multi-GPU specific archived config
                     multi_config = config_path.replace('.yaml', '_multi.yaml')
                     if Path(multi_config).exists():
                         return multi_config
                 return config_path
         
-        # Default configs - use generic configs instead of specific GPU models
+        # Default configs - use archived generic configs
         if gpu_count == 1:
-            return "config/training_generic_gpu.yaml"  # Default single GPU
+            return f"{base}/training_generic_gpu.yaml"  # Default single GPU
         else:
-            return "config/training_generic_multi_gpu.yaml"  # Default multi GPU
+            return f"{base}/training_generic_multi_gpu.yaml"  # Default multi GPU
 
 
 class UniversalTranslationSystem:
@@ -323,22 +326,21 @@ class UniversalTranslationSystem:
         """
         logger.info("🎯 Starting training...")
         
-        # Determine configuration
+        # Determine configuration source: dynamic by default, YAML optional
         if config_override:
-            config_file = config_override
+            config_source = config_override
         else:
-            config_file = self.hardware.get_recommended_config(
-                self.gpu_count, self.gpu_names
-            )
+            # Prefer dynamic config generation for robustness
+            config_source = "dynamic"
         
         # Handle GPU selection
         if self.gpu_count == 0:
             logger.warning("⚠️ No GPUs detected. Running on CPU (very slow).")
-            return self._run_cpu_training(config_file)
+            return self._run_cpu_training(config_source)
         
         elif self.gpu_count == 1:
             logger.info("✅ Starting training on 1 GPU")
-            return self._run_single_gpu_training(config_file)
+            return self._run_single_gpu_training(config_source)
         
         else:
             # Multiple GPUs available
@@ -346,10 +348,10 @@ class UniversalTranslationSystem:
             
             if gpus_to_use == 1 and not distributed:
                 logger.info("✅ Starting training on 1 GPU")
-                return self._run_single_gpu_training(config_file)
+                return self._run_single_gpu_training(config_source)
             else:
                 logger.info(f"✅ Starting distributed training on {gpus_to_use} GPUs")
-                return self._run_distributed_training(gpus_to_use, config_file)
+                return self._run_distributed_training(gpus_to_use, config_source)
     
     def _get_gpu_selection(self, selection: Optional[str] = None) -> int:
         """
@@ -394,35 +396,43 @@ class UniversalTranslationSystem:
             except ValueError:
                 logger.warning("Please enter a number or 'all'")
     
-    def _run_cpu_training(self, config_file: str) -> int:
+    def _run_cpu_training(self, config_source: str) -> int:
         """Run CPU training"""
         command = [
             sys.executable,
-            "training/train_universal_system.py",
-            "--config", config_file,
-            "--device", "cpu"
+            "training/intelligent_trainer.py",
+            "--config", config_source,
+            "--device", "cpu",
         ]
+        if config_source == "dynamic":
+            command.append("--dynamic")
         return self._run_command(command)
     
-    def _run_single_gpu_training(self, config_file: str) -> int:
+    def _run_single_gpu_training(self, config_source: str) -> int:
         """Run single GPU training"""
         command = [
             sys.executable,
-            "training/train_universal_system.py",
-            "--config", config_file
+            "training/intelligent_trainer.py",
+            "--config", config_source,
         ]
+        if config_source == "dynamic":
+            command.append("--dynamic")
         return self._run_command(command)
     
-    def _run_distributed_training(self, num_gpus: int, config_file: str) -> int:
+    def _run_distributed_training(self, num_gpus: int, config_source: str) -> int:
         """Run distributed training"""
         command = [
             sys.executable, "-m",
             "torch.distributed.launch",
             f"--nproc_per_node={num_gpus}",
             "--use_env",
-            "training/distributed_train.py",
-            "--config", config_file
+            "training/launch.py",
+            "train",
+            "--config", (config_source if config_source else "config/base.yaml"),
+            "--distributed",
         ]
+        if config_source == "dynamic":
+            command.append("--dynamic")
         return self._run_command(command)
     
     def _run_command(self, command: List[str]) -> int:

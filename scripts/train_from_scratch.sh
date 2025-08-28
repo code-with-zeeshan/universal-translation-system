@@ -8,13 +8,21 @@ echo "🚀 Starting Full End-to-End Training Pipeline for Universal Translation 
 echo "=============================================================================="
 
 # 1. Prepare all data (download, preprocess, sample, augment, etc.)
-echo -e "\n[Step 1/6] 📥 Running integrated data pipeline..."
-python -m data.practical_data_pipeline
+echo -e "\n[Step 1/6] 📥 Running unified data pipeline..."
+python - <<'PY'
+from config.schemas import load_config
+from data.unified_data_pipeline import UnifiedDataPipeline
+import asyncio
+
+cfg = load_config('config/training_generic_gpu.yaml')
+pipeline = UnifiedDataPipeline(cfg)
+asyncio.run(pipeline.run_pipeline(resume=True, stages=None))
+PY
 echo "[Step 1/6] ✅ Data pipeline complete."
 
 # 2. Create vocabulary packs
 echo -e "\n[Step 2/6] 📦 Creating vocabulary packs from processed data..."
-python -m vocabulary.create_vocabulary_packs_from_data
+python -m vocabulary.unified_vocabulary_creator
 echo "[Step 2/6] ✅ Vocabulary packs created."
 
 # 3. Initialize models from pretrained
@@ -24,7 +32,7 @@ echo "[Step 3/6] ✅ Initial models created."
 
 # 4. Train models (config auto-detection is now built-in)
 echo -e "\n[Step 4/6] 🏃 Starting main training loop (auto-detecting best config for hardware)..."
-python -m training.train_universal_system
+python -m training.launch train --config config/training_generic_gpu.yaml
 echo "[Step 4/6] ✅ Main training loop complete."
 
 # 5. Convert models for production

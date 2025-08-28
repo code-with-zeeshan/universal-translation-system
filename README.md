@@ -8,10 +8,13 @@ A flexible and scalable translation platform designed to support multiple langua
 
 ## 🌟 Key Innovation
 
-Unlike traditional translation apps that bundle 200MB+ models, our system uses:
-- **Universal Encoder**: 35MB base + 2-4MB vocabulary packs (only download what you need)
-- **Cloud Decoder**: Shared infrastructure for all users, served via Litserve (2x faster than FastAPI)
-- **Result**: 40MB app with 90% quality of full models
+Rather than bundling a huge model per language, the system splits the workflow for maximum efficiency and scalability:
+- **Edge Universal Encoder (~35MB)**: Converts text to language-agnostic embeddings with RoPE and SwiGLU for speed/quality on-device.
+- **On‑demand Vocabulary Packs (2–4MB)**: Download only what you need (groups like latin, cjk, cyrillic, arabic, devanagari, thai), compressed with LZ4/Zstandard and loaded dynamically.
+- **Cloud Decoder (6-layer transformer)**: Cross‑attention decoder served via Litserve for high throughput; supports dynamic adapter loading per language/domain.
+- **Smart Coordinator**: Routes to least‑loaded decoders, performs health checks, supports elastic scaling, exposes Prometheus metrics and Grafana dashboards.
+- **Multi‑SDK + WebAssembly**: Native Android/iOS/Flutter/React Native, and Web with WASM; automatic fallback to cloud when a device lacks resources.
+- **Result**: ~40MB app footprint with ~90% of full model quality, works on 2GB RAM devices, and scales in the cloud for quality and throughput.
 
 ## 📋 Features
 
@@ -24,6 +27,10 @@ Unlike traditional translation apps that bundle 200MB+ models, our system uses:
 - ✅ Environment variable configuration for all components
 - ✅ Docker and Kubernetes deployment support
 - ✅ Redis integration for distributed decoder pool management
+- ✅ Advanced memory management with automatic cleanup
+- ✅ Comprehensive profiling system for performance optimization
+- ✅ Configurable HTTPS enforcement with security headers
+- ✅ Bottleneck detection and performance analysis
 
 ## 🎯 Usage Modes
 
@@ -64,6 +71,92 @@ python coordinator/advanced_coordinator.py
 
 # Option 3: Train from scratch (for research)
 python docs/train_from_scratch.py --config config/training_default.yaml
+```
+
+## 🧭 Unified Pipeline CLI
+
+Use a single entrypoint to run data, vocabulary, training, and more.
+
+- Location: `scripts/pipeline.py`
+- Prereq: `pip install -r requirements.txt`
+
+Examples:
+
+```bash
+# Data pipeline (all stages)
+python scripts/pipeline.py data --config config/training_generic_gpu.yaml
+
+# Data pipeline (specific stages)
+# Valid stages: download_evaluation download_training sample_filter augment create_ready validate vocabulary
+python scripts/pipeline.py data --config config/training_generic_gpu.yaml --stages download_training create_ready
+
+# Vocabulary creation
+python scripts/pipeline.py vocab --mode production --corpus-dir data/processed --output-dir vocabs
+
+# Bootstrap pretrained encoder/decoder
+python scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
+
+# Train (delegates to training.launch)
+python scripts/pipeline.py train --config config/training_generic_gpu.yaml --distributed
+
+# Evaluate, Profile, Compare
+python scripts/pipeline.py evaluate --config config/training_generic_gpu.yaml --checkpoint models/.../best_model.pt
+python scripts/pipeline.py profile --config config/training_generic_gpu.yaml --profile-steps 25 --benchmark
+python scripts/pipeline.py compare --experiments runs/exp1 runs/exp2
+
+# Convert models
+python scripts/pipeline.py convert --task pytorch-to-onnx --model-path models/encoder/universal_encoder_initial.pt --output-path models/encoder/universal_encoder.onnx
+
+# Full pipeline: data -> vocab -> bootstrap -> train -> convert
+python scripts/pipeline.py all --config config/training_generic_gpu.yaml
+```
+
+Notes:
+- Data stages map to the orchestrator in `data.unified_data_pipeline.UnifiedDataPipeline`.
+- Vocabulary uses `vocabulary.unified_vocabulary_creator` with modes/groups.
+- Training/eval/profile/compare proxy to `training.launch`.
+- Conversion wraps `training.convert_models.ModelConverter` tasks.
+
+### Quick help
+
+```bash
+# Top-level help
+python scripts/pipeline.py --help
+
+# Subcommand help
+python scripts/pipeline.py data --help
+python scripts/pipeline.py vocab --help
+python scripts/pipeline.py train --help
+```
+
+### Windows PowerShell examples
+
+```powershell
+# Data pipeline (all stages)
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" data --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml"
+
+# Data pipeline (specific stages)
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" data --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --stages download_training create_ready
+
+# Vocabulary creation
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" vocab --mode production --corpus-dir "c:\Users\DELL\universal-translation-system\data\processed" --output-dir "c:\Users\DELL\universal-translation-system\vocabs"
+
+# Bootstrap pretrained encoder/decoder
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
+
+# Train (delegates to training.launch)
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" train --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --distributed
+
+# Evaluate, Profile, Compare
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" evaluate --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --checkpoint "c:\Users\DELL\universal-translation-system\models\...\best_model.pt"
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" profile --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --profile-steps 25 --benchmark
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" compare --experiments "c:\Users\DELL\universal-translation-system\runs\exp1" "c:\Users\DELL\universal-translation-system\runs\exp2"
+
+# Convert models
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" convert --task pytorch-to-onnx --model-path "c:\Users\DELL\universal-translation-system\models\encoder\universal_encoder_initial.pt" --output-path "c:\Users\DELL\universal-translation-system\models\encoder\universal_encoder.onnx"
+
+# Full pipeline: data -> vocab -> bootstrap -> train -> convert
+python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" all --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml"
 ```
 
 ## 📱 SDK Integration
@@ -115,6 +208,15 @@ const result = await translator.translate({
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
 ## 📚 Documentation
+
+### Quick Links
+- SDKs: [SDK Integration Guide](docs/SDK_INTEGRATION.md) | Publishing: [SDK_PUBLISHING.md](docs/SDK_PUBLISHING.md)
+- APIs: [API Documentation](docs/API.md)
+- Deployment: [Deployment Guide](docs/DEPLOYMENT.md)
+- Decoder Pool: [Decoder Pool Management](docs/DECODER_POOL.md)
+- Environment: [Environment Variables](docs/environment-variables.md)
+
+### Full Docs
 - [Vision & Architecture](docs/VISION.md)
 - [Architecture Details](docs/ARCHITECTURE.md)
 - [Environment Variables](docs/environment-variables.md)
@@ -123,10 +225,12 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [Future Roadmap](docs/future_plan.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [SDK Integration Guide](docs/SDK_INTEGRATION.md)
+- [CI: Build & Upload to HF](docs/CI_BUILD_UPLOAD.md)
 - [Monitoring Guide](monitoring/README.md)
 - [Vocabulary Guide](vocabulary/Vocabulary_Guide.md)
 - [Decoder Pool Management](docs/DECODER_POOL.md)
 - [API Documentation](docs/API.md)
+- [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)
 - [Troubleshooting Guide](docs/TROUBLESHOOT.md)
 - [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md)
 - [System Improvements](docs/IMPROVEMENTS.md)
