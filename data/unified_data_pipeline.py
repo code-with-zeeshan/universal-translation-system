@@ -19,8 +19,13 @@ from torch.utils.data import Sampler, Dataset
 import numpy as np
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from opentelemetry import trace
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+# Optional FS monitoring; not required in dry-run
+try:
+    from watchdog.observers import Observer  # type: ignore
+    from watchdog.events import FileSystemEventHandler  # type: ignore
+except Exception:
+    Observer = None  # type: ignore
+    FileSystemEventHandler = None  # type: ignore
 
 from config.schemas import RootConfig
 from utils.exceptions import DataError
@@ -210,24 +215,35 @@ class UnifiedDataPipeline:
     This replaces both data_manager.py and practical_data_pipeline.py.
     """
     
-    def __init__(self, config: RootConfig):
+    def __init__(self, config: RootConfig, dry_run: bool = False):
         """
         Initialize unified data pipeline.
         
         Args:
             config: Root configuration object
+            dry_run: If True, synthesize tiny local sample files and skip actual downloads
         """
         with tracer.start_as_current_span("UnifiedDataPipeline.__init__") as span:
             self.config = config
             self.logger = logging.getLogger(__name__)
+            self.dry_run = dry_run
             
             # Initialize components
             self._initialize_components()
             
             # Create directory structure
-            self.dirs = DirectoryManager.create_data_structure(
-                self.config.data.processed_dir
-            )
+            # Use the base data directory (parent of processed_dir) to avoid nested 'processed/processed'
+            base_dir = str(Path(self.config.data.processed_dir).parent)
+            self.dirs = DirectoryManager.create_data_structure(base_dir)
+            
+            # If dry_run, synthesize tiny sample data so later stages can run locally
+            if self.dry_run:
+                try:
+                    self._synthesize_tiny_samples()
+                    # Also synthesize minimal sampled files expected by PipelineConnector
+                    self._synthesize_minimal_sampled()
+                except Exception as e:
+                    self.logger.warning(f"Dry-run synthesis failed: {e}")
             
             # Initialize pipeline state
             self.state = PipelineState(
@@ -247,8 +263,18 @@ class UnifiedDataPipeline:
             # Use unified components
             self.downloader = UnifiedDataDownloader(self.config)
             self.sampler = SmartDataSampler()
-            self.augmenter = SyntheticDataAugmenter()
-            self.pipeline_connector = PipelineConnector(self.config)
+            # Only instantiate augmenter if heavy deps are available; otherwise, create a stub that skips
+            try:
+                self.augmenter = SyntheticDataAugmenter(self.config)
+            except Exception as e:
+                self.logger.warning(f"Synthetic augmenter unavailable ({e}); augmentation will be skipped in dry-run")
+                self.augmenter = None  # type: ignore
+            # Connectors may have optional deps; guard gracefully
+            try:
+                self.pipeline_connector = PipelineConnector(self.config) if PipelineConnector else None
+            except Exception as e:
+                self.logger.warning(f"PipelineConnector unavailable ({e}); using limited pipeline features")
+                self.pipeline_connector = None
             self.vocab_connector = VocabularyConnector()
             
             # Get strategy from downloader
@@ -316,6 +342,7 @@ class UnifiedDataPipeline:
         """
         with tracer.start_as_current_span("UnifiedDataPipeline.run_pipeline") as span:
             span.set_attribute("resume", resume)
+            span.set_attribute("dry_run", getattr(self, 'dry_run', False))
             
             self.logger.info("🚀 Starting unified data pipeline")
             start_time = asyncio.get_event_loop().time()
@@ -343,6 +370,69 @@ class UnifiedDataPipeline:
             self._log_summary(summary)
             
             return summary
+
+    def _synthesize_tiny_samples(self) -> None:
+        """Create minimal local sample files for dry-run mode."""
+        base = self.dirs['base']
+        raw_dir = self.dirs['raw']
+        processed_dir = self.dirs['processed']
+        sampled_dir = self.dirs['sampled']
+        final_dir = self.dirs['final']
+        ready_dir = self.dirs.get('ready', processed_dir / 'ready')
+        ready_dir.mkdir(parents=True, exist_ok=True)
+
+        # Ensure directories
+        for d in (raw_dir, processed_dir, sampled_dir, ready_dir):
+            d.mkdir(parents=True, exist_ok=True)
+
+        # Choose a couple of language pairs
+        pairs = ['en-es', 'en-fr']
+        tiny_lines = [
+            ('hello world', 'hola mundo'),
+            ('this is a test', 'esto es una prueba'),
+            ('how are you', 'como estas')
+        ]
+
+        # Create tiny raw bilingual files (tab-separated: src<TAB>tgt)
+        for pair in pairs:
+            raw_file = raw_dir / f"{pair}.txt"
+            if not raw_file.exists():
+                with open(raw_file, 'w', encoding='utf-8') as f:
+                    for src, tgt in tiny_lines:
+                        f.write(f"{src}\t{tgt}\n")
+
+        # Create minimal single-language corpora for vocab creator
+        for lang, lines in [('en', ['hello world', 'this is a test']),
+                            ('es', ['hola mundo', 'esto es una prueba'])]:
+            corp = processed_dir / f"{lang}_corpus.txt"
+            if not corp.exists():
+                with open(corp, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines))
+
+        # Ensure sampled dir exists, even if empty
+        sampled_dir.mkdir(parents=True, exist_ok=True)
+
+        self.logger.info("🧪 Dry-run: tiny sample data synthesized")
+
+    def _synthesize_minimal_sampled(self) -> None:
+        """Create minimal sampled files so PipelineConnector can proceed in dry-run."""
+        sampled_dir = self.dirs['sampled']
+        sampled_dir.mkdir(parents=True, exist_ok=True)
+        # Create a minimal *_sampled.txt with expected 4 columns: src, tgt, src_lang, tgt_lang
+        pairs = ['en-es', 'en-fr']
+        tiny_lines = [
+            ('hello world', 'hola mundo'),
+            ('this is a test', 'esto es una prueba'),
+            ('how are you', 'como estas')
+        ]
+        for pair in pairs:
+            src, tgt = pair.split('-')
+            file_path = sampled_dir / f"{pair}_sampled.txt"
+            if not file_path.exists():
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    for s, t in tiny_lines:
+                        f.write(f"{s}\t{t}\t{src}\t{tgt}\n")
+        self.logger.info("🧪 Dry-run: minimal sampled files synthesized")
     
     async def _execute_stage(self, stage: PipelineStage):
         """Execute a single pipeline stage with error handling"""
@@ -364,6 +454,13 @@ class UnifiedDataPipeline:
                     PipelineStage.VALIDATE: self._validate_dataset,
                     PipelineStage.VOCABULARY: self._create_vocabulary
                 }
+                
+                # In dry-run mode, skip stages that require network and heavy I/O or heavy optional deps
+                if getattr(self, 'dry_run', False) and stage in {PipelineStage.DOWNLOAD_EVAL, PipelineStage.DOWNLOAD_TRAIN, PipelineStage.VOCABULARY}:
+                    self.logger.info(f"🧪 Dry-run: Skipping stage {stage.value}")
+                    self.state.completed_stages[stage.value] = True
+                    self._save_checkpoint()
+                    return
                 
                 handler = stage_handlers.get(stage)
                 if handler:
@@ -387,35 +484,40 @@ class UnifiedDataPipeline:
         retry=retry_if_exception_type((ConnectionError, TimeoutError))
     )
     async def _download_evaluation_data(self):
-        """Download evaluation datasets"""
+        """Download evaluation datasets or synthesize tiny samples in dry-run"""
         with tracer.start_as_current_span("download_evaluation_data") as span:
-            self.logger.info("📥 Downloading evaluation data...")
+            if getattr(self, 'dry_run', False):
+                self.logger.info("🧪 Dry-run: Skipping evaluation downloads and using synthesized samples")
+                span.set_attribute("dry_run", True)
+                return
             
+            self.logger.info("📥 Downloading evaluation data...")
             stats = self.downloader.download_all(
                 output_dir=str(self.dirs['base']),
                 dataset_types=[DatasetType.EVALUATION]
             )
-            
             span.set_attribute("eval_data.files", stats.get('total_files', 0))
             self.logger.info(f"✅ Downloaded {stats.get('total_files', 0)} evaluation datasets")
     
     async def _download_training_data(self):
-        """Download training data based on strategy"""
+        """Download training data based on strategy or synthesize in dry-run"""
         with tracer.start_as_current_span("download_training_data") as span:
+            if getattr(self, 'dry_run', False):
+                self.logger.info("🧪 Dry-run: Skipping training downloads and using synthesized samples")
+                span.set_attribute("dry_run", True)
+                return
+            
             self.logger.info("📥 Downloading training data...")
             
             # Use strategy-based download
             schedule = self.downloader.get_download_schedule(DatasetType.TRAINING)
-            
             for batch in schedule:
                 self.logger.info(f"Processing batch: {batch['batch_name']}")
-                # Download is handled by the downloader
             
             stats = self.downloader.download_all(
                 output_dir=str(self.dirs['base']),
                 dataset_types=[DatasetType.TRAINING]
             )
-            
             span.set_attribute("training_data.pairs", stats.get('downloaded_pairs', 0))
     
     async def _sample_and_filter_data(self):
@@ -451,7 +553,16 @@ class UnifiedDataPipeline:
             self.logger.info("🤖 Augmenting with synthetic data...")
             
             # Augment major language pairs
-            augmented_count = 0
+            augmented_total = 0
+
+            # If augmenter is unavailable or we're in dry-run without heavy deps, skip
+            if self.augmenter is None or getattr(self, 'dry_run', False):
+                self.logger.info("🧪 Dry-run or augmenter unavailable: Skipping augmentation")
+                # Still ensure expected directories for later stages
+                self.dirs['final'].mkdir(parents=True, exist_ok=True)
+                (self.dirs['final'] / 'pivot_pairs').mkdir(parents=True, exist_ok=True)
+                span.set_attribute("augmented.total", 0)
+                return
             
             for pair in self.config.data.augmentation_pairs:
                 source, target = pair.split('-')
@@ -461,22 +572,28 @@ class UnifiedDataPipeline:
                 if mono_file.exists():
                     output_file = self.dirs['final'] / f"augmented_{pair}.txt"
                     
-                    count = self.augmenter.augment_with_backtranslation(
+                    stats = self.augmenter.augment_with_backtranslation(
                         monolingual_file=str(mono_file),
                         source_lang=source,
                         target_lang=target,
                         output_file=str(output_file)
                     )
-                    augmented_count += count
+                    # stats is a dict; count augmented lines
+                    if isinstance(stats, dict):
+                        augmented_total += int(stats.get('augmented', 0))
             
             # Pivot translations
-            pivot_count = self.augmenter.generate_pivot_translations(
-                english_pairs_dir=str(self.dirs['sampled'])
-            )
-            augmented_count += pivot_count
+            try:
+                pivot_stats = self.augmenter.generate_pivot_translations(
+                    english_pairs_dir=str(self.dirs['sampled'])
+                )
+                if isinstance(pivot_stats, dict):
+                    augmented_total += int(pivot_stats.get('total_pivot_pairs', 0))
+            except Exception as e:
+                self.logger.warning(f"Pivot generation skipped: {e}")
             
-            span.set_attribute("augmented.total", augmented_count)
-            self.logger.info(f"✅ Generated {augmented_count:,} synthetic samples")
+            span.set_attribute("augmented.total", augmented_total)
+            self.logger.info(f"✅ Generated {augmented_total:,} synthetic samples")
     
     async def _create_training_ready(self):
         """Create training-ready data files"""
@@ -487,13 +604,14 @@ class UnifiedDataPipeline:
             self.pipeline_connector.create_monolingual_corpora()
             
             # Create final training file
-            final_file = self.pipeline_connector.create_final_training_file()
+            self.pipeline_connector.create_final_training_file()
             
-            # Update stats
-            if final_file and final_file.exists():
-                self.state.total_size_gb = final_file.stat().st_size / (1024**3)
+            # Update stats using known output path
+            final_path = Path(self.config.data.processed_dir) / 'train_final.txt'
+            if final_path.exists():
+                self.state.total_size_gb = final_path.stat().st_size / (1024**3)
                 
-                with open(final_file, 'r') as f:
+                with open(final_path, 'r', encoding='utf-8') as f:
                     self.state.total_sentences = sum(1 for _ in f)
             
             span.set_attribute("training_ready.sentences", self.state.total_sentences)

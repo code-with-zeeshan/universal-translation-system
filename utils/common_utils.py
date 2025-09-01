@@ -44,17 +44,19 @@ class DirectoryManager:
             Dictionary with all created paths
         """
         base_path = Path(base_dir)
+        processed_path = base_path / 'processed'
         
         directories = {
             'base': base_path,
             'log': base_path / 'log',
             'raw': base_path / 'raw',
             'essential': base_path / 'essential',
-            'sampled': base_path / 'sampled',
-            'final': base_path / 'final',
-            'processed': base_path / 'processed',
+            'processed': processed_path,
+            'sampled': processed_path / 'sampled',
+            'final': processed_path / 'final',
+            'ready': processed_path / 'ready',
             'opus': base_path / 'raw' / 'opus',
-            'pivot_pairs': base_path / 'final' / 'pivot_pairs'
+            'pivot_pairs': processed_path / 'final' / 'pivot_pairs'
         }
         
         # Create all directories

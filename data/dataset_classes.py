@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from utils.base_classes import TokenizerMixin
+from config.schemas import RootConfig, load_config as load_pydantic_config
 
 logger = logging.getLogger(__name__)
 

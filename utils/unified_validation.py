@@ -14,7 +14,21 @@ from enum import Enum
 import yaml
 
 from pydantic import BaseModel, ValidationError, create_model
-from fastapi import Depends, Request, HTTPException, status
+# Optional FastAPI imports; provide shims for environments without FastAPI (e.g., smoke tests)
+try:
+    from fastapi import Depends, Request, HTTPException, status  # type: ignore
+except Exception:  # pragma: no cover
+    class HTTPException(Exception):  # type: ignore
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+    class status:  # type: ignore
+        HTTP_400_BAD_REQUEST = 400
+    def Depends(x):  # type: ignore
+        return x
+    class Request:  # type: ignore
+        pass
 import torch
 import json
 import html

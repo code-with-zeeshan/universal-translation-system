@@ -5,7 +5,11 @@ This module provides a unified interface for vocabulary management.
 """
 import mmap
 import msgpack
-import zstandard as zstd
+# Optional compression dependency
+try:
+    import zstandard as zstd  # type: ignore
+except Exception:  # pragma: no cover
+    zstd = None  # type: ignore
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple, Any, Union, Set
@@ -21,7 +25,7 @@ import json
 from utils.exceptions import VocabularyError
 from utils.security import validate_path_component
 from utils.base_classes import BaseVocabularyManager, TokenizerMixin
-from utils.thread_safety import document_thread_safety, THREAD_SAFETY_INTERNAL, thread_safe
+from utils.thread_safety import THREAD_SAFETY_INTERNAL, thread_safe, document_thread_safety as _document_thread_safety
 from utils.constants import (
     VOCAB_SIZE, VOCAB_MIN_FREQUENCY, VOCAB_SPECIAL_TOKENS,
     VOCAB_PAD_ID, VOCAB_UNK_ID, VOCAB_BOS_ID, VOCAB_EOS_ID
@@ -130,7 +134,9 @@ class VocabularyPack:
             node['$'] = self.tokens[token]
     
     def _compress_data(self):
-        """Compress vocabulary data for minimal memory"""
+        """Compress vocabulary data for minimal memory. If zstd is unavailable, skip compression."""
+        if zstd is None:  # graceful degrade in smoke/dry-run
+            return
         compressor = zstd.ZstdCompressor(level=3)
         self.compressed_data = compressor.compress(
             msgpack.packb({
@@ -146,8 +152,6 @@ class VocabularyPack:
                 return False
         return token in self.tokens or token in self.subwords
 
-@document_thread_safety(UnifiedVocabularyManager, THREAD_SAFETY_INTERNAL,
-                      "This class is thread-safe with internal synchronization.")
 class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
     """
     Unified vocabulary manager combining features from both implementations.
@@ -212,7 +216,7 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
             f"UnifiedVocabularyManager initialized in {mode.value} mode "
             f"with cache_size={self.cache_size}"
         )
-    
+
     def _load_metadata(self):
         """Load metadata for all packs (lightweight)"""
         # Load version manifest if exists

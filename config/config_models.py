@@ -9,10 +9,19 @@ from typing import Dict, List, Optional, Union, Any
 from pydantic import BaseModel, Field, validator, root_validator
 import yaml
 import json
-from dotenv import load_dotenv
 
-# Load environment variables from .env file if present
-load_dotenv()
+# Optional dependency: python-dotenv
+try:
+    from dotenv import load_dotenv  # type: ignore
+except Exception:
+    def load_dotenv(*args, **kwargs):  # type: ignore
+        return False
+
+# Load environment variables from .env file if present (no-op if dotenv missing)
+try:
+    load_dotenv()
+except Exception:
+    pass
 
 
 class EncoderConfig(BaseModel):

@@ -34,7 +34,11 @@ python -m vocabulary.unified_vocabulary_creator --language_code <new_language_co
 
 ```bash
 # Train with the new language included
-python docs/train_from_scratch.py --config config/training_default.yaml
+# Option 1: Archived GPU config preset
+python -m training.launch train --config config/archived_gpu_configs/training_generic_gpu.yaml
+
+# Option 2: Dynamic config (no YAML)
+python -m training.launch train --config dynamic --dynamic
 ```
 
 ## 6. Update SDKs

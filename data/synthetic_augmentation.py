@@ -4,17 +4,43 @@ Synthetic data augmentation - Refactored to use shared utilities
 Generate additional training data using modern transformer models
 """
 
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
-import torch
+# Optional heavy deps: transformers, sentence_transformers, torch. Provide shims for smoke/dry-run.
+try:
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline  # type: ignore
+except Exception:  # pragma: no cover
+    AutoModelForSeq2SeqLM = None  # type: ignore
+    AutoTokenizer = None  # type: ignore
+    def pipeline(*args, **kwargs):  # type: ignore
+        raise ImportError("transformers is required for SyntheticDataAugmenter")
+try:
+    import torch  # type: ignore
+except Exception:  # pragma: no cover
+    class torch:  # type: ignore
+        @staticmethod
+        def cuda():
+            class _C:
+                @staticmethod
+                def is_available():
+                    return False
+            return _C
+        float16 = None
+        float32 = None
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 import numpy as np
-from sentence_transformers import SentenceTransformer, util
+try:
+    from sentence_transformers import SentenceTransformer, util  # type: ignore
+except Exception:  # pragma: no cover
+    SentenceTransformer = None  # type: ignore
+    class util:  # type: ignore
+        @staticmethod
+        def cos_sim(a, b):
+            return np.array([[0.0]])
 import logging
 
 # Import shared utilities
-from data_utils import estimate_sentence_count
+from data.data_utils import estimate_sentence_count
 from utils.common_utils import DirectoryManager
 from config.schemas import RootConfig, load_config
 
@@ -44,11 +70,13 @@ class SyntheticDataAugmenter:
     def model(self):
         """Lazy load translation model"""
         if self._model is None:
+            if AutoModelForSeq2SeqLM is None:
+                raise ImportError("transformers is required for SyntheticDataAugmenter.model")
             self.logger.info("🔄 Loading translation model...")
             self._model = AutoModelForSeq2SeqLM.from_pretrained(
                 self.base_model,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto" if torch.cuda.is_available() else None
+                torch_dtype=(torch.float16 if hasattr(torch, 'cuda') and torch.cuda.is_available() else getattr(torch, 'float32', None)),
+                device_map=("auto" if hasattr(torch, 'cuda') and torch.cuda.is_available() else None)
             )
         return self._model
     
@@ -56,6 +84,8 @@ class SyntheticDataAugmenter:
     def tokenizer(self):
         """Lazy load tokenizer"""
         if self._tokenizer is None:
+            if AutoTokenizer is None:
+                raise ImportError("transformers is required for SyntheticDataAugmenter.tokenizer")
             self._tokenizer = AutoTokenizer.from_pretrained(self.base_model)
         return self._tokenizer
     
@@ -63,12 +93,13 @@ class SyntheticDataAugmenter:
     def translator(self):
         """Lazy load translator pipeline"""
         if self._translator is None:
+            # If transformers is unavailable, raise when actually used
             self._translator = pipeline(
                 "translation",
                 model=self.model,
                 tokenizer=self.tokenizer,
-                device=0 if torch.cuda.is_available() else -1,
-                batch_size=8 if torch.cuda.is_available() else 1
+                device=(0 if hasattr(torch, 'cuda') and torch.cuda.is_available() else -1),
+                batch_size=(8 if hasattr(torch, 'cuda') and torch.cuda.is_available() else 1)
             )
         return self._translator
     

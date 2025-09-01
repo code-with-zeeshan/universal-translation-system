@@ -26,6 +26,9 @@
     "convert-vocab": "node scripts/convert-vocab.js",
     "convert-model": "node scripts/convert-model.js",
     "prepublishOnly": "npm run lint && npm run type-check && npm run build",
+    "publish:prep": "npm run lint && npm run type-check && npm run build",
+    "publish:public": "npm run publish:prep && npm publish --access public",
+    "publish:next": "npm run publish:prep && npm publish --tag next --access public",
     "example": "vite serve example --port 3000"
   },
   "dependencies": {

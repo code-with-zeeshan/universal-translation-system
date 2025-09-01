@@ -9,12 +9,22 @@ import json
 import base64
 import logging
 import threading
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, Callable, Tuple, List
+import time
 from pathlib import Path
-import keyring
-from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+# Optional dependencies: keyring and cryptography
+try:
+    import keyring  # type: ignore
+except Exception:  # pragma: no cover
+    keyring = None  # type: ignore
+try:
+    from cryptography.fernet import Fernet  # type: ignore
+    from cryptography.hazmat.primitives import hashes  # type: ignore
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC  # type: ignore
+except Exception:  # pragma: no cover
+    Fernet = None  # type: ignore
+    hashes = None  # type: ignore
+    PBKDF2HMAC = None  # type: ignore
 from .exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
@@ -56,9 +66,11 @@ class CredentialManager:
             
         # Initialize encryption
         self.encryption_key = encryption_key
-        if encryption_key:
+        if encryption_key and Fernet and PBKDF2HMAC and hashes:
             self._init_encryption(encryption_key)
         else:
+            if encryption_key and not (Fernet and PBKDF2HMAC and hashes):
+                logger.warning("Encryption requested but cryptography is not installed; proceeding without encryption")
             self.fernet = None
             
         # Cache for credentials
@@ -125,7 +137,7 @@ class CredentialManager:
             return env_value
             
         # Try keyring
-        if self.use_keyring:
+        if self.use_keyring and keyring is not None:
             try:
                 keyring_value = keyring.get_password(self.app_name, key)
                 if keyring_value:
@@ -168,7 +180,7 @@ class CredentialManager:
             self._cache[key] = value
             
         # Store in keyring
-        if store_in == "keyring" and self.use_keyring:
+        if store_in == "keyring" and self.use_keyring and keyring is not None:
             try:
                 keyring.set_password(self.app_name, key, value)
                 logger.debug(f"Stored credential {key} in keyring")
@@ -228,7 +240,7 @@ class CredentialManager:
                 deleted = True
                 
         # Remove from keyring
-        if self.use_keyring:
+        if self.use_keyring and keyring is not None:
             try:
                 keyring.delete_password(self.app_name, key)
                 deleted = True

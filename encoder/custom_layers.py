@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Tuple
+from typing import Tuple, Optional
 
 class SwiGLU(nn.Module):
     """
@@ -79,10 +79,25 @@ def apply_rotary_pos_emb(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, si
 class CustomTransformerEncoderLayer(nn.Module):
     """
     A custom transformer encoder layer that integrates RoPE and SwiGLU.
+    Uses lightweight multi-head attention implemented here to allow
+    applying RoPE before attention without relying on internal
+    torch.nn.MultiheadAttention projections.
     """
     def __init__(self, d_model: int, nhead: int, dim_feedforward: int, dropout: float = 0.1):
         super().__init__()
-        self.self_attn = nn.MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=True)
+        assert d_model % nhead == 0, "d_model must be divisible by nhead"
+        self.d_model = d_model
+        self.nhead = nhead
+        self.head_dim = d_model // nhead
+        self.scale = (self.head_dim) ** -0.5
+
+        # Projections for Q, K, V and output
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.k_proj = nn.Linear(d_model, d_model)
+        self.v_proj = nn.Linear(d_model, d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+
+        self.attn_dropout = nn.Dropout(dropout)
         self.norm1 = nn.LayerNorm(d_model)
         self.dropout1 = nn.Dropout(dropout)
         
@@ -96,24 +111,46 @@ class CustomTransformerEncoderLayer(nn.Module):
         # --- Self-Attention with RoPE ---
         # 1. Apply LayerNorm first (Pre-Norm)
         x = self.norm1(src)
+
+        # 2. Project to Q, K, V (batch, seq, d_model)
+        q_proj = self.q_proj(x)
+        k_proj = self.k_proj(x)
+        v_proj = self.v_proj(x)
         
-        # 2. Get Q, K, V from the input
-        q_proj = self.self_attn.in_proj_q(x)
-        k_proj = self.self_attn.in_proj_k(x)
-        v_proj = self.self_attn.in_proj_v(x)
-        
-        # 3. Apply Rotary Embeddings to Query and Key
+        # 3. Apply Rotary Embeddings to Query and Key (before head split)
         cos, sin = freqs_cis
         q_embed, k_embed = apply_rotary_pos_emb(q_proj, k_proj, cos, sin)
-        
-        # 4. Perform attention
-        attn_output, _ = self.self_attn(q_embed, k_embed, v_proj, key_padding_mask=src_key_padding_mask)
-        
-        # 5. Add & Norm (residual connection)
-        src = src + self.dropout1(attn_output)
+
+        # 4. Split heads: (batch, nhead, seq, head_dim)
+        B, S, _ = q_embed.shape
+        def split_heads(t: torch.Tensor) -> torch.Tensor:
+            return t.view(B, S, self.nhead, self.head_dim).transpose(1, 2).contiguous()
+        q = split_heads(q_embed)
+        k = split_heads(k_embed)
+        v = split_heads(v_proj)
+
+        # 5. Scaled dot-product attention
+        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * self.scale  # (B, H, S, S)
+
+        # Apply key padding mask if provided (True = masked)
+        if src_key_padding_mask is not None:
+            # mask shape: (B, 1, 1, S)
+            mask = src_key_padding_mask[:, None, None, :]
+            attn_scores = attn_scores.masked_fill(mask, float('-inf'))
+
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        attn_weights = self.attn_dropout(attn_weights)
+        attn_out = torch.matmul(attn_weights, v)  # (B, H, S, head_dim)
+
+        # 6. Merge heads back: (B, S, D)
+        attn_out = attn_out.transpose(1, 2).contiguous().view(B, S, self.d_model)
+        attn_out = self.out_proj(attn_out)
+
+        # 7. Add & Norm (residual connection)
+        src = src + self.dropout1(attn_out)
         
         # --- Feed-Forward Network ---
-        # 6. Apply FFN with another residual connection
+        # 8. Apply FFN with another residual connection
         x = self.norm2(src)
         ffn_output = self.ffn(x)
         src = src + self.dropout2(ffn_output)

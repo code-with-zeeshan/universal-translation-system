@@ -6,12 +6,26 @@ Provides shared utilities for directory management, logging,
 and other common operations.
 """
 from .dependency_container import container, inject, injectable
-from .service_discovery import ServiceDiscoveryClient
+# Optional dependency: httpx (used in service_discovery). Avoid hard requirement at import time.
+try:
+    from .service_discovery import ServiceDiscoveryClient  # type: ignore
+except Exception:
+    ServiceDiscoveryClient = None  # type: ignore
 from .common_utils import DirectoryManager,ImportCleaner
 from .lazy_loader import LazyObject, lazy_property, lazy_function, LazyClass, lazy_import, lazy_singleton
 from .cache_manager import Cache, CacheManager, cached, EvictionPolicy, cache_manager
 from .batch_processor import BatchProcessor, AsyncBatchProcessor, batch_decorator, async_batch_decorator
-from .resource_tracker import ResourceTracker, ResourceTracked, track_resources, resource_tracker
+# Optional dependency: psutil (used by resource_tracker). Avoid hard requirement at import time.
+try:
+    from .resource_tracker import ResourceTracker, ResourceTracked, track_resources, resource_tracker  # type: ignore
+except Exception:
+    ResourceTracker = None  # type: ignore
+    ResourceTracked = None  # type: ignore
+    def track_resources(*args, **kwargs):  # type: ignore
+        def decorator(func):
+            return func
+        return decorator
+    resource_tracker = None  # type: ignore
 # Import constants
 from .constants import *
 
@@ -47,9 +61,24 @@ from .secure_serialization import (
 )
 
 # Import JWT authentication
-from .jwt_auth import (
-    JWTAuth, jwt_auth, require_auth, require_user, require_scopes
-)
+# Optional dependency: pyjwt and cryptography (used by jwt_auth). Avoid hard requirement at import time.
+try:
+    from .jwt_auth import (
+        JWTAuth, jwt_auth, require_auth, require_user, require_scopes
+    )  # type: ignore
+except Exception:
+    JWTAuth = None  # type: ignore
+    def jwt_auth(*args, **kwargs):  # type: ignore
+        raise ImportError("JWT features require 'pyjwt' and related deps installed")
+    def require_auth(*args, **kwargs):  # type: ignore
+        def decorator(func): return func
+        return decorator
+    def require_user(*args, **kwargs):  # type: ignore
+        def decorator(func): return func
+        return decorator
+    def require_scopes(*args, **kwargs):  # type: ignore
+        def decorator(func): return func
+        return decorator
 
 # Import exceptions
 from .exceptions import (
@@ -64,7 +93,7 @@ __all__ = [
     "injectable",
     "container",
     "ImportCleaner",
-    "ServiceDiscoveryClient",
+    # ServiceDiscoveryClient exported only if available
     "LazyObject",
     "lazy_property",
     "lazy_function",
@@ -80,9 +109,10 @@ __all__ = [
     "AsyncBatchProcessor",
     "batch_decorator",
     "async_batch_decorator",
-    "ResourceTracker",
-    "ResourceTracked",
-    "track_resources",
-    "resource_tracker",
+    # ResourceTracker symbols exported only if available
     "document_thread_safety",
 ]
+if ServiceDiscoveryClient is not None:  # type: ignore
+    __all__.append("ServiceDiscoveryClient")
+if ResourceTracker is not None:  # type: ignore
+    __all__ += ["ResourceTracker", "ResourceTracked", "track_resources", "resource_tracker"]

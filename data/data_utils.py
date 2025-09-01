@@ -3,7 +3,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Iterator
 import yaml
 import torch
-from datasets import Dataset, IterableDataset
+# Optional dependency: datasets. For smoke/dry-run we can avoid requiring it.
+try:
+    from datasets import Dataset, IterableDataset  # type: ignore
+except Exception:  # pragma: no cover
+    Dataset = None  # type: ignore
+    IterableDataset = None  # type: ignore
 from tqdm import tqdm
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -101,16 +106,20 @@ class DataProcessor:
     
     def _save_batch(self, batch_data: List[dict], output_path: Path, total_processed: int) -> None:
         """Save a batch of data to disk with proper memory management"""
-        # Create dataset from batch
-        batch_dataset = Dataset.from_list(batch_data)
-        
-        # Save with appropriate naming
+        # Create dataset from batch if datasets is available; else write JSONL as fallback
         batch_path = output_path / f"batch_{total_processed}"
-        batch_dataset.save_to_disk(str(batch_path))
-
-        # Proper memory cleanup - delete before empty_cache
-        del batch_dataset
-        #del batch_data
+        if Dataset is not None:
+            batch_dataset = Dataset.from_list(batch_data)  # type: ignore
+            batch_dataset.save_to_disk(str(batch_path))
+            # Proper memory cleanup - delete before empty_cache
+            del batch_dataset
+        else:
+            # Fallback: write as JSONL files to keep the pipeline flowing in smoke tests
+            import json
+            batch_path = batch_path.with_suffix('.jsonl')
+            with open(batch_path, 'w', encoding='utf-8') as f:
+                for row in batch_data:
+                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
         # Force garbage collection
         import gc

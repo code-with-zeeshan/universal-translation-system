@@ -2,6 +2,7 @@
 """
 Custom exceptions for the Universal Translation System
 """
+from typing import Optional
 
 class UniversalTranslationError(Exception):
     """Base exception for all universal translation system errors"""

@@ -1,0 +1,8 @@
+# Example .npmrc for CI publishing (GitHub Actions, GitLab CI, etc.)
+# Copy to your CI secrets store, not committed to repo.
+
+registry=https://registry.npmjs.org/
+@your-org:registry=https://registry.npmjs.org/
+//registry.npmjs.org/:_authToken=${NPM_TOKEN}
+email=${NPM_EMAIL}
+always-auth=true

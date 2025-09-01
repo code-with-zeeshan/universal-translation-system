@@ -8,7 +8,22 @@ import functools
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, get_type_hints
 from pydantic import BaseModel, create_model, ValidationError
-from fastapi import Depends, Request, HTTPException, status
+# Optional FastAPI imports for API-layer validation. For environments without FastAPI,
+# we provide minimal shims to avoid hard dependency during smoke/dry-run.
+try:
+    from fastapi import Depends, Request, HTTPException, status  # type: ignore
+except Exception:  # pragma: no cover
+    class HTTPException(Exception):  # type: ignore
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+    class status:  # type: ignore
+        HTTP_400_BAD_REQUEST = 400
+    def Depends(x):  # type: ignore
+        return x
+    class Request:  # type: ignore
+        pass
 import logging
 from .exceptions import ValidationError as UTSValidationError
 from .unified_validation import InputValidator

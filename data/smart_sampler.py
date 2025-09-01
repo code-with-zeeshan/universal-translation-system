@@ -244,7 +244,7 @@ class SmartDataSampler:
 
     def _count_lines_mmap(self, file_path: Path) -> int:
         """Count lines using memory mapping for efficiency"""
-        with open(file_path, 'r+b') as f:
+        with open(file_path, 'rb') as f:
             with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
                 lines = 0
                 while mmapped_file.readline():

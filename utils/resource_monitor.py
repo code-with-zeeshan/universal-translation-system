@@ -2,7 +2,11 @@
 """
 Resource monitoring utilities for the Universal Translation System
 """
-import psutil
+# Optional dependency: psutil
+try:
+    import psutil  # type: ignore
+except Exception:  # pragma: no cover
+    psutil = None  # type: ignore
 import time
 import threading
 from typing import Dict, List, Optional, Any
@@ -66,6 +70,19 @@ class ResourceMonitor:
         """Collect current system metrics"""
         metrics = {}
         
+        if psutil is None:
+            # Minimal fallback metrics when psutil isn't available
+            metrics['cpu_percent'] = 0.0
+            metrics['cpu_count'] = 1
+            metrics['memory_percent'] = 0.0
+            metrics['memory_used_gb'] = 0.0
+            metrics['memory_available_gb'] = 0.0
+            metrics['memory_total_gb'] = 0.0
+            metrics['disk_percent'] = 0.0
+            metrics['disk_used_gb'] = 0.0
+            metrics['disk_free_gb'] = 0.0
+            return metrics
+        
         # CPU metrics
         metrics['cpu_percent'] = psutil.cpu_percent()
         metrics['cpu_count'] = psutil.cpu_count()
@@ -86,25 +103,31 @@ class ResourceMonitor:
         # GPU metrics (if available)
         try:
             import torch
-            if torch.cuda.is_available():
+            if hasattr(torch, 'cuda') and torch.cuda.is_available():
                 metrics['gpu_memory_allocated_gb'] = torch.cuda.memory_allocated() / (1024**3)
                 metrics['gpu_memory_reserved_gb'] = torch.cuda.memory_reserved() / (1024**3)
                 metrics['gpu_memory_total_gb'] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                 metrics['gpu_utilization'] = torch.cuda.utilization() if hasattr(torch.cuda, 'utilization') else 0
-        except ImportError:
+        except Exception:
             pass
         
         # Network I/O
-        net_io = psutil.net_io_counters()
-        if net_io:
-            metrics['network_bytes_sent'] = net_io.bytes_sent
-            metrics['network_bytes_recv'] = net_io.bytes_recv
+        try:
+            net_io = psutil.net_io_counters()
+            if net_io:
+                metrics['network_bytes_sent'] = net_io.bytes_sent
+                metrics['network_bytes_recv'] = net_io.bytes_recv
+        except Exception:
+            pass
         
         # Disk I/O
-        disk_io = psutil.disk_io_counters()
-        if disk_io:
-            metrics['disk_read_bytes'] = disk_io.read_bytes
-            metrics['disk_write_bytes'] = disk_io.write_bytes
+        try:
+            disk_io = psutil.disk_io_counters()
+            if disk_io:
+                metrics['disk_read_bytes'] = disk_io.read_bytes
+                metrics['disk_write_bytes'] = disk_io.write_bytes
+        except Exception:
+            pass
         
         return metrics
     

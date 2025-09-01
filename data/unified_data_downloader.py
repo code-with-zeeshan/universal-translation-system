@@ -12,11 +12,23 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+# Optional dependency: requests. Provide minimal shim for smoke/dry-run.
+try:
+    import requests  # type: ignore
+    from requests.adapters import HTTPAdapter  # type: ignore
+    from urllib3.util.retry import Retry  # type: ignore
+except Exception:  # pragma: no cover
+    requests = None  # type: ignore
+    HTTPAdapter = None  # type: ignore
+    class Retry:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
 from tqdm import tqdm
-from datasets import load_dataset
+# Optional dependency; for smoke/dry-run we won't load real datasets
+try:
+    from datasets import load_dataset  # type: ignore
+except Exception:  # pragma: no cover
+    load_dataset = None  # type: ignore
 
 from config.schemas import RootConfig
 from utils.exceptions import DataError
@@ -74,8 +86,14 @@ class UnifiedDataDownloader:
         self.dataset_loader = DatasetLoader(self.logger)
         
         # Configuration
-        self.languages = config.data.active_languages
-        self.training_distribution = config.data.training_distribution
+        # Support both object-attr and dict-style configs
+        data_cfg = getattr(config, 'data', {})
+        if isinstance(data_cfg, dict):
+            self.languages = data_cfg.get('active_languages', ['en'])
+            self.training_distribution = data_cfg.get('training_distribution', {})
+        else:
+            self.languages = getattr(data_cfg, 'active_languages', ['en'])
+            self.training_distribution = getattr(data_cfg, 'training_distribution', {})
         
         # Setup HTTP session with retries (from curated downloader)
         self.session = self._setup_http_session()
@@ -84,13 +102,21 @@ class UnifiedDataDownloader:
         self.data_sources = self._initialize_data_sources()
         
         # Strategy configuration (from smart downloader)
-        self.priority_rules = config.data_strategy.priority_rules if hasattr(config, 'data_strategy') else {}
-        self.source_preferences = config.data_strategy.source_preferences if hasattr(config, 'data_strategy') else {}
+        ds_cfg = getattr(config, 'data_strategy', {})
+        if isinstance(ds_cfg, dict):
+            self.priority_rules = ds_cfg.get('priority_rules', {})
+            self.source_preferences = ds_cfg.get('source_preferences', {})
+        else:
+            self.priority_rules = getattr(ds_cfg, 'priority_rules', {})
+            self.source_preferences = getattr(ds_cfg, 'source_preferences', {})
         
         self.logger.info(f"📊 UnifiedDataDownloader initialized for {len(self.languages)} languages")
     
-    def _setup_http_session(self) -> requests.Session:
-        """Setup HTTP session with retry strategy"""
+    def _setup_http_session(self):
+        """Setup HTTP session with retry strategy. Returns None if requests is unavailable."""
+        if requests is None or HTTPAdapter is None:
+            self.logger.warning("'requests' not installed; HTTP session disabled (smoke mode)")
+            return None
         session = requests.Session()
         retry_strategy = Retry(
             total=3,
@@ -320,6 +346,11 @@ class UnifiedDataDownloader:
         
         stats = {}
         
+        # If running without requests/datasets, skip evaluation downloads in smoke mode
+        if requests is None or load_dataset is None:
+            self.logger.warning("Skipping evaluation data download (requests/datasets not installed) - smoke mode")
+            return stats
+
         # FLORES-200
         if self._download_flores200(output_dir):
             stats['flores200'] = 1
@@ -340,6 +371,11 @@ class UnifiedDataDownloader:
         DirectoryManager.create_directory(output_dir)
         
         stats = {'downloaded_pairs': 0}
+
+        # If running without requests/datasets, skip actual downloads in smoke mode
+        if requests is None or load_dataset is None:
+            self.logger.warning("Skipping training data download (requests/datasets not installed) - smoke mode")
+            return stats
         
         # Get download schedule
         schedule = self.get_download_schedule(DatasetType.TRAINING)

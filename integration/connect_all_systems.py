@@ -21,7 +21,7 @@ from prometheus_client import Counter, Histogram, Gauge, start_http_server
 from utils.dataset_classes import ModernParallelDataset, StreamingParallelDataset
 from monitoring.health_service import start_health_service
 import threading
-from utils.validators import InputValidator
+from utils.unified_validation import InputValidator
 from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyPack, VocabularyMode
 
 # Backward compatibility

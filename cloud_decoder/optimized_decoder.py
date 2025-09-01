@@ -866,18 +866,19 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
 
 
 def decompress_encoder_output(self, compressed_data: bytes) -> Dict:
-    """Decompress encoder output with correct 16-byte header parsing."""
-    if not isinstance(compressed_data, bytes):
-        # Handle non-byte data (e.g., already decompressed dict)
-        return compressed_data
+    """Decompress encoder output with correct 16-byte header parsing.
+    Expects bytes; raises if provided a different type.
+    """
+    if not isinstance(compressed_data, (bytes, bytearray)):
+        raise ValueError("decompress_encoder_output expects bytes/bytearray")
 
     header_size = 16  # 4*int32 + 4*float32
     if len(compressed_data) < header_size:
         raise ValueError("Invalid compressed data: header is too short.")
 
-    # Unpack the 16-byte header using struct
-    seq_len, hidden_dim, scale, _ = struct.unpack('<iif i', compressed_data[:header_size])    
-        
+    # Unpack the 16-byte header using struct: seq_len (i), hidden_dim (i), scale (f), reserved (i)
+    seq_len, hidden_dim, scale, _ = struct.unpack('<iifi', compressed_data[:header_size])
+
     # Decompress the payload
     compressed_payload = compressed_data[header_size:]
     decompressed_payload = lz4.frame.decompress(compressed_payload)
@@ -885,19 +886,14 @@ def decompress_encoder_output(self, compressed_data: bytes) -> Dict:
     # Dequantize the int8 data to float32
     quantized_embeddings = np.frombuffer(decompressed_payload, dtype=np.int8)
     dequantized_embeddings = quantized_embeddings.astype(np.float32) * (1.0 / scale)
-    
+
     # Reshape to the original 3D tensor shape
     hidden_states = dequantized_embeddings.reshape(1, seq_len, hidden_dim)
-    
+
     return {
         'hidden_states': torch.tensor(hidden_states, device=self.device),
         'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=self.device)
     }
-    else:
-        # This branch is problematic as it assumes the data is already a dict,
-        # which contradicts the function's type hint and purpose.
-        # The logic should always expect bytes.
-        raise ValueError("decompress_encoder_output expects bytes, but received a different type.")
 
 def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
     """Decode token IDs to text using vocabulary pack (production-grade)."""

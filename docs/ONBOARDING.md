@@ -100,9 +100,13 @@ docker run --gpus all -p 8001:8001 universal-decoder
    ```
 3. Train with the unified launcher:
    ```bash
-   python -m training.launch train --config config/training_generic_gpu.yaml
+   # YAML config
+   python -m training.launch train --config config/archived_gpu_configs/training_generic_gpu.yaml
+   
+   # or dynamic (no YAML)
+   python -m training.launch train --config dynamic --dynamic
    ```
-   - Deprecated: `training/train_universal_system.py` (use the launcher instead)
+   - Deprecated: `training/train_universal_system.py` and `training/distributed_train.py` (use the launcher instead)
 
 ### 2) Modify Encoder
 1. Change code in `encoder/` or C++ in `encoder_core/`

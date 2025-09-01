@@ -51,7 +51,7 @@ class DomainDataAcquirer:
         for lang1, lang2 in lang_pairs:
             try:
                 # The UFAL corpus is part of the OPUS collection
-                dataset = load_dataset("opus_medical", f"{lang1}-{lang2}", split="train", trust_remote_code=True)
+                dataset = load_dataset("opus_medical", f"{lang1}-{lang2}", split="train")
                 output_file = domain_dir / f"{lang1}-{lang2}_medical.txt"
                 self.process_and_save(dataset, output_file, lang1, lang2)
             except Exception as e:
@@ -68,7 +68,7 @@ class DomainDataAcquirer:
         for lang1, lang2 in lang_pairs:
             try:
                 # JRC-Acquis has a specific naming convention
-                dataset = load_dataset("jrc_acquis", f"{lang1}-{lang2}", split="train", trust_remote_code=True)
+                dataset = load_dataset("jrc_acquis", f"{lang1}-{lang2}", split="train")
                 output_file = domain_dir / f"{lang1}-{lang2}_legal.txt"
                 self.process_and_save(dataset, output_file, lang1, lang2)
             except Exception as e:
@@ -85,8 +85,8 @@ class DomainDataAcquirer:
         for lang1, lang2 in lang_pairs:
             try:
                 # We can combine multiple tech-related corpora
-                gnome_dataset = load_dataset("opus_gnome", f"{lang1}-{lang2}", split="train", trust_remote_code=True)
-                kde_dataset = load_dataset("opus_kde4", f"{lang1}-{lang2}", split="train", trust_remote_code=True)
+                gnome_dataset = load_dataset("opus_gnome", f"{lang1}-{lang2}", split="train")
+                kde_dataset = load_dataset("opus_kde4", f"{lang1}-{lang2}", split="train")
                 
                 output_file = domain_dir / f"{lang1}-{lang2}_tech.txt"
                 
@@ -146,7 +146,7 @@ def main():
 
 if __name__ == "__main__":
     # Example Usage from command line:
-    # python -m tools.acquire_domain_data --domain medical --pairs "en-es"
-    # python -m tools.acquire_domain_data --domain legal --pairs "en-de,en-fr"
-    # python -m tools.acquire_domain_data --domain all --pairs "en-es,en-de,en-fr"
+    # python -m data.acquire_domain_data --domain medical --pairs "en-es"
+    # python -m data.acquire_domain_data --domain legal --pairs "en-de,en-fr"
+    # python -m data.acquire_domain_data --domain all --pairs "en-es,en-de,en-fr"
     main()

@@ -99,6 +99,42 @@ pod 'UniversalTranslationSDK', :path => '../ios/UniversalTranslationSDK'
 
 ---
 
+## Web SDK: npm Publishing
+
+### Package scope and name
+- Prefer a scoped name for organization packages: `@your-org/universal-translation-sdk`
+- Ensure `name`, `version`, `license`, `repository`, and `homepage` are set in `web/universal-translation-sdk/package.json`
+
+### Build & prepare
+```bash
+cd web/universal-translation-sdk
+npm install
+npm run build:wasm   # builds wasm if applicable
+npm run build        # builds dist/
+```
+
+### Pre-publish checks
+- `.npmignore` or `files` field includes only necessary artifacts (dist/, README, LICENSE, package.json, typings)
+- `main/module/types` fields point to built outputs (e.g., dist/index.cjs, dist/index.esm.js, dist/index.d.ts)
+- Version bumped in package.json
+
+### Login & publish
+```bash
+npm login
+npm publish --access public  # for scoped public packages
+```
+
+### Tagging & dist-tags
+```bash
+npm version patch            # or minor/major
+npm publish --tag next       # for prereleases
+```
+
+### Consuming
+```bash
+npm install @your-org/universal-translation-sdk
+```
+
 ## React Native: Linking Notes
 
 - Autolinking works for RN 0.60+ when the library is correctly configured.
@@ -119,3 +155,12 @@ npx react-native config # inspect config
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).
 - Automate publishing in CI with protected tags and credentials in secrets.
 - Sign artifacts if required by your repository.
+
+## Naming & Scope Notes
+- Keep a consistent naming scheme across platforms:
+  - Web: `@your-org/universal-translation-sdk`
+  - React Native: `@your-org/universal-translation-sdk-rn`
+  - Android (Maven): `com.yourorg:universal-translation-sdk`
+  - iOS (CocoaPods/SPM): `UniversalTranslationSDK`
+- Avoid breaking changes without major version bumps.
+- Reserve the same organization scope across registries (npm, Maven, CocoaPods trunk/Specs) to prevent squatters.

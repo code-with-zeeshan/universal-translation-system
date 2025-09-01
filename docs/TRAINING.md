@@ -42,6 +42,19 @@ Use the consolidated launcher with subcommands.
   python -m training.launch train --config config/base.yaml
   ```
 
+- Dynamic config (no YAML):
+  ```bash
+  python -m training.launch train --config dynamic --dynamic
+  ```
+
+- Archived GPU configs (hardware-aware presets):
+  ```bash
+  # Examples
+  python -m training.launch train --config config/archived_gpu_configs/training_generic_gpu.yaml
+  python -m training.launch train --config config/archived_gpu_configs/training_t4.yaml
+  python -m training.launch train --config config/archived_gpu_configs/training_a100.yaml
+  ```
+
 - Override common hyperparameters from CLI:
   ```bash
   python -m training.launch train \

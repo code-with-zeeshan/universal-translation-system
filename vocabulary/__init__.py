@@ -47,6 +47,6 @@ def create_vocabulary_manager(config, context=None):
     
     return UnifiedVocabularyManager(config, mode=mode)
 
-# Then in your code:
-from vocabulary import create_vocabulary_manager
-vocab_mgr = create_vocabulary_manager(config)
+# Example usage (do not execute at import time):
+# from vocabulary import create_vocabulary_manager
+# vocab_mgr = create_vocabulary_manager(your_config)

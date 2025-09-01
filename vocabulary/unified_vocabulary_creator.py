@@ -20,7 +20,8 @@ from enum import Enum
 
 import msgpack
 import numpy as np
-import sentencepiece as spm
+# SentencePiece is optional; import lazily only when needed (production mode)
+spm = None  # type: ignore
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from utils.exceptions import DataError, VocabularyError
@@ -370,6 +371,14 @@ class UnifiedVocabularyCreator:
             f'--byte_fallback=true'
         ]
         
+        # Lazy import to avoid requiring sentencepiece when not used
+        global spm
+        if spm is None:
+            try:
+                import sentencepiece as spm  # type: ignore
+            except Exception as e:
+                raise VocabularyError("sentencepiece not installed; required for PRODUCTION mode. Install with: pip install sentencepiece") from e
+
         logger.info("Training SentencePiece model...")
         spm.SentencePieceTrainer.train(' '.join(train_args))
         
@@ -385,6 +394,14 @@ class UnifiedVocabularyCreator:
         languages: List[str]
     ) -> Dict[str, Any]:
         """Create vocabulary mappings from SentencePiece model"""
+        # Lazy import to avoid requiring sentencepiece when not used
+        global spm
+        if spm is None:
+            try:
+                import sentencepiece as spm  # type: ignore
+            except Exception as e:
+                raise VocabularyError("sentencepiece not installed; required for PRODUCTION mode. Install with: pip install sentencepiece") from e
+        
         sp = spm.SentencePieceProcessor()
         sp.load(model_path)
         

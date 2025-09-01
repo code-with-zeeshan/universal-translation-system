@@ -37,6 +37,14 @@ FastAPI app in `cloud_decoder/optimized_decoder.py`.
   - The decoder decompresses and runs generation on GPU.
   - Some deployments may expose this as the root path `/`.
 
+Binary Payload Format:
+- Encoded as `lz4`-compressed `msgpack`.
+- Typical msgpack fields:
+  - `tokens`: int[] (token IDs or subword indices)
+  - `embeddings`: float32[] or omitted if server-only decode
+  - `metadata`: { `source_language`: string, `text_hash`: string, ... }
+- Size: usually a few KB per request.
+
 Examples:
 - curl (binary file):
 ```bash
@@ -78,6 +86,14 @@ const data = await res.json();
 ### GET /metrics
 - Prometheus metrics endpoint.
 - Response: `text/plain` (Prometheus exposition format)
+
+### Rate Limiting
+- Identification header: `X-Client-ID` (decoder) or `X-API-Key` (coordinator)
+- Typical error when exceeded: `429 Too Many Requests`
+- Suggested response headers (if enabled in deployment):
+  - `X-RateLimit-Limit-Minute`: integer
+  - `X-RateLimit-Remaining-Minute`: integer
+  - `Retry-After`: seconds
 
 ### GET /loaded_adapters
 - Lists adapters currently hot‑loaded in GPU memory (LRU cache).
@@ -209,6 +225,16 @@ DecoderNodeSchema:
 - Logout: `POST /logout`
 - Dashboard: `GET /` (HTML)
 
+### Error Handling & Upstream Behaviors
+- When proxying to a decoder, the coordinator may return:
+  - `502 Bad Gateway` if the decoder returns an error or is unreachable
+  - `503 Service Unavailable` if no healthy decoders are available
+  - `504 Gateway Timeout` if upstream exceeds timeout (deployment dependent)
+- Error payload (typical):
+```json
+{ "error": "string", "details": "optional string", "code": 502 }
+```
+
 ### Metrics
 - GET `/metrics` — Prometheus metrics for the coordinator.
 
@@ -245,3 +271,4 @@ Common ISO codes used by headers and payloads (non‑exhaustive): `en, es, fr, d
 - For web/SDK clients using binary mode, point to coordinator `/api/decode` for automatic load balancing.
 - If you deploy a decoder directly to clients, use its `/decode` endpoint.
 - OpenAPI docs are available on each service for introspection at runtime.
+- Binary schema reference: see `docs/schemas/binary_payload_schema.md`.

@@ -51,10 +51,19 @@ data:
 ## Authentication and Authorization
 
 ### API Authentication
-- Always use JWT authentication for API endpoints
+- Always use JWT authentication for admin endpoints
 - Implement proper token validation
 - Use short-lived tokens (1 hour or less)
 - Implement refresh token rotation
+
+### Service Authentication (Internal)
+- Use `X-Internal-Auth: <INTERNAL_SERVICE_TOKEN>` for internal-only endpoints (e.g., decoder `/compose_adapter`).
+- Rotate internal tokens periodically and scope them per environment.
+
+### Client Authentication
+- Coordinator public entrypoint (`/api/decode`) should require `X-API-Key` with per-client keys managed by APIKeyManager.
+- Rate-limit by client key and emit 429 when exceeded.
+- Consider HMAC-signed requests if keys are widely distributed.
 
 ### Role-Based Access Control
 - Implement RBAC for administrative functions
