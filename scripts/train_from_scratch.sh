@@ -14,7 +14,7 @@ from config.schemas import load_config
 from data.unified_data_pipeline import UnifiedDataPipeline
 import asyncio
 
-cfg = load_config('config/training_generic_gpu.yaml')
+cfg = load_config('config/archived_gpu_configs/training_generic_gpu.yaml')
 pipeline = UnifiedDataPipeline(cfg)
 asyncio.run(pipeline.run_pipeline(resume=True, stages=None))
 PY
@@ -32,7 +32,7 @@ echo "[Step 3/6] ✅ Initial models created."
 
 # 4. Train models (config auto-detection is now built-in)
 echo -e "\n[Step 4/6] 🏃 Starting main training loop (auto-detecting best config for hardware)..."
-python -m training.launch train --config config/training_generic_gpu.yaml
+python -m training.launch train --config config/archived_gpu_configs/training_generic_gpu.yaml
 echo "[Step 4/6] ✅ Main training loop complete."
 
 # 5. Convert models for production

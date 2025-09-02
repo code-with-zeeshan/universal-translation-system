@@ -1,0 +1,106 @@
+flowchart LR
+    subgraph SDKs
+        A1[Android]
+        A2[iOS]
+        A3[Flutter]
+        A4[React Native]
+        A5[Web - WASM]
+    end
+
+    subgraph Edge
+        E1[Universal Encoder Core\nC++/FFI + WASM]
+        E2[Vocabulary Manager\nPacks: Latin/CJK/... 2-4MB]
+        E3[Local Cache\nLRU + Versioned]
+        E4[Compression/Serialization\nLZ4 + MsgPack]
+        E1 --- E2
+        E2 --- E3
+        E1 --> E4
+    end
+
+    subgraph Network
+        TLS[TLS/HTTPS]
+        Auth[JWT and API Keys]
+        RL[Rate Limiter]
+        CB[Circuit Breaker]
+        TLS --- Auth
+        Auth --- RL
+        RL --- CB
+    end
+
+    subgraph Coordinator
+        C_API[HTTP API - decode health metrics]
+        C_RT[Router - Least Loaded and Health]
+        C_HC[Health Prober\nActive and Passive]
+        C_MX[Metrics Exporter\nPrometheus]
+        C_TR[Tracing\nOpenTelemetry]
+        C_ADM[Admin and Dashboard\nChartJS]
+        C_REDIS[Redis\noptional]
+        C_CFG[Configuration\nconfigs and env]
+        C_SEC[AuthN/Z\nJWT]
+        C_API --> C_RT
+        C_RT --> C_HC
+        C_API --> C_SEC
+        C_API --> C_MX
+        C_API --> C_TR
+        C_RT --> C_REDIS
+        C_ADM --> C_MX
+        C_CFG -. reads .-> C_API
+    end
+
+    subgraph DecoderPool
+        DN1[Decoder Node #1\nLitserve + PyTorch]
+        DN2[Decoder Node #2]
+        DNn[Decoder Node #N]
+                    MLD[Model Loader\nAdapters]
+            VLM[Runtime Vocab Access]
+            MXS[Metrics Exporter]
+            HCS[Health Endpoint]
+        DN1 --- MLD
+        DN1 --- VLM
+        DN1 --- MXS
+        DN1 --- HCS
+        DN2 --- MXS
+        DNn --- MXS
+    end
+
+    subgraph ObservabilityGroup
+        PM[Prometheus]
+        GF[Grafana]
+        AL[Alerting]
+        OTEL[OpenTelemetry Collector]
+        PM --> GF
+        PM --> AL
+        OTEL -. traces .- GF
+    end
+
+    subgraph Artifacts
+        MS[(Model and Artifact Store)]
+        VR[Version Registry\nversion-config.json]
+    end
+
+    subgraph CICD
+        BLD[Build Scripts\nscripts/*]
+        PBL[Publish/Release\nrelease.ps1/.sh]
+        DKR[Docker Images\ndocker/*]
+        K8S[Kubernetes Manifests\nkubernetes/*]
+    end
+
+    A1 & A2 & A3 & A4 & A5 -->|Text| E1
+    E1 -->|Embeddings| E4
+    E4 -->|HTTPS + JWT| TLS
+    TLS --> Auth --> RL --> CB --> C_API
+
+    C_RT -->|/decode| DN1 & DN2 & DNn
+    DN1 -->|Translation| C_API
+    C_API -->|Result| A1 & A2 & A3 & A4 & A5
+
+    C_MX --> PM
+    MXS --> PM
+    C_TR --> OTEL
+
+    MLD -. downloads .-> MS
+    VR -. governs .-> C_CFG
+
+    BLD --> DKR --> K8S
+    K8S --> Coordinator
+    K8S --> DecoderPool

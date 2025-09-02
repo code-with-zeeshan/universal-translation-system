@@ -1,0 +1,17 @@
+sequenceDiagram
+    autonumber
+    participant COORD as Coordinator
+    participant HC as Health Prober
+    participant DN as Decoder Node
+    participant PM as Prometheus
+    participant HPA as K8s Autoscaler
+
+    COORD->>HC: Schedule probes
+    HC->>DN: GET health
+    DN-->>HC: status healthy or unhealthy
+    HC->>COORD: Update node registry
+    COORD-->>PM: Pool metrics metrics
+    DN-->>PM: Node metrics metrics
+    PM-->>HPA: Metrics CPU GPU latency QPS
+    HPA->>DN: Scale up and down replicas
+    HPA->>COORD: Notify changes optional

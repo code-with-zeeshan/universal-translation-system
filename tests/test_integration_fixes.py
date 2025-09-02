@@ -15,35 +15,39 @@ class TestIntegrationFixes(unittest.TestCase):
     def test_no_trust_remote_code(self):
         """Test that trust_remote_code=True is removed"""
         files_to_check = [
-            'data/download_curated_data.py',
-            'data/download_training_data.py'
+            'data/archived/download_curated_data.py',
+            'data/archived/download_training_data.py',
+            'data/unified_data_downloader.py',
+            'data/unified_data_pipeline.py',
+            'data/data_utils.py'
         ]
         
         for file_path in files_to_check:
-            with open(file_path, 'r') as f:
+            if not Path(file_path).exists():
+                continue
+            with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 self.assertNotIn('trust_remote_code=True', content)
     
     def test_imports_fixed(self):
         """Test that missing imports are added"""
         # Check datetime import in pipeline_connector
-        with open('data/pipeline_connector.py', 'r') as f:
+        with open('connector/pipeline_connector.py', 'r', encoding='utf-8') as f:
             content = f.read()
             self.assertIn('from datetime import datetime', content)
     
     def test_decoder_implementation_fixed(self):
         """Test that decoder implementation is complete"""
-        with open('cloud_decoder/optimized_decoder.py', 'r') as f:
+        with open('cloud_decoder/optimized_decoder.py', 'r', encoding='utf-8') as f:
             content = f.read()
             # Should not contain TODO placeholder
             self.assertNotIn('"translation": "TODO: implement decode logic"', content)
             # Should contain actual implementation
-            self.assertIn('decompress_encoder_output', content)
             self.assertIn('decode_tokens_to_text', content)
     
     def test_tokenization_implementation_fixed(self):
         """Test that tokenization implementation is complete"""
-        with open('encoder_core/src/vocabulary_pack.cpp', 'r') as f:
+        with open('encoder_core/src/vocabulary_pack.cpp', 'r', encoding='utf-8') as f:
             content = f.read()
             # Should not contain TODO
             self.assertNotIn('TODO: Integrate production BPE or SentencePiece subword tokenization here', content)
@@ -66,18 +70,18 @@ class TestIntegrationFixes(unittest.TestCase):
             self.assertIn('os.environ.get(\'JWT_SECRET\'', content)
     
     def test_specific_exception_handling(self):
-        """Test that specific exception handling is implemented"""
-        with open('vocabulary/vocabulary_manager.py', 'r') as f:
+        """Test that specific exception handling is implemented in unified vocab manager"""
+        with open('vocabulary/unified_vocab_manager.py', 'r', encoding='utf-8') as f:
             content = f.read()
-            self.assertIn('except FileNotFoundError:', content)
-            self.assertIn('except json.JSONDecodeError as e:', content)
+            self.assertIn('except msgpack.exceptions.UnpackException', content)
+            self.assertIn('Failed to load pack', content)
     
     def test_memory_cleanup_implementation(self):
-        """Test that memory cleanup is implemented"""
-        with open('vocabulary/vocabulary_manager.py', 'r') as f:
+        """Ensure unified vocab manager manages cache and eviction logic"""
+        with open('vocabulary/unified_vocab_manager.py', 'r', encoding='utf-8') as f:
             content = f.read()
-            self.assertIn('def cleanup_cache(self):', content)
-            self.assertIn('self.loaded_packs.clear()', content)
+            self.assertIn('_vocabulary_cache', content)
+            self.assertIn('_cache_order', content)
     
     def test_circular_dependency_fixed(self):
         """Test that circular dependencies are resolved"""

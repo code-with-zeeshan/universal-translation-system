@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant SDK as Client SDK
+    participant ENC as Edge Encoder
+    participant COORD as Coordinator
+    participant RT as Router
+    participant DN as Decoder Node
+    participant PM as Prometheus
+    participant OT as OTEL Collector
+
+    SDK->>ENC: Text input
+    ENC->>ENC: Encode to embeddings
+    ENC->>COORD: POST decode LZ4 and MsgPack and JWT
+    COORD->>RT: Select least-loaded healthy node
+    RT-->>COORD: Node endpoint
+    COORD->>DN: Proxy decode request
+    DN->>DN: Run transformer inference
+    DN-->>COORD: Translation + metrics
+    COORD-->>SDK: Translation result
+    COORD-->>PM: Expose metrics scrape
+    DN-->>PM: Expose metrics scrape
+    COORD-->>OT: Export traces
+    DN-->>OT: Export traces

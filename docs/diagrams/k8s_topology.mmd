@@ -1,0 +1,52 @@
+flowchart TB
+    subgraph Cluster
+        subgraph NS
+            subgraph Ingress
+                IG[HTTPS Ingress]
+            end
+
+            subgraph SVCs
+                SCoord[Service coordinator]
+                SDec[Service decoder]
+                SMon[Service prometheus]
+            end
+
+            subgraph Deployments
+                subgraph Coord
+                    CPod1[Pod coord-abc]
+                    CPod2[Pod coord-def]
+                end
+                subgraph DecPool
+                    DPod1[Pod dec-001 - GPU]
+                    DPod2[Pod dec-002 - GPU]
+                    DPodN[Pod dec-N - GPU]
+                end
+                subgraph Mon
+                    PPod[Pod prometheus]
+                    GPod[Pod grafana]
+                    OTel[Pod otel-collector]
+                end
+            end
+        end
+    end
+
+    IG --> SCoord
+    SCoord --> CPod1
+    SCoord --> CPod2
+
+    CPod1 --> SDec
+    CPod2 --> SDec
+
+    SDec --> DPod1
+    SDec --> DPod2
+    SDec --> DPodN
+
+    CPod1 --> SMon
+    CPod2 --> SMon
+    DPod1 --> SMon
+    DPod2 --> SMon
+    DPodN --> SMon
+
+    SMon --> PPod
+    PPod --> GPod
+    PPod --> OTel

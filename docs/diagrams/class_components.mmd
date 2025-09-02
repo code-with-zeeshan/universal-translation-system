@@ -1,0 +1,76 @@
+classDiagram
+    direction LR
+
+    class SDK {
+      +encode(text): Embeddings
+      +sendDecodeRequest(payload)
+      +handleResult(translation)
+      -cache: LocalCache
+    }
+
+    class EncoderCore {
+      +encode(text): Embeddings
+      -loadVocabulary(lang)
+      -quantizedOps
+    }
+
+    class VocabularyManager {
+      +getPack(lang): Pack
+      +installPack(lang)
+      +evict()
+      -cachePolicy: LRU
+    }
+
+    class CoordinatorAPI {
+      +POST /decode
+      +GET /health
+      +GET /metrics
+    }
+
+    class Router {
+      +selectNode(): DecoderNode
+      -loadStats
+      -healthState
+    }
+
+    class DecoderNode {
+      +decode(embeddings): Translation
+      +/health
+      +/metrics
+      -model: Transformer
+      -adapters
+    }
+
+    class MetricsExporter {
+      +expose()
+    }
+
+    class Tracer {
+      +recordSpan()
+    }
+
+    class RedisStore {
+      +get(key)
+      +set(key, value)
+    }
+
+    class ArtifactStore {
+      +download(modelId)
+      +listVersions()
+    }
+
+    SDK --> EncoderCore : uses
+    SDK --> VocabularyManager : loads packs
+    SDK --> CoordinatorAPI : calls
+
+    CoordinatorAPI --> Router : delegates
+    Router --> DecoderNode : routes
+
+    DecoderNode --> ArtifactStore : downloads
+    CoordinatorAPI --> MetricsExporter : exposes
+    DecoderNode --> MetricsExporter : exposes
+
+    CoordinatorAPI --> Tracer : traces
+    DecoderNode --> Tracer : traces
+
+    Router --> RedisStore : optional state

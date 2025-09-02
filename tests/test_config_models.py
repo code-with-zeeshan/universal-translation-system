@@ -19,6 +19,7 @@ from config.config_models import (
     SystemConfig,
     load_config
 )
+from config.schemas import RootConfig  # Ensure we target current config as well
 
 
 class TestEncoderConfig:
@@ -183,7 +184,7 @@ class TestSystemConfig:
         """Test loading from YAML."""
         with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
             yaml_path = f.name
-            yaml.dump({
+            yaml.safe_dump({
                 "coordinator": {
                     "jwt_secret": "a" * 32
                 }

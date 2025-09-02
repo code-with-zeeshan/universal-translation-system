@@ -227,7 +227,7 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [SDK Integration Guide](docs/SDK_INTEGRATION.md)
 - [CI: Build & Upload to HF](docs/CI_BUILD_UPLOAD.md)
 - [Monitoring Guide](monitoring/README.md)
-- [Vocabulary Guide](vocabulary/Vocabulary_Guide.md)
+- [Vocabulary Guide](docs/Vocabulary_Guide.md)
 - [Decoder Pool Management](docs/DECODER_POOL.md)
 - [API Documentation](docs/API.md)
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)

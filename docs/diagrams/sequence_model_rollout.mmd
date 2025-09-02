@@ -1,0 +1,17 @@
+sequenceDiagram
+    autonumber
+    participant DEV as Dev CI Pipeline
+    participant AS as Artifact Store
+    participant VR as Version Registry
+    participant K8S as Kubernetes
+    participant DN as Decoder Node
+
+    DEV->>AS: Upload model artifacts
+    DEV->>VR: Update version config
+    DEV->>K8S: Apply deployment with new labels and tags
+    K8S->>DN: Rolling update (new pods)
+    DN->>AS: Download model and adapters on start
+    DN->>VR: Read pinned versions
+    DN->>DN: Warm model, ready when loaded
+    DN-->>K8S: Ready/Healthy
+    K8S-->>DEV: Rollout complete
