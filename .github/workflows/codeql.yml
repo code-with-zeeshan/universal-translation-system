@@ -67,7 +67,7 @@ jobs:
       if: matrix.language == 'java-kotlin'
       uses: android-actions/setup-android@v3
 
-    # Fix Android project files
+    # Fix Android project files and ensure Gradle plugin 
     - name: Fix Android Project
       if: matrix.language == 'java-kotlin'
       run: |
@@ -84,8 +84,15 @@ jobs:
         kotlin.code.style=official
         EOF
         
-        # Fix build.gradle - add kotlin version at the top
-        sed -i '1i buildscript { ext.kotlin_version = "1.9.0" }' build.gradle
+        # Ensure buildscript block is present in build.gradle for com.android.library plugin
+        if ! grep -q "com.android.tools.build:gradle" build.gradle; then
+          sed -i '1i buildscript {\n repository {\n google()\n  mavenCentral()\n }\n dependencies {\n  classpath "com.android.tools.build:gradle:8.1.0"\n   classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0"\n }\n\n' build.gradle
+        fi
+
+        # Fix build.gradle - add kotlin version at the top if not already present
+        if ! grep -q "kotlin_version" build.gradle; then
+          sed -i '1i ext.kotlin_version = "1.9.0"' build.gradle
+        fi  
         
         # Create local.properties
         echo "sdk.dir=${ANDROID_SDK_ROOT}" > local.properties
