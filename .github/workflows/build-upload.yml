@@ -37,6 +37,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip'
 
       - name: Install Python dependencies
         run: |
@@ -45,7 +46,7 @@ jobs:
           pip install huggingface_hub
 
       - name: Hugging Face login
-        if: env.HF_TOKEN != ''
+        if: secrets.HF_TOKEN != ''
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -62,6 +63,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_HUB_REPO_ID: ${{ github.event.inputs.repo_id || secrets.HF_HUB_REPO_ID }}
         run: |
+          if [ -z "${HF_HUB_REPO_ID}" ]; then echo "HF_HUB_REPO_ID is required. Set via dispatch input or secret."; exit 1; fi
           args="--repo_id ${HF_HUB_REPO_ID}"
           if [ "${{ github.event.inputs.create_vocabs || 'true' }}" = "true" ]; then args="$args --create-vocabs"; fi
           if [ "${{ github.event.inputs.convert_models || 'true' }}" = "true" ]; then args="$args --convert-models"; fi

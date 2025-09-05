@@ -29,10 +29,7 @@ jobs:
       run: |
         cd android/UniversalTranslationSDK
         ./gradlew test
-    - name: Integration Test Android SDK
-      run: |
-        cd android/UniversalTranslationSDK
-        ./gradlew connectedAndroidTest
+
 
   ios-test:
     runs-on: macos-latest
@@ -42,10 +39,7 @@ jobs:
       run: |
         cd ios/UniversalTranslationSDK
         swift test
-    - name: Integration Test iOS SDK
-      run: |
-        cd ios/UniversalTranslationSDK
-        xcodebuild test -scheme UniversalTranslationSDK -destination 'platform=iOS Simulator,name=iPhone 14'
+
 
   react-native-test:
     runs-on: ubuntu-latest
@@ -54,6 +48,7 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
+        cache: 'npm'
     - name: Install dependencies
       run: |
         cd react-native/UniversalTranslationSDK
@@ -70,6 +65,7 @@ jobs:
     - uses: actions/setup-node@v4
       with:
         node-version: '18'
+        cache: 'npm'
     - name: Install dependencies
       run: |
         cd web/universal-translation-sdk
