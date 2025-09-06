@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y \
 # Install Python requirements
 COPY cloud_decoder/requirements.txt /app/requirements.txt
 WORKDIR /app
-RUN pip3 install -r requirements.txt
-
-# Install Triton for optimized inference
-RUN pip3 install triton
+RUN pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir triton && \
+    adduser --disabled-password --gecos '' appuser && \
+    chown -R appuser /app
 
 # Copy decoder code
 COPY cloud_decoder /app
@@ -23,5 +23,8 @@ COPY cloud_decoder /app
 ENV OMP_NUM_THREADS=4
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
 ENV CUDA_LAUNCH_BLOCKING=0
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
+USER appuser
 CMD ["python3", "optimized_decoder.py"]

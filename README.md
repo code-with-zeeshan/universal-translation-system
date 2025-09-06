@@ -51,7 +51,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions and [REDIS_
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/universal-translation-system
+git clone https://github.com/code-with-zeeshan/universal-translation-system.git
 cd universal-translation-system
 
 # Set up environment variables (recommended)
@@ -237,6 +237,67 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [Acknowledgments](docs/ACKNOWLEDGMENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [License](LICENSE)
+
+## 🔐 Secrets & Redis (Coordinator)
+
+### Redis (for rate limiting and token revocation)
+- Set environment and connection (example):
+  - `REDIS_URL=redis://localhost:6379/0`
+  - Or `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`
+- Coordinator auto-initializes Redis if available.
+- Revocation: jti values are stored in Redis set `revoked_jti`. Endpoint `POST /api/revoke` adds a jti (admin session required).
+- If Redis is unavailable, revocation falls back to allow (recommended to run Redis in production).
+
+## 🔐 Secrets Management (Docker Compose & Kubernetes)
+
+### Docker Compose
+- Place secret files under `../secrets/` relative to `docker/docker-compose.yml`:
+  - `../secrets/decoder_jwt_secret.txt`
+  - `../secrets/coordinator_secret.txt`
+  - `../secrets/coordinator_jwt_secret.txt`
+  - `../secrets/coordinator_token.txt`
+  - `../secrets/internal_service_token.txt`
+- Compose mounts them as Docker secrets. Services read via `*_FILE` envs.
+- RS256 keys:
+  - Put `../secrets/jwt_private_key.pem` and `../secrets/jwt_public_key.pem`
+  - Set env for coordinator/decoder:
+    - `JWT_PRIVATE_KEY_FILE=/run/secrets/jwt_private_key`
+    - `JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public_key` (supports `||`-separated paths for rotation)
+
+Example (already wired in docker-compose.yml):
+- Coordinator uses:
+  - `COORDINATOR_SECRET_FILE`, `COORDINATOR_JWT_SECRET_FILE`, `COORDINATOR_TOKEN_FILE`, `INTERNAL_SERVICE_TOKEN_FILE`
+- Decoder uses:
+  - `DECODER_JWT_SECRET_FILE`
+
+### Kubernetes
+- Create/update `kubernetes/secrets.yaml` with base64-encoded values.
+- Apply secrets and deployments:
+```bash
+kubectl apply -f kubernetes/secrets.yaml
+kubectl apply -f kubernetes/coordinator-deployment.yaml
+kubectl apply -f kubernetes/decoder-deployment.yaml
+```
+- Coordinator and Decoder mount a secret volume at `/var/run/secrets/uts` and use `*_FILE` envs.
+- RS256 keys:
+  - Add to `translation-system-secrets`:
+    - `jwt-private-key` (PEM), `jwt-public-key` (PEM)
+  - Mount at `/var/run/secrets/uts` and set envs:
+    - `JWT_PRIVATE_KEY_FILE=/var/run/secrets/uts/jwt-private-key`
+    - `JWT_PUBLIC_KEY_PATH=/var/run/secrets/uts/jwt-public-key`
+
+### Base64 helper for Kubernetes
+```bash
+# Linux/macOS
+printf 'my-secret' | base64
+# Windows PowerShell
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('my-secret'))
+```
+
+Notes:
+- Never commit plaintext secrets.
+- Prefer separate keys per environment.
+- For RS256, rotation is supported via multiple public keys using `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||`-separated entries.
 
 ## 📊 Monitoring
 - All services expose Prometheus metrics at `/metrics`

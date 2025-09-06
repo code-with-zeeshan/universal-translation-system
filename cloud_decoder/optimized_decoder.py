@@ -9,6 +9,12 @@ from fastapi import FastAPI, Request, Header, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
+
+# Crypto for JWKS and KID computation (mirrored)
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.backends import default_backend
+import base64
 import asyncio
 from typing import List, Dict, Optional, Tuple, Any, Union
 import time
@@ -28,6 +34,7 @@ from monitoring.metrics_collector import (
     active_connections,
     gpu_utilization
 )
+from utils.logging_config import setup_logging
 from collections import OrderedDict
 # Import vocabulary manager
 from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
@@ -68,7 +75,9 @@ tracer = trace.get_tracer(__name__)
 
 # Environment variables for configuration
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
-JWT_SECRET = os.environ.get("DECODER_JWT_SECRET", "jwtsecret123")
+JWT_SECRET = os.environ.get("DECODER_JWT_SECRET")
+if not JWT_SECRET or JWT_SECRET in {"jwtsecret123", "use-openssl-rand-hex-32-to-generate-a-secure-key"}:
+    raise RuntimeError("DECODER_JWT_SECRET must be set to a strong, random value.")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "your-hf-org/universal-translation-system")
 
@@ -78,7 +87,9 @@ API_PORT = int(os.environ.get("API_PORT", "8000"))
 API_WORKERS = int(os.environ.get("API_WORKERS", "1"))
 API_TITLE = os.environ.get("API_TITLE", "Cloud Decoder API")
 
-logger = logging.getLogger(__name__)
+# Initialize logging (centralized)
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("decoder")
 
 # Initialize utilities
 api_key_manager = APIKeyManager()
@@ -486,12 +497,122 @@ class CompositionRequest(BaseModel):
 app = FastAPI(title=API_TITLE, version=MODEL_VERSION, openapi_url="/openapi.json")
 FastAPIInstrumentor.instrument_app(app)
 
+@app.on_event("startup")
+async def startup_validation():
+    # Validate critical env on startup
+    missing = []
+    def _check(name: str, val: Optional[str]):
+        if not val: missing.append(name)
+    # Support Docker secrets: if DECODER_JWT_SECRET_FILE is set, read from file
+    secret_file = os.environ.get("DECODER_JWT_SECRET_FILE")
+    if secret_file and os.path.exists(secret_file):
+        try:
+            with open(secret_file, 'r', encoding='utf-8') as f:
+                os.environ['DECODER_JWT_SECRET'] = f.read().strip()
+        except Exception as ex:
+            logger.error(f"Failed to read DECODER_JWT_SECRET_FILE: {ex}")
+    _check("DECODER_JWT_SECRET", os.environ.get("DECODER_JWT_SECRET"))
+    # RS256 for decoder admin endpoints is optional; if private key is set, require public key too
+    if os.environ.get("JWT_PRIVATE_KEY") and not os.environ.get("JWT_PUBLIC_KEY"):
+        raise RuntimeError("JWT_PRIVATE_KEY set but JWT_PUBLIC_KEY missing for decoder")
+    if missing:
+        logger.error(f"Missing required env: {', '.join(missing)}")
+        raise RuntimeError("Decoder startup validation failed: missing secrets")
+
+    # Build JWKS using shared utility
+    from utils.jwks_utils import build_jwks_from_env, diff_kids
+    global JWKS_KEYS
+    JWKS_KEYS = build_jwks_from_env(component="decoder", env=os.environ)
+
+    # Background job to periodically reload JWKS every 5 minutes, with change logging
+    async def jwks_reload_loop_decoder():
+        global JWKS_KEYS
+        last_keys = JWKS_KEYS
+        while True:
+            try:
+                new_keys = build_jwks_from_env(component="decoder", env=os.environ)
+                if new_keys:
+                    added, removed = diff_kids(last_keys, new_keys)
+                    JWKS_KEYS = new_keys
+                    if added or removed:
+                        logger.info(f"Decoder JWKS changed. Added: {added or '[]'}, Removed: {removed or '[]'}")
+                    last_keys = new_keys
+            except Exception as ex:
+                logger.debug(f"Decoder JWKS reload loop error: {ex}")
+            await asyncio.sleep(300)
+
+    asyncio.create_task(jwks_reload_loop_decoder())
+
+# CORS and Security headers middleware
+from fastapi.middleware.cors import CORSMiddleware
+
+# Restrictive defaults; adjust ALLOWED_ORIGINS via env if needed
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "").split(",") if os.environ.get("ALLOWED_ORIGINS") else []
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Client-ID", "X-Request-ID"],
+)
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    return response
+
 security = HTTPBearer()
+JWT_ISS = os.environ.get("JWT_ISS")
+JWT_AUD = os.environ.get("JWT_AUD")
+JWT_PUBLIC_KEY = os.environ.get("JWT_PUBLIC_KEY")
+JWT_PUBLIC_KEY_PATH = os.environ.get("JWT_PUBLIC_KEY_PATH")
+JWT_KEY_IDS = os.environ.get("JWT_KEY_IDS")
+JWKS_KEYS: List[Dict[str, Any]] = []
+
+
 def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
     import jwt
     token = credentials.credentials
     try:
-        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        if JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH:
+            # Select key by kid when present
+            unverified_header = jwt.get_unverified_header(token)
+            kid = unverified_header.get("kid")
+            key_to_use = None
+            if kid and JWKS_KEYS:
+                for k in JWKS_KEYS:
+                    if k.get("kid") == kid:
+                        n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
+                        e = int.from_bytes(base64.urlsafe_b64decode(k["e"] + "=="), byteorder="big")
+                        pub_numbers = rsa.RSAPublicNumbers(e, n)
+                        key_to_use = pub_numbers.public_key(default_backend())
+                        break
+            if key_to_use is None:
+                # Fallback to first PEM
+                pem_source = (os.environ.get("JWT_PUBLIC_KEY") or "").split("||")[0]
+                key_to_use = serialization.load_pem_public_key(pem_source.encode("utf-8"), backend=default_backend())
+            jwt.decode(
+                token,
+                key_to_use,
+                algorithms=["RS256"],
+                options={"require": ["exp", "iat", "nbf"]},
+                issuer=JWT_ISS,
+                audience=JWT_AUD,
+            )
+        else:
+            jwt.decode(
+                token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                options={"require": ["exp", "iat", "nbf"]},
+                issuer=JWT_ISS,
+                audience=JWT_AUD,
+            )
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -510,6 +631,11 @@ observer.start()
 class StatusResponse(BaseModel):
     model_version: str
     healthy: bool
+
+# basic health endpoint (no sensitive info)
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 # enhanced status endpoint
 @app.get("/status", response_model=StatusResponse)
@@ -533,9 +659,22 @@ async def status():
 
         return {"model_version": MODEL_VERSION, "healthy": True, "vocabulary_packs": vocab_versions}
 
+TRUSTED_PROXIES = {h.strip() for h in os.environ.get("TRUSTED_PROXIES", "").split(",") if h.strip()}
+
+def _get_client_id(request: Request) -> str:
+    # Prefer explicit client ID header; fallback to remote IP
+    hdr = request.headers.get('X-Client-ID')
+    if hdr:
+        return hdr
+    # Use X-Forwarded-For only if request comes through a trusted proxy
+    xff = request.headers.get('X-Forwarded-For')
+    if xff and request.client and request.client.host in TRUSTED_PROXIES:
+        return xff.split(',')[0].strip()
+    return request.client.host if request.client else 'unknown'
+
 @app.post("/decode")
 async def decode(request: Request, x_target_language: str = Header(None)):
-    client_id = request.headers.get('X-Client-ID', 'default')
+    client_id = _get_client_id(request)
     allowed, message = rate_limiter.is_allowed(client_id)
     if not allowed:
         raise HTTPException(status_code=429, detail=message)
@@ -604,10 +743,17 @@ async def decode(request: Request, x_target_language: str = Header(None)):
     finally:
         active_connections.dec()  # Decrement active connections
 
-# metrics endpoint
+# JWKS endpoint (mirrored)
+@app.get("/.well-known/jwks.json")
+async def jwks_decoder():
+    return JSONResponse({"keys": JWKS_KEYS})
+
+# metrics endpoint (protected)
 @app.get("/metrics")
-async def metrics():
-    """Prometheus metrics endpoint."""
+async def metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Prometheus metrics endpoint (protected)."""
+    # Validate JWT
+    require_jwt(credentials)
     from prometheus_client import generate_latest
     
     # Collect vocabulary metrics before generating response

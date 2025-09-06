@@ -8,7 +8,7 @@ All notable changes to the Universal Translation System will be documented in th
 - Environment variable configuration for all components
 - Docker and Kubernetes deployment support
 - Comprehensive Prometheus/Grafana monitoring dashboards
-- New VISION.md document explaining the system architecture and goals
+- VISION.md document explaining the system architecture and goals
 - Enhanced train_from_scratch.py script with improved command-line interface
 - Reorganized documentation structure for better navigation
 - Comprehensive Prometheus configuration with alerting and recording rules
@@ -20,6 +20,10 @@ All notable changes to the Universal Translation System will be documented in th
 - README updates for Android/iOS/Flutter/Web SDKs with coordinator usage
 - GitHub Actions workflows: sdk-publish.yml (Android/iOS) and web-npm-publish.yml (web)
 - Coordinator periodic Redis-to-disk mirroring via `COORDINATOR_MIRROR_INTERVAL` (min 5s, logs effective value)
+- Centralized logging via `utils/logging_config.setup_logging` with sectioned log handlers (logs/data, logs/training, logs/monitoring, logs/coordinator, logs/decoder, logs/vocabulary)
+- Automatic creation of logs folder structure via `DirectoryManager.create_logs_structure()`
+- Mandatory secrets in `.env.example` with `*_FILE` support and RS256 key envs for Coordinator and Decoder
+- Updated docs: environment-variables.md and ONBOARDING.md with CRITICAL envs to set before running
 
 ### Changed
 - Updated README.md with current system capabilities and Docker deployment instructions
@@ -32,12 +36,13 @@ All notable changes to the Universal Translation System will be documented in th
 - Moved Adding_New_languages.md to docs folder with updated instructions
 - Updated Quick Start guide in README.md with more comprehensive options
 - Coordinator now uses `RedisManager` for sync access in async paths and mirrors Redis to disk in reload/save flows
+- Coordinator, Decoder, Training, Data pipeline, and Monitoring now initialize centralized logging and write to sectioned log files
+- Main entrypoint uses centralized logging and category logger name (`system`)
 
-### Removed
-- Outdated GOAL.md file (replaced by docs/VISION.md)
-- References to non-existent files in documentation
-- Redundant files from Data_Training_markdown folder
-- Legacy analysis reports from report folder
+### Security
+- Decoder enforces `DECODER_JWT_SECRET` or file at startup (fail-fast)
+- Coordinator supports `COORDINATOR_SECRET(_FILE)`, `COORDINATOR_JWT_SECRET(_FILE)`, `COORDINATOR_TOKEN(_FILE)`, and `INTERNAL_SERVICE_TOKEN(_FILE)`
+- RS256 support documented: `JWT_PRIVATE_KEY_FILE`, `JWT_PUBLIC_KEY_PATH` in Coordinator and Decoder; Kubernetes placeholders included
 
 ## [0.1.0] - 2025-08-22
 

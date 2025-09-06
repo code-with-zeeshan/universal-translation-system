@@ -60,11 +60,20 @@ spec:
           value: "64"
         - name: BATCH_TIMEOUT_MS
           value: "10"
+        - name: DECODER_JWT_SECRET_FILE
+          value: "/var/run/secrets/uts/decoder-jwt-secret"
+        - name: JWT_PRIVATE_KEY_FILE
+          value: "/var/run/secrets/uts/jwt-private-key"
+        - name: JWT_PUBLIC_KEY_PATH
+          value: "/var/run/secrets/uts/jwt-public-key"
         volumeMounts:
         - name: models
           mountPath: /app/models
         - name: vocabs
           mountPath: /app/vocabs
+        - name: uts-secrets
+          mountPath: /var/run/secrets/uts
+          readOnly: true
       volumes:
       - name: models
         persistentVolumeClaim:
@@ -74,5 +83,15 @@ spec:
         persistentVolumeClaim:
           # This PVC should point to your vocabulary storage
           claimName: vocab-storage-pvc
+      - name: uts-secrets
+        secret:
+          secretName: translation-system-secrets
+          items:
+          - key: decoder-jwt-secret
+            path: decoder-jwt-secret
+          - key: jwt-private-key
+            path: jwt-private-key
+          - key: jwt-public-key
+            path: jwt-public-key
       nodeSelector:
         kubernetes.io/hostname: gpu-node

@@ -1,5 +1,33 @@
 version: '3.8'
 services:
+  coordinator:
+    build:
+      context: ..
+      dockerfile: docker/coordinator.Dockerfile
+    container_name: coordinator_service
+    restart: unless-stopped
+    ports:
+      - "5100:5100"
+    environment:
+      COORDINATOR_HOST: 0.0.0.0
+      COORDINATOR_PORT: 5100
+      COORDINATOR_WORKERS: 1
+      COORDINATOR_TITLE: Universal Translation Coordinator
+      COORDINATOR_SECRET_FILE: /run/secrets/coordinator_secret
+      COORDINATOR_JWT_SECRET_FILE: /run/secrets/coordinator_jwt_secret
+      COORDINATOR_TOKEN_FILE: /run/secrets/coordinator_token
+      INTERNAL_SERVICE_TOKEN_FILE: /run/secrets/internal_service_token
+      # RS256 support (optional)
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+    secrets:
+      - coordinator_secret
+      - coordinator_jwt_secret
+      - coordinator_token
+      - internal_service_token
+      - jwt_private_key
+      - jwt_public_key
+
   encoder:
     build:
       context: ..
@@ -23,3 +51,28 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"  # Adjust as needed for your API
+    secrets:
+      - decoder_jwt_secret
+      - jwt_private_key
+      - jwt_public_key
+    environment:
+      DECODER_JWT_SECRET_FILE: /run/secrets/decoder_jwt_secret
+      # RS256 support (optional)
+      JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
+      JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+
+secrets:
+  decoder_jwt_secret:
+    file: ../secrets/decoder_jwt_secret.txt
+  coordinator_secret:
+    file: ../secrets/coordinator_secret.txt
+  coordinator_jwt_secret:
+    file: ../secrets/coordinator_jwt_secret.txt
+  coordinator_token:
+    file: ../secrets/coordinator_token.txt
+  internal_service_token:
+    file: ../secrets/internal_service_token.txt
+  jwt_private_key:
+    file: ../secrets/jwt_private_key.pem
+  jwt_public_key:
+    file: ../secrets/jwt_public_key.pem

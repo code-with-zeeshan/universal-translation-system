@@ -12,13 +12,19 @@ import hashlib
 import hmac
 import os
 import base64
+import io
+import builtins
 from typing import Any, Dict, List, Optional, Union, Callable, Type, TypeVar
 from .exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 
 # Default HMAC key for message authentication
-DEFAULT_HMAC_KEY = os.environ.get("UTS_HMAC_KEY", "change-me-in-production")
+DEFAULT_HMAC_KEY = os.environ.get("UTS_HMAC_KEY")
+if not DEFAULT_HMAC_KEY or DEFAULT_HMAC_KEY == "change-me-in-production":
+    raise SecurityError(
+        "UTS_HMAC_KEY is not set or uses an insecure default. Set a strong random key via environment."
+    )
 
 # Maximum allowed size for deserialized data (100MB)
 MAX_SIZE = 100 * 1024 * 1024

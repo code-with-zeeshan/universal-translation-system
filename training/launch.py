@@ -30,7 +30,9 @@ from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
 from config.schemas import RootConfig, load_config as load_pydantic_config
 
-logger = logging.getLogger(__name__)
+# Centralized logging for training
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("training")
 
 
 def setup_environment():

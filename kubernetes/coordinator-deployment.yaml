@@ -30,26 +30,18 @@ spec:
           value: "1"
         - name: COORDINATOR_TITLE
           value: "Universal Translation Coordinator"
-        - name: COORDINATOR_JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: translation-system-secrets
-              key: coordinator-jwt-secret
-        - name: COORDINATOR_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: translation-system-secrets
-              key: coordinator-secret
-        - name: COORDINATOR_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: translation-system-secrets
-              key: coordinator-token
-        - name: INTERNAL_SERVICE_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: translation-system-secrets
-              key: internal-service-token
+        - name: COORDINATOR_JWT_SECRET_FILE
+          value: "/var/run/secrets/uts/coordinator-jwt-secret"
+        - name: COORDINATOR_SECRET_FILE
+          value: "/var/run/secrets/uts/coordinator-secret"
+        - name: COORDINATOR_TOKEN_FILE
+          value: "/var/run/secrets/uts/coordinator-token"
+        - name: INTERNAL_SERVICE_TOKEN_FILE
+          value: "/var/run/secrets/uts/internal-service-token"
+        - name: JWT_PRIVATE_KEY_FILE
+          value: "/var/run/secrets/uts/jwt-private-key"
+        - name: JWT_PUBLIC_KEY_PATH
+          value: "/var/run/secrets/uts/jwt-public-key"
         - name: DECODER_POOL
           value: "decoder-service:8001"
         resources:
@@ -64,6 +56,9 @@ spec:
           mountPath: /app/config
         - name: logs-volume
           mountPath: /app/logs
+        - name: uts-secrets
+          mountPath: /var/run/secrets/uts
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /health
@@ -86,6 +81,22 @@ spec:
           name: coordinator-config
       - name: logs-volume
         emptyDir: {}
+      - name: uts-secrets
+        secret:
+          secretName: translation-system-secrets
+          items:
+          - key: coordinator-secret
+            path: coordinator-secret
+          - key: coordinator-jwt-secret
+            path: coordinator-jwt-secret
+          - key: coordinator-token
+            path: coordinator-token
+          - key: internal-service-token
+            path: internal-service-token
+          - key: jwt-private-key
+            path: jwt-private-key
+          - key: jwt-public-key
+            path: jwt-public-key
 ---
 apiVersion: v1
 kind: Service

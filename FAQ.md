@@ -8,7 +8,7 @@
 
 ### **Q2: What makes your vocabulary pack system unique?**
 
-**A:** Our vocabulary packs are small (2-4MB each), dynamically loaded, and language-specific. This allows users to download only the languages they need. See [vocabulary/Vocabulary_Guide.md](vocabulary/Vocabulary_Guide.md).
+**A:** Our vocabulary packs are small (2-4MB each), dynamically loaded, and language-specific. This allows users to download only the languages they need. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
 
 ### **Q3: How do you maintain quality with such a small model?**
 
@@ -56,7 +56,7 @@
 
 ### **Q11: Can I use my own vocabulary/terminology?**
 
-**A:** Yes, you can create custom vocabulary packs for domain-specific terminology. See [vocabulary/Vocabulary_Guide.md](vocabulary/Vocabulary_Guide.md).
+**A:** Yes, you can create custom vocabulary packs for domain-specific terminology. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
 
 ### **Q12: How does deployment work?**
 

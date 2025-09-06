@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# cloud_decoder/optimize_decoder.py
 """
 Optimize the decoder model for better performance.
 Supports quantization, batching, and mixed precision.

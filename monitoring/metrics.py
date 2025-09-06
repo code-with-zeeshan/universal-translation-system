@@ -124,6 +124,23 @@ SYSTEM_CPU_USAGE = Gauge(
     'CPU usage percentage'
 )
 
+# JWKS metrics
+JWKS_RELOADS_SUCCESS = Counter(
+    'jwks_reloads_success_total',
+    'Total number of successful JWKS reloads',
+    ['component']  # coordinator or decoder
+)
+JWKS_RELOADS_FAILURE = Counter(
+    'jwks_reloads_failure_total',
+    'Total number of failed JWKS reloads',
+    ['component']
+)
+JWKS_KEYS = Gauge(
+    'jwks_keys_total',
+    'Current number of JWKS keys',
+    ['component']
+)
+
 SYSTEM_MEMORY_USAGE = Gauge(
     'system_memory_usage_bytes',
     'Memory usage in bytes'

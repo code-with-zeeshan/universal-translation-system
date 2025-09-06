@@ -30,7 +30,7 @@ except Exception:
 from config.schemas import RootConfig
 from utils.exceptions import DataError
 from utils.resource_monitor import resource_monitor
-from utils.logging_config import setup_logging
+from utils.logging_config import setup_logging  # centralized logging
 from utils.common_utils import DirectoryManager
 
 # Import data modules (these would use the unified versions we created earlier)
@@ -40,7 +40,9 @@ from data.synthetic_augmentation import SyntheticDataAugmenter
 from connector.pipeline_connector import PipelineConnector
 from connector.vocabulary_connector import VocabularyConnector
 
-logger = logging.getLogger(__name__)
+# Ensure centralized logging for data pipeline
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("data")
 tracer = trace.get_tracer(__name__)
 
 

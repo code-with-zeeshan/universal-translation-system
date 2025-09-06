@@ -21,7 +21,10 @@ logs/
 checkpoints/
 
 # Model outputs
+models/
 models/production/
+models/encoder/
+models/decoder/
 models/fallback/
 *.onnx
 *.pt
@@ -40,6 +43,7 @@ Thumbs.db
 .vscode/
 .qodo/
 .zencoder/
+.zencoder/rules/repo.md
 .idea/
 *.swp
 *.swo
@@ -82,6 +86,27 @@ grafana-data/
 
 # Docker
 .dockerignore
+
+# Secrets and sensitive files
+# Never commit real secrets/keys/tokens
+secrets/
+**/secrets/
+**/*.pem
+**/*.key
+**/*_private_key*
+**/*_public_key*
+**/jwt_private_key*
+**/jwt_public_key*
+**/*.crt
+**/*.pfx
+**/*.p12
+**/*.jks
+*.env
+.env
+.env.*
+**/.env
+**/.env.*
+kubernetes/secrets.yaml
 
 # Temporary files
 *.tmp

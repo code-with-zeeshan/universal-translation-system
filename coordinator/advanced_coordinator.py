@@ -15,10 +15,10 @@ from functools import wraps
 
 import httpx
 import jwt
-from fastapi import (FastAPI, Request, Depends, HTTPException, Form, Header, Response, status, APIRouter)
+from fastapi import (FastAPI, Request, Depends, HTTPException, Form, Header, Response, status, APIRouter, Cookie)
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jinja2 import Template
+from jinja2 import Environment, select_autoescape
 from opentelemetry import trace
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
@@ -30,15 +30,23 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from starlette.middleware.sessions import SessionMiddleware
 
+# Crypto for JWKS and KID computation
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.backends import default_backend
+import base64
+
 # Import utility modules
 from utils.auth import APIKeyManager
 from utils.rate_limiter import RateLimiter
+from utils.redis_manager import RedisManager
 from utils.exceptions import ConfigurationError, NetworkError
 from utils.security import validate_model_source, safe_load_model
 
 # --- Configuration and Constants ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from utils.logging_config import setup_logging
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("coordinator")
 
 # Configuration paths
 POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join("configs", "decoder_pool.json"))
@@ -47,10 +55,32 @@ POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join("configs", "decoder_
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 
 # Security keys and tokens
-SECRET_KEY = os.environ.get("COORDINATOR_SECRET", "a-very-secret-key-for-cookies")
-JWT_SECRET = os.environ.get("COORDINATOR_JWT_SECRET", "a-super-secret-jwt-key")
-AUTH_TOKEN = os.environ.get("COORDINATOR_TOKEN", "changeme123")
-INTERNAL_AUTH_TOKEN = os.environ.get("INTERNAL_SERVICE_TOKEN", "internal-secret-token-for-service-auth")
+
+def _require_strong(name: str, value: str, insecure_defaults: set) -> str:
+    if not value or value in insecure_defaults or len(value) < 32:
+        raise RuntimeError(f"{name} must be a strong, random secret (>=32 chars).")
+    return value
+
+SECRET_KEY = _require_strong(
+    "COORDINATOR_SECRET",
+    os.environ.get("COORDINATOR_SECRET", ""),
+    {"a-very-secret-key-for-cookies"}
+)
+JWT_SECRET = _require_strong(
+    "COORDINATOR_JWT_SECRET",
+    os.environ.get("COORDINATOR_JWT_SECRET", ""),
+    {"a-super-secret-jwt-key"}
+)
+AUTH_TOKEN = _require_strong(
+    "COORDINATOR_TOKEN",
+    os.environ.get("COORDINATOR_TOKEN", ""),
+    {"changeme123"}
+)
+INTERNAL_AUTH_TOKEN = _require_strong(
+    "INTERNAL_SERVICE_TOKEN",
+    os.environ.get("INTERNAL_SERVICE_TOKEN", ""),
+    {"internal-secret-token-for-service-auth"}
+)
 
 # API configuration
 API_HOST = os.environ.get("API_HOST", "0.0.0.0")
@@ -104,6 +134,104 @@ app = FastAPI(
     version=MODEL_VERSION,
     description="Coordinates requests across a pool of decoder nodes."
 )
+
+# JWT validation settings
+JWT_ISS = os.environ.get("JWT_ISS")
+JWT_AUD = os.environ.get("JWT_AUD")
+JWT_PUBLIC_KEY = os.environ.get("JWT_PUBLIC_KEY")
+JWT_PUBLIC_KEY_PATH = os.environ.get("JWT_PUBLIC_KEY_PATH")
+JWT_PRIVATE_KEY = os.environ.get("JWT_PRIVATE_KEY")
+JWT_PRIVATE_KEY_FILE = os.environ.get("JWT_PRIVATE_KEY_FILE")
+# If file provided, load its contents
+if JWT_PRIVATE_KEY_FILE and os.path.exists(JWT_PRIVATE_KEY_FILE):
+    try:
+        with open(JWT_PRIVATE_KEY_FILE, 'r', encoding='utf-8') as f:
+            os.environ['JWT_PRIVATE_KEY'] = f.read()
+            JWT_PRIVATE_KEY = os.environ['JWT_PRIVATE_KEY']
+    except Exception as ex:
+        logger.error(f"Failed to read JWT_PRIVATE_KEY_FILE: {ex}")
+JWT_KEY_IDS = os.environ.get("JWT_KEY_IDS")  # optional: '||'-separated list matching keys order
+JWKS_KEYS: List[Dict[str, Any]] = []  # populated at startup when JWT_PUBLIC_KEY exists
+security = HTTPBearer()
+
+def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        # Decode unverified first to extract jti for revocation check
+        unverified = jwt.decode(token, options={"verify_signature": False})
+        jti = unverified.get("jti")
+        if jti:
+            try:
+                rm = RedisManager.get_instance()
+                client = rm.get_client()
+                if client and client.sismember("revoked_jti", jti):
+                    raise HTTPException(status_code=401, detail="Token revoked")
+            except Exception:
+                pass
+        if JWT_PUBLIC_KEY:
+            # Parse token header to pick appropriate key by 'kid' if present
+            unverified_header = jwt.get_unverified_header(token)
+            kid = unverified_header.get("kid")
+            key_to_use = None
+            if kid and JWKS_KEYS:
+                for k in JWKS_KEYS:
+                    if k.get("kid") == kid:
+                        # Reconstruct RSA public key from JWK n,e
+                        n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
+                        e = int.from_bytes(base64.urlsafe_b64decode(k["e"] + "=="), byteorder="big")
+                        pub_numbers = rsa.RSAPublicNumbers(e, n)
+                        key_to_use = pub_numbers.public_key(default_backend())
+                        break
+            if key_to_use is None:
+                # Fallback to the first provided PEM if JWKS missing or no kid match
+                key_to_use = serialization.load_pem_public_key(
+                    (os.environ.get("JWT_PUBLIC_KEY") or "").split("||")[0].encode("utf-8"),
+                    backend=default_backend(),
+                )
+            jwt.decode(
+                token,
+                key_to_use,
+                algorithms=["RS256"],
+                options={"require": ["exp", "iat", "nbf"]},
+                issuer=JWT_ISS,
+                audience=JWT_AUD,
+            )
+        else:
+            # Fallback to HS256 using shared secret
+            jwt.decode(
+                token,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                options={"require": ["exp", "iat", "nbf"]},
+                issuer=JWT_ISS,
+                audience=JWT_AUD,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# CORS and Security headers middleware
+from fastapi.middleware.cors import CORSMiddleware
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "").split(",") if os.environ.get("ALLOWED_ORIGINS") else []
+TRUSTED_PROXIES = {h.strip() for h in os.environ.get("TRUSTED_PROXIES", "").split(",") if h.strip()}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["POST", "GET", "OPTIONS", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-Client-ID", "X-Request-ID"],
+)
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+    return response
 
 # Service discovery API endpoints
 @app.post("/api/v1/register")
@@ -159,6 +287,11 @@ requests_total = Counter('coordinator_requests_total', 'Total requests received'
 requests_errors = Counter('coordinator_requests_errors', 'Total errors', ['endpoint', 'group'])
 decoder_active = Gauge('coordinator_decoder_active', 'Active decoders')
 decoder_load = Gauge('coordinator_decoder_load', 'Current load per decoder', ['node_id'])
+
+# Health endpoint (no sensitive info)
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 # --- Live Config Reloading ---
 # Use a thread-safe event to signal a reload request from the watchdog thread to the main async loop
@@ -730,7 +863,24 @@ bearer_scheme = HTTPBearer()
 def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
     """Dependency for JWT-based API authentication."""
     try:
-        jwt.decode(token.credentials, JWT_SECRET, algorithms=["HS256"])
+        if JWT_PUBLIC_KEY:
+            jwt.decode(
+                token.credentials,
+                JWT_PUBLIC_KEY,
+                algorithms=["RS256"],
+                options={"require": ["exp", "iat", "nbf"]},
+                issuer=JWT_ISS,
+                audience=JWT_AUD,
+            )
+        else:
+            jwt.decode(
+                token.credentials,
+                JWT_SECRET,
+                algorithms=["HS256"],
+                options={"require": ["exp", "iat", "nbf"]},
+                issuer=JWT_ISS,
+                audience=JWT_AUD,
+            )
     except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -744,9 +894,19 @@ def get_session(request: Request) -> bool:
         token = request.cookies.get("session_token")
         if not token:
             return False
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        if os.environ.get("JWT_PRIVATE_KEY"):
+            # RS256 session cookies when private/public key pair is used
+            public_key = os.environ.get("JWT_PUBLIC_KEY")
+            payload = jwt.decode(
+                token,
+                public_key,
+                algorithms=["RS256"],
+                options={"require": ["exp", "iat"]},
+            )
+        else:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"], options={"require": ["exp", "iat"]})
         return payload.get("sub") == "admin"
-    except (jwt.PyJWTError, KeyError):
+    except (jwt.PyJWTError, KeyError, TypeError):
         return False
 
 # --- Background Tasks ---
@@ -774,8 +934,66 @@ async def background_tasks():
 
 @app.on_event("startup")
 async def startup_event():
-    # Start the background task
+    # Validate critical env and secrets on startup
+    missing = []
+    def _check(name: str, val: Optional[str]):
+        if not val: missing.append(name)
+    # Support Docker/K8s secrets via *_FILE envs
+    def _load_secret_from_file(var: str):
+        file_var = var + "_FILE"
+        path = os.environ.get(file_var)
+        if path and os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    os.environ[var] = f.read().strip()
+            except Exception as ex:
+                logger.error(f"Failed reading {file_var} at {path}: {ex}")
+
+    for key in ("COORDINATOR_SECRET", "COORDINATOR_JWT_SECRET", "COORDINATOR_TOKEN", "INTERNAL_SERVICE_TOKEN"):
+        _load_secret_from_file(key)
+
+    _check("COORDINATOR_SECRET", os.environ.get("COORDINATOR_SECRET"))
+    _check("COORDINATOR_JWT_SECRET", os.environ.get("COORDINATOR_JWT_SECRET"))
+    _check("COORDINATOR_TOKEN", os.environ.get("COORDINATOR_TOKEN"))
+    _check("INTERNAL_SERVICE_TOKEN", os.environ.get("INTERNAL_SERVICE_TOKEN"))
+    if missing:
+        logger.error(f"Missing required secrets/env: {', '.join(missing)}")
+        raise RuntimeError("Coordinator startup validation failed: missing secrets")
+    # If RS256 is desired, require both public and private keys for admin sessions
+    if os.environ.get("JWT_PRIVATE_KEY") and not os.environ.get("JWT_PUBLIC_KEY"):
+        raise RuntimeError("JWT_PRIVATE_KEY set but JWT_PUBLIC_KEY missing")
+
+    # Build JWKS set using shared utility
+    from utils.jwks_utils import build_jwks_from_env
+    global JWKS_KEYS
+    JWKS_KEYS = build_jwks_from_env(component="coordinator", env=os.environ)
+    if JWKS_KEYS:
+        logger.info("JWKS initialized with KIDs: " + ", ".join([k["kid"] for k in JWKS_KEYS]))
+    else:
+        logger.warning("JWT public keys provided but no valid RSA keys parsed for JWKS")
+
+    # Start the background tasks
     asyncio.create_task(background_tasks())
+
+    # Background job to periodically reload JWT_PUBLIC_KEY/JWT_PUBLIC_KEY_PATH for rotation without restart
+    async def jwks_reload_loop():
+        from utils.jwks_utils import build_jwks_from_env, diff_kids
+        global JWKS_KEYS
+        last_keys = JWKS_KEYS
+        while True:
+            try:
+                new_keys = build_jwks_from_env(component="coordinator", env=os.environ)
+                if new_keys:
+                    added, removed = diff_kids(last_keys, new_keys)
+                    JWKS_KEYS = new_keys
+                    if added or removed:
+                        logger.info(f"Coordinator JWKS changed. Added: {added or '[]'}, Removed: {removed or '[]'}")
+                    last_keys = new_keys
+            except Exception as ex:
+                logger.debug(f"JWKS reload loop error: {ex}")
+            await asyncio.sleep(300)  # reload every 5 minutes
+
+    asyncio.create_task(jwks_reload_loop())
 
     # Start the watchdog observer to monitor the config file
     observer = Observer()
@@ -788,6 +1006,34 @@ async def startup_event():
 
 # --- API Endpoints ---
 api_router = APIRouter(prefix="/api", tags=["API"])
+
+@api_router.post("/revoke")
+async def revoke_token(jti: str = Form(...), session_token: str | None = Cookie(default=None)):
+    """Revoke a token by its jti. Requires admin session cookie or valid admin JWT."""
+    # Validate admin session cookie first
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        # Verify session token (RS256 preferred when configured)
+        private_key = os.environ.get("JWT_PRIVATE_KEY")
+        if private_key:
+            jwt.decode(session_token, private_key, algorithms=["RS256"], options={"verify_aud": False})
+        else:
+            jwt.decode(session_token, SECRET_KEY, algorithms=["HS256"], options={"verify_aud": False})
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid session")
+
+    try:
+        rm = RedisManager.get_instance()
+        client = rm.get_client()
+        if not client:
+            raise HTTPException(status_code=503, detail="Revocation storage unavailable")
+        client.sadd("revoked_jti", jti)
+        return {"revoked": True, "jti": jti}
+    except HTTPException:
+        raise
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex))
 
 @api_router.get("/status", response_model=StatusSchema)
 async def get_status():
@@ -938,7 +1184,9 @@ async def remove_decoder(node_id: str = Form(...)):
     return {"status": "removed", "node_id": node_id}
 
 # --- Dashboard and UI ---
-DASHBOARD_TEMPLATE = Template("""
+# Enable autoescape to mitigate XSS in rendered HTML
+_jinja_env = Environment(autoescape=select_autoescape(['html', 'xml']))
+DASHBOARD_TEMPLATE = _jinja_env.from_string("""
 <!DOCTYPE html>
 <html>
 <head>
@@ -999,12 +1247,17 @@ async def login(token: str = Form(...)):
     """Handles admin login."""
     response = RedirectResponse(url="/", status_code=status.HTTP_303_SEE_OTHER)
     if token == AUTH_TOKEN:
-        # Create a JWT session token
-        session_token = jwt.encode(
-            {"sub": "admin", "exp": datetime.utcnow() + timedelta(hours=1)},
-            SECRET_KEY,
-            algorithm="HS256"
-        )
+        # Create a JWT session token: prefer RS256 if private key is configured and attach KID if available
+        claims = {"sub": "admin", "iat": datetime.utcnow(), "exp": datetime.utcnow() + timedelta(hours=1)}
+        private_key = os.environ.get("JWT_PRIVATE_KEY")
+        if private_key:
+            # Try to select the first JWKS kid if we have any
+            headers = {"alg": "RS256"}
+            if JWKS_KEYS:
+                headers["kid"] = JWKS_KEYS[0]["kid"]
+            session_token = jwt.encode(claims, private_key, algorithm="RS256", headers=headers)
+        else:
+            session_token = jwt.encode(claims, SECRET_KEY, algorithm="HS256")
         response.set_cookie(key="session_token", value=session_token, httponly=True, samesite="strict")
     return response
 
@@ -1015,10 +1268,17 @@ async def logout():
     response.delete_cookie("session_token")
     return response
 
+# --- JWKS Endpoint ---
+@app.get("/.well-known/jwks.json")
+async def jwks():
+    # Public discovery of RS256 keys for verifiers
+    return JSONResponse({"keys": JWKS_KEYS})
+
 # --- Metrics Endpoint ---
 @app.get("/metrics")
-async def metrics():
-    """Prometheus metrics endpoint."""
+async def metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Prometheus metrics endpoint (protected)."""
+    require_jwt(credentials)
     return Response(generate_latest(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
 # --- Include Routers ---

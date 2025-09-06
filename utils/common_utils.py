@@ -64,6 +64,30 @@ class DirectoryManager:
             DirectoryManager.create_directory(path)
         
         return directories
+    
+    @staticmethod
+    def create_logs_structure(base_dir: str = "logs") -> Dict[str, Path]:
+        """
+        Create standard logs directory structure at repo root.
+        Sections include: data, training, monitoring, coordinator, decoder, evaluation, vocabulary.
+        Returns a dict of created paths.
+        """
+        base_path = Path(base_dir)
+        sections = [
+            'data',
+            'training',
+            'monitoring',
+            'coordinator',
+            'decoder',
+            'evaluation',
+            'vocabulary',
+        ]
+        paths: Dict[str, Path] = {'base': base_path}
+        for section in sections:
+            p = base_path / section
+            p.mkdir(parents=True, exist_ok=True)
+            paths[section] = p
+        return paths
 
 class ImportCleaner:
     """Utility to identify and clean unused imports"""

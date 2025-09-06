@@ -68,17 +68,10 @@ vocabulary_pack_tokens = Gauge(
     ['pack_name', 'version', 'token_type']  # token_type: regular, subword, special
 )
 
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('translation_system.log'),
-        logging.StreamHandler()
-    ]
-)
-
-logger = logging.getLogger(__name__)
+# Logging setup (centralized)
+from utils.logging_config import setup_logging
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("monitoring")
 
 
 class VocabularyMetricsCollector:

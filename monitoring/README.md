@@ -89,6 +89,10 @@ async def encode_text(text):
 
 ### 3. Grafana Dashboards
 - Connect Grafana to Prometheus to visualize metrics
+- Security recommendations:
+  - Set a strong admin password via secret/env (GF_SECURITY_ADMIN_PASSWORD) and do not commit it.
+  - Do NOT expose Grafana publicly by default; place behind auth/reverse proxy or VPN.
+  - Restrict network access (firewall, ingress rules) and disable anonymous access.
 - Use the provided comprehensive dashboard:
   - Import `grafana/dashboards/comprehensive.json` into your Grafana instance
   - The dashboard includes panels for:

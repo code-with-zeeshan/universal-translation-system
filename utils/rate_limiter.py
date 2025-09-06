@@ -45,7 +45,9 @@ class RateLimiter:
                 self.redis_manager.default_url = redis_url
             
             # Test Redis connection
-            if self.redis_manager.get_client():
+            client = self.redis_manager.get_client()
+            if client:
+                self.redis = client
                 self.use_redis = True
                 logger.info(f"Rate limiter using Redis via RedisManager")
             else:

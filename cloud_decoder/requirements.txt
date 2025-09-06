@@ -7,11 +7,12 @@ lz4>=4.3.2
 PyYAML>=6.0.0
 
 # FastAPI and server
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-gunicorn>=21.2.0
-python-multipart>=0.0.6
-httpx>=0.25.0
+fastapi==0.104.1
+starlette==0.27.0
+uvicorn[standard]==0.24.0.post1
+gunicorn==21.2.0
+python-multipart==0.0.6
+httpx==0.25.2
 litserve>=0.2.0
 
 # Hugging Face Hub for adapter downloads
@@ -27,7 +28,7 @@ aiofiles>=23.2.0
 asyncio>=3.4.3
 
 # Monitoring and logging
-prometheus-client>=0.18.0
+prometheus-client==0.19.0
 python-json-logger>=2.0.7
 watchdog>=2.3.0
 

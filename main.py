@@ -22,9 +22,9 @@ from utils.final_integration import SystemIntegrator
 from integration.connect_all_systems import integrate_full_pipeline
 from config.schemas import load_config
 
-# Setup logging early
-setup_logging(log_dir="logs", log_level="INFO")
-logger = logging.getLogger(__name__)
+# Setup centralized logging early
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("system")
 
 # Add project root to path
 project_root = Path(__file__).parent

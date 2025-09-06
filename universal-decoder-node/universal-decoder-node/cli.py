@@ -285,7 +285,7 @@ def init(output: str):
             'batch_timeout_ms': 10
         },
         'security': {
-            'jwt_secret': os.environ.get('JWT_SECRET', 'change-me-in-production'),
+            'jwt_secret': os.environ.get('JWT_SECRET') or '',  # require override
             'enable_auth': True
         },
         'monitoring': {

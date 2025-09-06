@@ -17,6 +17,7 @@ import threading
 import asyncio
 import aiofiles
 import logging
+from utils.logging_config import setup_logging
 from enum import Enum
 from dataclasses import dataclass
 import os
@@ -31,6 +32,10 @@ from utils.constants import (
     VOCAB_PAD_ID, VOCAB_UNK_ID, VOCAB_BOS_ID, VOCAB_EOS_ID
 )
 from config.schemas import RootConfig
+
+# Centralized logging for vocabulary manager
+setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+logger = logging.getLogger("vocabulary")
 
 class VocabularyMode(Enum):
     """Operating modes for vocabulary manager"""

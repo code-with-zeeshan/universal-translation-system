@@ -100,9 +100,13 @@ def validate_file_path(file_path: str, allowed_directories: Optional[List[str]] 
         for allowed_dir in allowed_directories:
             try:
                 allowed_path = Path(allowed_dir).resolve()
-                if path.is_relative_to(allowed_path):
+                # Python 3.8-compatible check: try relative_to and catch ValueError
+                try:
+                    path.relative_to(allowed_path)
                     allowed = True
                     break
+                except ValueError:
+                    continue
             except Exception:
                 continue
         
