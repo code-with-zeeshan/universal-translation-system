@@ -1,0 +1,22 @@
+title = "Universal Translation System - Gitleaks Config"
+
+[allowlist]
+description = "Global allowlist for known test/placeholders and non-sensitive patterns"
+# Allowlist by file path patterns (regex)
+paths = [
+  "tests/.*",                               # tests often contain fake tokens
+  "kubernetes/secrets\.example\.yaml",     # example secrets file
+  "docs/.*",                                # docs may show example keys
+  "web/universal-translation-sdk/example/.*",
+  "web/universal-translation-sdk/demo\.html"
+]
+# Allowlist by content regex patterns
+regexes = [
+  # Obvious placeholders and demos
+  "REPLACE_WITH_BASE64_PEM",
+  "(?i)dummy|placeholder|example|sample",
+  # Test secrets used in workflows/tests
+  "(?i)this-is-a-temporary-test-(secret|jwt-secret|token)-[a-z0-9-]+",
+  # Local dev tokens/urls commonly used in examples
+  "http(s)?://example\\.com",
+]

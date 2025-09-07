@@ -1,14 +1,8 @@
 name: Mobile SDK Tests
 
 on:
-  push:
-    paths:
-      - 'android/**'
-      - 'ios/**'
-      - 'react-native/**'
-      - 'web/**'
-      - 'flutter/**'
   pull_request:
+    branches: [ main, develop ]
     paths:
       - 'android/**'
       - 'ios/**'

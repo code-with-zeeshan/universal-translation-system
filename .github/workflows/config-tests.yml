@@ -1,13 +1,6 @@
 name: Configuration Tests
 
 on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - 'config/**'
-      - 'tests/test_config_models.py'
-      - '.env.example'
-      - '.github/workflows/config-tests.yml'
   pull_request:
     branches: [ main, develop ]
     paths:

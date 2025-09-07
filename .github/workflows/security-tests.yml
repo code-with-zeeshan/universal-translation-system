@@ -1,14 +1,6 @@
 name: Security Tests
 
 on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - 'coordinator/**'
-      - 'utils/**'
-      - 'tests/test_security.py'
-      - 'tests/test_revocation.py'
-      - '.github/workflows/security-tests.yml'
   pull_request:
     branches: [ main, develop ]
     paths:

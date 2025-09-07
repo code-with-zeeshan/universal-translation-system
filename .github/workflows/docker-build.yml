@@ -1,15 +1,6 @@
 name: Docker Build and Test
 
 on:
-  push:
-    branches: [ main, develop ]
-    paths:
-      - 'docker/**'
-      - 'cloud_decoder/**'
-      - 'encoder/**'
-      - 'coordinator/**'
-      - 'docker-compose.yml'
-      - '.github/workflows/docker-build.yml'
   pull_request:
     branches: [ main, develop ]
     paths:
