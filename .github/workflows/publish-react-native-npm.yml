@@ -1,0 +1,89 @@
+name: Publish React Native SDK to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-rn:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate versions
+        run: |
+          python3 scripts/version_manager.py validate
+          python3 scripts/version_manager.py validate-sync
+
+      - name: Determine changed paths and bump target
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          prev_tag=""
+          if git describe --tags --abbrev=0 HEAD^ >/dev/null 2>&1; then
+            prev_tag=$(git describe --tags --abbrev=0 HEAD^)
+          fi
+          echo "prev_tag=$prev_tag" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$prev_tag" ]]; then
+            changed=$(git diff --name-only "$prev_tag"..HEAD)
+          else
+            changed="ALL"
+          fi
+
+          changed_rn=false
+          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^react-native/UniversalTranslationSDK/' >/dev/null; then
+            changed_rn=true
+          fi
+
+          rn_ver=$(python3 - <<'PY'
+import json
+with open('version-config.json','r',encoding='utf-8') as f:
+  cfg=json.load(f)
+print(cfg['components'].get('react-native-sdk',{}).get('version',''))
+PY
+          )
+          echo "rn_ver=$rn_ver" >> "$GITHUB_OUTPUT"
+
+          publish_rn=false
+          if [[ "$rn_ver" == "$TAG" && "$changed_rn" == "true" ]]; then publish_rn=true; fi
+          echo "publish_rn=$publish_rn" >> "$GITHUB_OUTPUT"
+
+      - name: Set up NPM auth
+        if: steps.check.outputs.publish_rn == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+
+      - name: Install and build
+        if: steps.check.outputs.publish_rn == 'true'
+        working-directory: react-native/UniversalTranslationSDK
+        run: |
+          npm install
+          npm run prepare
+
+      - name: Publish to NPM
+        if: steps.check.outputs.publish_rn == 'true'
+        working-directory: react-native/UniversalTranslationSDK
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish --access public

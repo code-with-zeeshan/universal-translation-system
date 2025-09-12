@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "uts.fullname" . }}-coordinator
+  labels:
+    app.kubernetes.io/name: {{ include "uts.name" . }}-coordinator
+    helm.sh/chart: {{ include "uts.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.coordinator.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "uts.name" . }}-coordinator
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "uts.name" . }}-coordinator
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: coordinator
+          image: "{{ include \"uts.image\" .Values.coordinator.image }}"
+          imagePullPolicy: {{ .Values.coordinator.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.coordinator.service.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "uts.fullname" . }}-decoder
+  labels:
+    app.kubernetes.io/name: {{ include "uts.name" . }}-decoder
+    helm.sh/chart: {{ include "uts.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.decoder.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "uts.name" . }}-decoder
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "uts.name" . }}-decoder
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: decoder
+          image: "{{ include \"uts.image\" .Values.decoder.image }}"
+          imagePullPolicy: {{ .Values.decoder.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.decoder.service.port }}

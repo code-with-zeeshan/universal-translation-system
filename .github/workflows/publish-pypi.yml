@@ -1,0 +1,117 @@
+name: Publish Python packages to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine semver
+
+      - name: Validate versions
+        run: |
+          python scripts/version_manager.py validate
+          python scripts/version_manager.py validate-sync
+
+      - name: Determine changed paths and bump targets
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          prev_tag=""
+          if git describe --tags --abbrev=0 HEAD^ >/dev/null 2>&1; then
+            prev_tag=$(git describe --tags --abbrev=0 HEAD^)
+          fi
+          echo "prev_tag=$prev_tag" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$prev_tag" ]]; then
+            changed=$(git diff --name-only "$prev_tag"..HEAD)
+          else
+            changed="ALL"
+          fi
+
+          # Path change flags
+          changed_udn=false
+          changed_root=false
+
+          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^universal-decoder-node/' >/dev/null; then
+            changed_udn=true
+          fi
+          # Consider root python package changed if setup.py or any top-level .py changed
+          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^(setup\.py|[A-Za-z0-9_]+\.py|utils/|cloud_decoder/|encoder/|coordinator/|universal-decoder-node/|tools/|training/)' >/dev/null; then
+            changed_root=true
+          fi
+
+          echo "changed_udn=$changed_udn" >> "$GITHUB_OUTPUT"
+          echo "changed_root=$changed_root" >> "$GITHUB_OUTPUT"
+
+          # Version bump flags from version-config.json
+          PY=$(python - <<'PY'
+import json
+with open('version-config.json','r',encoding='utf-8') as f:
+  cfg=json.load(f)
+print(cfg['components'].get('python-package',{}).get('version',''))
+print(cfg['components'].get('root-python',{}).get('version',''))
+PY
+          )
+          udn_ver=$(echo "$PY" | sed -n '1p')
+          root_ver=$(echo "$PY" | sed -n '2p')
+          echo "udn_ver=$udn_ver" >> "$GITHUB_OUTPUT"
+          echo "root_ver=$root_ver" >> "$GITHUB_OUTPUT"
+
+          publish_udn=false
+          publish_root=false
+          if [[ "$udn_ver" == "$TAG" && "$changed_udn" == "true" ]]; then publish_udn=true; fi
+          if [[ "$root_ver" == "$TAG" && "$changed_root" == "true" ]]; then publish_root=true; fi
+          echo "publish_udn=$publish_udn" >> "$GITHUB_OUTPUT"
+          echo "publish_root=$publish_root" >> "$GITHUB_OUTPUT"
+
+      - name: Build universal-decoder-node
+        if: steps.check.outputs.publish_udn == 'true'
+        working-directory: universal-decoder-node
+        run: |
+          python -m build
+
+      - name: Publish universal-decoder-node to PyPI
+        if: steps.check.outputs.publish_udn == 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload --skip-existing universal-decoder-node/dist/*
+
+      - name: Build root python package
+        if: steps.check.outputs.publish_root == 'true'
+        run: |
+          python -m build
+
+      - name: Publish root package to PyPI
+        if: steps.check.outputs.publish_root == 'true'
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          python -m twine upload --skip-existing dist/*

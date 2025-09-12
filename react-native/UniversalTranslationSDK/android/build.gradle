@@ -139,3 +139,35 @@ dependencies {
   implementation 'com.google.code.gson:gson:2.10.1'
   implementation 'androidx.work:work-runtime-ktx:2.9.0'
 }
+
+// Optional publishing configuration (activates when PUBLISH_REPOSITORY_URL is provided)
+apply plugin: 'maven-publish'
+
+afterEvaluate {
+  publishing {
+    publications {
+      release(MavenPublication) {
+        groupId = findProperty('PUBLISH_GROUP_ID') ?: 'com.universaltranslation'
+        artifactId = findProperty('PUBLISH_ARTIFACT_ID') ?: 'universal-translation-sdk-android'
+        version = findProperty('PUBLISH_VERSION') ?: android.defaultConfig.versionName
+        from components.release
+        pom {
+          name = 'Universal Translation SDK - Android'
+          description = 'Android library for Universal Translation System'
+          licenses { license { name = 'Apache-2.0'; url = 'http://www.apache.org/licenses/LICENSE-2.0' } }
+        }
+      }
+    }
+    if (findProperty('PUBLISH_REPOSITORY_URL')) {
+      repositories {
+        maven {
+          url = uri(findProperty('PUBLISH_REPOSITORY_URL'))
+          credentials {
+            username = findProperty('mavenUsername') ?: System.getenv('MAVEN_USERNAME')
+            password = findProperty('mavenPassword') ?: System.getenv('MAVEN_PASSWORD')
+          }
+        }
+      }
+    }
+  }
+}

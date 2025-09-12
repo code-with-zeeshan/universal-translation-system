@@ -51,9 +51,12 @@ class JWTAuth:
             audience: Expected audience for tokens
             issuer: Expected issuer for tokens
         """
-        self.secret_key = secret_key or get_credential("jwt_secret")
+        # Prefer explicit argument, then unified credential keys
+        self.secret_key = secret_key or get_credential("jwt_secret") or \
+                          get_credential("coordinator_jwt_secret") or \
+                          get_credential("decoder_jwt_secret")
         if not self.secret_key:
-            raise AuthenticationError("JWT secret key not configured")
+            raise AuthenticationError("JWT secret key not configured (tried jwt_secret/coordinator_jwt_secret/decoder_jwt_secret)")
             
         self.algorithm = algorithm
         self.token_expiration = token_expiration

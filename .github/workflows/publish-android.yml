@@ -1,0 +1,98 @@
+name: Publish Android (Maven)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Validate versions
+        run: |
+          python3 scripts/version_manager.py validate
+          python3 scripts/version_manager.py validate-sync
+
+      - name: Verify publish secrets
+        env:
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+        run: |
+          python3 .github/scripts/check_publish_secrets.py
+
+      - name: Determine changed paths and bump target
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          prev_tag=""
+          if git describe --tags --abbrev=0 HEAD^ >/dev/null 2>&1; then
+            prev_tag=$(git describe --tags --abbrev=0 HEAD^)
+          fi
+          echo "prev_tag=$prev_tag" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$prev_tag" ]]; then
+            changed=$(git diff --name-only "$prev_tag"..HEAD)
+          else
+            changed="ALL"
+          fi
+
+          changed_android=false
+          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^react-native/UniversalTranslationSDK/' >/dev/null; then
+            changed_android=true
+          fi
+
+          android_ver=$(python3 - <<'PY'
+import json
+with open('version-config.json','r',encoding='utf-8') as f:
+  cfg=json.load(f)
+print(cfg['components'].get('android-sdk',{}).get('version',''))
+PY
+          )
+          echo "android_ver=$android_ver" >> "$GITHUB_OUTPUT"
+
+          publish_android=false
+          if [[ "$android_ver" == "$TAG" && "$changed_android" == "true" ]]; then publish_android=true; fi
+          echo "publish_android=$publish_android" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare Gradle
+        if: steps.check.outputs.publish_android == 'true'
+        working-directory: react-native/UniversalTranslationSDK
+        run: |
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+          fi
+
+      - name: Publish to Maven (if configured)
+        if: steps.check.outputs.publish_android == 'true'
+        working-directory: react-native/UniversalTranslationSDK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG_GRADLE_PROJECT_mavenUsername: ${{ secrets.MAVEN_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenPassword: ${{ secrets.MAVEN_PASSWORD }}
+        run: |
+          if [ -f gradlew ] && grep -q "maven-publish" build.gradle*; then
+            ./gradlew publish --stacktrace
+          else
+            echo "Skipping publish: gradle wrapper or maven-publish not configured"
+          fi

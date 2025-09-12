@@ -20,10 +20,18 @@ from .exceptions import SecurityError
 logger = logging.getLogger(__name__)
 
 # Default HMAC key for message authentication
+# Use centralized bootstrap to ensure *_FILE is loaded and validation happens early
+try:
+    from .secrets_bootstrap import bootstrap_secrets
+    bootstrap_secrets(role=os.environ.get("UTS_ROLE", "general"))
+except Exception:
+    # If bootstrap is unavailable, proceed with direct env access
+    pass
+
 DEFAULT_HMAC_KEY = os.environ.get("UTS_HMAC_KEY")
-if not DEFAULT_HMAC_KEY or DEFAULT_HMAC_KEY == "change-me-in-production":
+if not DEFAULT_HMAC_KEY or len(DEFAULT_HMAC_KEY) < 32:
     raise SecurityError(
-        "UTS_HMAC_KEY is not set or uses an insecure default. Set a strong random key via environment."
+        "UTS_HMAC_KEY is missing or too weak (>=32 chars required). Set a strong random key via environment or secret file."
     )
 
 # Maximum allowed size for deserialized data (100MB)

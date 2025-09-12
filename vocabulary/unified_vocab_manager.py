@@ -29,7 +29,8 @@ from utils.base_classes import BaseVocabularyManager, TokenizerMixin
 from utils.thread_safety import THREAD_SAFETY_INTERNAL, thread_safe, document_thread_safety as _document_thread_safety
 from utils.constants import (
     VOCAB_SIZE, VOCAB_MIN_FREQUENCY, VOCAB_SPECIAL_TOKENS,
-    VOCAB_PAD_ID, VOCAB_UNK_ID, VOCAB_BOS_ID, VOCAB_EOS_ID
+    VOCAB_PAD_ID, VOCAB_UNK_ID, VOCAB_BOS_ID, VOCAB_EOS_ID,
+    SUPPORTED_VOCAB_FORMAT
 )
 from config.schemas import RootConfig
 
@@ -168,7 +169,7 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
     
     def __init__(self, 
                  config: RootConfig,
-                 vocab_dir: str = 'vocabs',
+                 vocab_dir: str = 'vocabulary',
                  mode: VocabularyMode = VocabularyMode.OPTIMIZED,
                  cache_size: Optional[int] = None,
                  enable_async: bool = False):
@@ -228,10 +229,18 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
         manifest_path = self.vocab_dir / "manifest.json"
         if manifest_path.exists():
             try:
-                with open(manifest_path, 'r') as f:
+                with open(manifest_path, 'r', encoding='utf-8') as f:
                     self._version_cache = json.load(f)
+                # Enforce format version policy (major match)
+                fmt = str(self._version_cache.get('format_version', '')).split('.')[0]
+                if fmt and fmt != str(SUPPORTED_VOCAB_FORMAT).split('.')[0]:
+                    raise VocabularyError(
+                        f"Unsupported vocabulary format_version {self._version_cache.get('format_version')} "
+                        f"(supported major: {SUPPORTED_VOCAB_FORMAT})"
+                    )
             except Exception as e:
                 self.logger.error(f"Failed to load manifest: {e}")
+                raise
         
         # Scan for pack files
         self.pack_metadata = {}

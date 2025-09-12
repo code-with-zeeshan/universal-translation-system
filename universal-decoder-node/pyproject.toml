@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "universal-decoder-node"
-version = "0.1.0"
+version = "1.0.0"
 description = "High-performance translation decoder service"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -46,10 +46,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/universal-decoder-node"
-Documentation = "https://github.com/yourusername/universal-decoder-node/wiki"
-Repository = "https://github.com/yourusername/universal-decoder-node"
-Issues = "https://github.com/yourusername/universal-decoder-node/issues"
+Homepage = "https://github.com/code-with-zeeshan/universal-decoder-node"
+Documentation = "https://github.com/code-with-zeeshan/universal-decoder-node/wiki"
+Repository = "https://github.com/code-with-zeeshan/universal-decoder-node"
+Issues = "https://github.com/code-with-zeeshan/universal-decoder-node/issues"
 
 [project.scripts]
 universal-decoder-node = "universal_decoder_node.cli:cli"

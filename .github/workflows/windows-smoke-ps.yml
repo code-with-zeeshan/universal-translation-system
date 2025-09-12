@@ -1,0 +1,98 @@
+name: Windows PowerShell Smoke
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'scripts/**/*.ps1'
+      - '.github/workflows/*.yml'
+  workflow_dispatch:
+    inputs:
+      coordinator_url:
+        description: 'Coordinator base URL (e.g., http://localhost:9000)'
+        required: false
+        default: 'http://localhost:9000'
+      decoder_url:
+        description: 'Decoder base URL (e.g., http://localhost:8000)'
+        required: false
+        default: 'http://localhost:8000'
+
+jobs:
+  ps-smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PowerShell fail-fast and guard checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "Checking PowerShell scripts for fail-fast and guard patterns..."
+          $scripts = Get-ChildItem -Path scripts -Filter *.ps1 -Recurse
+          $fail = @()
+          foreach ($s in $scripts) {
+            $content = Get-Content $s.FullName -Raw
+            if ($content -notmatch '\$ErrorActionPreference\s*=\s*''Stop''' -and $content -notmatch 'try\s*{') {
+              $fail += "$( $s.FullName ): missing fail-fast policy (`$ErrorActionPreference='Stop' or try/catch)"
+              continue
+            }
+            $lines = $content -split "`r?`n"
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+              $line = $lines[$i]
+              if ($line -match '^\s*#' -or $line.Trim().Length -eq 0) { continue }
+              # Ignore bash-style heredoc fragments sometimes left in .ps1 files
+              if ($line -match '<<') { continue }
+              $extCmd = $line -match '^\s*(python|pip|node|npm|yarn|pnpm|docker|kubectl|helm|cmake|ctest|git|pwsh|powershell|java|gradle|mvn|flutter|pod|xcodebuild)\b'
+              if (-not $extCmd) { continue }
+              # Accept when the same line already guards via -ErrorAction Stop, $LASTEXITCODE, or Assert-LastExit
+              if ($line -match '-ErrorAction\s+Stop' -or $line -match '\$LASTEXITCODE' -or $line -match 'Assert-LastExit') { continue }
+              # Look ahead up to 2 lines for a guard
+              $guardFound = $false
+              for ($j = $i+1; $j -lt [Math]::Min($i+3, $lines.Count); $j++) {
+                $next = $lines[$j]
+                if ($next -match '^\s*$' -or $next -match '^\s*#') { continue }
+                if ($next -match 'Assert-LastExit' -or $next -match '\$LASTEXITCODE\s*-ne\s*0' -or $next -match 'try\s*{') { $guardFound = $true; break }
+                break
+              }
+              if (-not $guardFound) {
+                $fail += "$( $s.FullName ): line $( $i+1 ) '$( $line.Trim() )' not followed by Assert-LastExit or `$LASTEXITCODE guard"
+              }
+            }
+          }
+          if ($fail.Count -gt 0) {
+            $fail | ForEach-Object { Write-Error $_ }
+            exit 1
+          } else {
+            Write-Host "OK"
+          }
+      - name: Runtime API version smoke (Windows)
+        shell: pwsh
+        env:
+          COORDINATOR_URL: ${{ github.event.inputs.coordinator_url || vars.COORDINATOR_URL || 'http://localhost:9000' }}
+          DECODER_URL: ${{ github.event.inputs.decoder_url || vars.DECODER_URL || 'http://localhost:8000' }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "Coordinator: $env:COORDINATOR_URL"
+          Write-Host "Decoder: $env:DECODER_URL"
+          python - <<'PY'
+          import os, sys, json, urllib.request
+          def fetch(url):
+              if url.endswith('/'):
+                  url = url[:-1]
+              with urllib.request.urlopen(url + '/openapi.json', timeout=5) as resp:
+                  return json.load(resp).get('info',{}).get('version','')
+          coord = os.environ.get('COORDINATOR_URL','')
+          dec = os.environ.get('DECODER_URL','')
+          try:
+              cv = fetch(coord)
+              dv = fetch(dec)
+          except Exception as e:
+              print('Failed to fetch openapi:', e, file=sys.stderr)
+              raise SystemExit(2)
+          if not cv or not dv:
+              print('OpenAPI version missing in one of the services', file=sys.stderr)
+              raise SystemExit(3)
+          if cv != dv:
+              print(f'API version mismatch: coordinator={cv} decoder={dv}', file=sys.stderr)
+              raise SystemExit(4)
+          print(f'API version OK: {cv}')
+          PY

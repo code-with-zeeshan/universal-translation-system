@@ -132,6 +132,10 @@ VOCAB_EOS_ID = _as_int("VOCAB_EOS_ID", 3)
 API_RATE_LIMIT = _as_int("API_RATE_LIMIT", 100)  # requests per minute
 API_BURST_LIMIT = _as_int("API_BURST_LIMIT", 20)  # concurrent requests
 API_TIMEOUT = _as_int("API_TIMEOUT", 30)  # seconds
+# Shared API version used across encoder/decoder/coordinator
+API_VERSION = _as_str("API_VERSION", "1.0.0")
+# Supported vocabulary manifest major format (e.g., '1' allows 1.x)
+SUPPORTED_VOCAB_FORMAT = _as_str("SUPPORTED_VOCAB_FORMAT", "1")
 
 # File paths
 DEFAULT_CONFIG_PATH = _as_str("DEFAULT_CONFIG_PATH", "config/default_config.json")

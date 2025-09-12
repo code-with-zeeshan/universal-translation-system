@@ -11,17 +11,26 @@ Write-Host "🚀 Preparing release $Version..."
 
 # Update versions
 python "$repoRoot\scripts\version_manager.py" release $Version
+if ($LASTEXITCODE -ne 0) { throw "Version update failed" }
 
 # Run tests
 Write-Host "🧪 Running tests..."
 pytest "$repoRoot\tests"
+if ($LASTEXITCODE -ne 0) { throw "Tests failed" }
 
-# Build Android
-Write-Host "📱 Building Android SDK..."
+# Build Android (if gradlew exists)
 $androidDir = "$repoRoot\android\UniversalTranslationSDK"
-Set-Location $androidDir
-./gradlew.bat clean build
-Set-Location $repoRoot
+if (Test-Path $androidDir) {
+  Write-Host "📱 Building Android SDK..."
+  Set-Location $androidDir
+  if (Test-Path "$androidDir\gradlew.bat") {
+    ./gradlew.bat clean build
+    if ($LASTEXITCODE -ne 0) { throw "Android build failed" }
+  } else {
+    Write-Warning "gradlew.bat not found; skipping Android build."
+  }
+  Set-Location $repoRoot
+}
 
 # Validate iOS (requires Xcode/macOS; skip if tools are missing)
 Write-Host "📱 Validating iOS SDK..."
@@ -32,6 +41,7 @@ if (Test-Path $iosDir) {
         swift --version > $null 2>&1
         if ($LASTEXITCODE -eq 0) {
             swift build
+            if ($LASTEXITCODE -ne 0) { throw "iOS build failed" }
         } else {
             Write-Warning "swift not available on this system; skipping iOS build validation."
         }
@@ -49,10 +59,10 @@ Write-Host "📝 Don't forget to update CHANGELOG.md!"
 Write-Host "🏷️  Creating git tag..."
 
 git add -A
-try {
-    git commit -m "chore: release v$Version"
-} catch {
-    Write-Warning "No changes to commit or commit failed: $_"
+if ((git diff --cached --quiet) -eq $false) {
+  git commit -m "chore: release v$Version"
+} else {
+  Write-Host "ℹ️ No changes to commit."
 }
 
 git tag -a "v$Version" -m "Release version $Version"

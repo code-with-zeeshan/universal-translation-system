@@ -101,6 +101,51 @@ Notes:
 - **Access**: Restrict coordinator admin endpoints; require `COORDINATOR_TOKEN`/JWT
 - **Abuse protection**: Enable rate limiting; validate inputs
 
+### Secret rotation rollout (Docker Compose)
+1. Generate new secrets/keys locally using the rotation CLI:
+   ```bash
+   python tools/rotate_secrets.py --type hs256 --key coordinator_jwt_secret --set-env
+   python tools/rotate_secrets.py --type hs256 --key decoder_jwt_secret --set-env
+   python tools/rotate_secrets.py --type rs256 --kid roll-$(date +%Y%m%d) --set-env
+   ```
+2. Update `.env` or secret files (preferred: mount as `*_FILE`):
+   - Write new HS256 secrets to files and reference via `*_FILE`.
+   - For RS256, add the new public key to `JWT_PUBLIC_KEY` (use `||`-separated PEMs) and keep the old key for a grace window.
+3. Deploy with both old and new keys present (grace period):
+   - Coordinator/Decoder will build JWKS from the combined set and accept both kids.
+4. Redeploy services:
+   ```bash
+   docker compose up -d --build coordinator decoder
+   ```
+5. After clients are updated and tokens issued with the new key only, remove the old key from env/files and redeploy again.
+
+### Secret rotation rollout (Kubernetes)
+1. Create new secrets (HS256 and/or RS256):
+   ```bash
+   # Example: HS256
+   kubectl create secret generic uts-auth-secrets-new \
+     --from-literal=COORDINATOR_JWT_SECRET=... \
+     --from-literal=DECODER_JWT_SECRET=... 
+
+   # Example: RS256 public(s) and private
+   kubectl create secret generic uts-rs256-new \
+     --from-literal=JWT_PUBLIC_KEY="$(cat pub_new.pem)" \
+     --from-literal=JWT_PRIVATE_KEY="$(cat priv_new.pem)"
+   ```
+2. Patch Deployments to mount new secrets alongside existing ones:
+   - Use parallel env vars or preferred: mount to files and reference via `*_FILE`.
+3. Ensure both old and new keys are live for a grace window; JWKS will include both and decoder/coordinator will accept both kids.
+4. Roll out with zero downtime:
+   ```bash
+   kubectl rollout restart deployment/decoder
+   kubectl rollout restart deployment/coordinator
+   kubectl rollout status deployment/decoder
+   kubectl rollout status deployment/coordinator
+   ```
+5. After migration, remove old keys from Secrets and update Deployments.
+
+See also: `.github/workflows/scheduled-rotation.yml` for an automated rotation example and `docs/SECURITY_BEST_PRACTICES.md` for policy details.
+
 ## 6) Migration tips and known mismatches
 - **Coordinator port**: Compose sets container API port to `8002` (older docs referenced `5100`).
 - **Vocabulary path**: Use `./vocabulary` locally and mount to `/app/vocabs` in containers.

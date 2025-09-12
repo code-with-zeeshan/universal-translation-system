@@ -232,7 +232,7 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [API Documentation](docs/API.md)
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)
 - [Troubleshooting Guide](docs/TROUBLESHOOT.md)
-- [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md)
+- [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md) — includes secret bootstrap, *_FILE usage, and rotation workflow
 - [System Improvements](docs/IMPROVEMENTS.md)
 - [Acknowledgments](docs/ACKNOWLEDGMENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
@@ -249,6 +249,11 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - If Redis is unavailable, revocation falls back to allow (recommended to run Redis in production).
 
 ## 🔐 Secrets Management (Docker Compose & Kubernetes)
+
+### Secrets Bootstrap & Validation
+- Centralized bootstrap loads `*_FILE` secrets into env and validates required keys at startup.
+- Coordinator and Decoder now use the unified bootstrap and fail fast with actionable errors.
+- See: docs/environment-variables.md (Secret Bootstrap & Validation) and tools/rotate_secrets.py for rotation.
 
 ### Docker Compose
 - Place secret files under `../secrets/` relative to `docker/docker-compose.yml`:

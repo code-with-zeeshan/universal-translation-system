@@ -53,34 +53,53 @@ POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join("configs", "decoder_
 
 # Version information
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
+# Shared API version for surface compatibility
+from utils.constants import API_VERSION
 
 # Security keys and tokens
+from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runtime_secrets
+
+# Load file-based secrets first
+bootstrap_secrets(role="coordinator")
 
 def _require_strong(name: str, value: str, insecure_defaults: set) -> str:
     if not value or value in insecure_defaults or len(value) < 32:
         raise RuntimeError(f"{name} must be a strong, random secret (>=32 chars).")
     return value
 
+# Coordinator core secrets
 SECRET_KEY = _require_strong(
     "COORDINATOR_SECRET",
-    os.environ.get("COORDINATOR_SECRET", ""),
+    get_secret("COORDINATOR_SECRET", ""),
     {"a-very-secret-key-for-cookies"}
-)
-JWT_SECRET = _require_strong(
-    "COORDINATOR_JWT_SECRET",
-    os.environ.get("COORDINATOR_JWT_SECRET", ""),
-    {"a-super-secret-jwt-key"}
 )
 AUTH_TOKEN = _require_strong(
     "COORDINATOR_TOKEN",
-    os.environ.get("COORDINATOR_TOKEN", ""),
+    get_secret("COORDINATOR_TOKEN", ""),
     {"changeme123"}
 )
 INTERNAL_AUTH_TOKEN = _require_strong(
     "INTERNAL_SERVICE_TOKEN",
-    os.environ.get("INTERNAL_SERVICE_TOKEN", ""),
+    get_secret("INTERNAL_SERVICE_TOKEN", ""),
     {"internal-secret-token-for-service-auth"}
 )
+
+# JWT: allow RS256-only deployments; require HS secret only if RS256 keys are absent
+_rs256_available = bool(os.environ.get("JWT_PUBLIC_KEY") or os.environ.get("JWT_PUBLIC_KEY_PATH")) and bool(os.environ.get("JWT_PRIVATE_KEY"))
+JWT_SECRET = get_secret("COORDINATOR_JWT_SECRET", "")
+if not _rs256_available:
+    JWT_SECRET = _require_strong(
+        "COORDINATOR_JWT_SECRET",
+        JWT_SECRET,
+        {"a-super-secret-jwt-key"}
+    )
+
+# Validate runtime secrets early
+try:
+    validate_runtime_secrets(role="coordinator")
+except Exception as _ex:
+    logger.error(f"Coordinator secret validation failed: {_ex}")
+    raise
 
 # API configuration
 API_HOST = os.environ.get("API_HOST", "0.0.0.0")
@@ -131,25 +150,44 @@ class StatusSchema(BaseModel):
 # --- FastAPI App Setup ---
 app = FastAPI(
     title="Universal Translation Coordinator",
-    version=MODEL_VERSION,
+    version=API_VERSION,  # API surface version
     description="Coordinates requests across a pool of decoder nodes."
 )
+
+# Runtime policy: enforce declared API version and supported vocab format
+@app.on_event("startup")
+async def _startup_api_policy():
+    try:
+        import json
+        from pathlib import Path
+        # 1) Ensure API_VERSION matches core.apiVersion
+        cfg = json.loads(Path("version-config.json").read_text(encoding="utf-8"))
+        core_api = str(cfg.get("core", {}).get("apiVersion", ""))
+        if not core_api:
+            raise RuntimeError("core.apiVersion missing in version-config.json")
+        if str(API_VERSION) != core_api:
+            raise RuntimeError(f"API_VERSION ({API_VERSION}) != core.apiVersion ({core_api})")
+        # 2) If vocabulary manifest exists, ensure major matches SUPPORTED_VOCAB_FORMAT
+        manifest = Path("vocabulary/manifest.json")
+        if manifest.exists():
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            fmt = str(data.get("format_version", "")).split(".")[0]
+            from utils.constants import SUPPORTED_VOCAB_FORMAT
+            if fmt and fmt != str(SUPPORTED_VOCAB_FORMAT).split(".")[0]:
+                raise RuntimeError(
+                    f"Unsupported vocabulary format {data.get('format_version')} (supported major: {SUPPORTED_VOCAB_FORMAT})"
+                )
+    except Exception as ex:
+        logger.error(f"Startup policy check failed: {ex}")
+        raise
 
 # JWT validation settings
 JWT_ISS = os.environ.get("JWT_ISS")
 JWT_AUD = os.environ.get("JWT_AUD")
+# RS256 keys and paths (prefer centralized bootstrap already run at startup)
 JWT_PUBLIC_KEY = os.environ.get("JWT_PUBLIC_KEY")
 JWT_PUBLIC_KEY_PATH = os.environ.get("JWT_PUBLIC_KEY_PATH")
 JWT_PRIVATE_KEY = os.environ.get("JWT_PRIVATE_KEY")
-JWT_PRIVATE_KEY_FILE = os.environ.get("JWT_PRIVATE_KEY_FILE")
-# If file provided, load its contents
-if JWT_PRIVATE_KEY_FILE and os.path.exists(JWT_PRIVATE_KEY_FILE):
-    try:
-        with open(JWT_PRIVATE_KEY_FILE, 'r', encoding='utf-8') as f:
-            os.environ['JWT_PRIVATE_KEY'] = f.read()
-            JWT_PRIVATE_KEY = os.environ['JWT_PRIVATE_KEY']
-    except Exception as ex:
-        logger.error(f"Failed to read JWT_PRIVATE_KEY_FILE: {ex}")
 JWT_KEY_IDS = os.environ.get("JWT_KEY_IDS")  # optional: '||'-separated list matching keys order
 JWKS_KEYS: List[Dict[str, Any]] = []  # populated at startup when JWT_PUBLIC_KEY exists
 security = HTTPBearer()
@@ -934,34 +972,13 @@ async def background_tasks():
 
 @app.on_event("startup")
 async def startup_event():
-    # Validate critical env and secrets on startup
-    missing = []
-    def _check(name: str, val: Optional[str]):
-        if not val: missing.append(name)
-    # Support Docker/K8s secrets via *_FILE envs
-    def _load_secret_from_file(var: str):
-        file_var = var + "_FILE"
-        path = os.environ.get(file_var)
-        if path and os.path.exists(path):
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    os.environ[var] = f.read().strip()
-            except Exception as ex:
-                logger.error(f"Failed reading {file_var} at {path}: {ex}")
-
-    for key in ("COORDINATOR_SECRET", "COORDINATOR_JWT_SECRET", "COORDINATOR_TOKEN", "INTERNAL_SERVICE_TOKEN"):
-        _load_secret_from_file(key)
-
-    _check("COORDINATOR_SECRET", os.environ.get("COORDINATOR_SECRET"))
-    _check("COORDINATOR_JWT_SECRET", os.environ.get("COORDINATOR_JWT_SECRET"))
-    _check("COORDINATOR_TOKEN", os.environ.get("COORDINATOR_TOKEN"))
-    _check("INTERNAL_SERVICE_TOKEN", os.environ.get("INTERNAL_SERVICE_TOKEN"))
-    if missing:
-        logger.error(f"Missing required secrets/env: {', '.join(missing)}")
-        raise RuntimeError("Coordinator startup validation failed: missing secrets")
-    # If RS256 is desired, require both public and private keys for admin sessions
-    if os.environ.get("JWT_PRIVATE_KEY") and not os.environ.get("JWT_PUBLIC_KEY"):
-        raise RuntimeError("JWT_PRIVATE_KEY set but JWT_PUBLIC_KEY missing")
+    # Validate critical env and secrets on startup using centralized bootstrap/validation
+    bootstrap_secrets(role="coordinator")
+    try:
+        validate_runtime_secrets(role="coordinator")
+    except Exception as ex:
+        logger.error(f"Coordinator startup validation failed: {ex}")
+        raise
 
     # Build JWKS set using shared utility
     from utils.jwks_utils import build_jwks_from_env

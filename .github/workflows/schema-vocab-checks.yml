@@ -1,0 +1,81 @@
+name: Schema & Vocabulary Checks
+
+on:
+  pull_request:
+    paths:
+      - 'config/**'
+      - 'vocabulary/**'
+      - 'encoder/**'
+      - 'cloud_decoder/**'
+      - 'utils/**'
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install pydantic msgpack zstandard || true
+
+      - name: Validate config schemas
+        run: |
+          python - <<'PY'
+          from config.schemas import load_config
+          try:
+              cfg = load_config('config/base.yaml')
+              print('✓ Config loaded successfully')
+          except Exception as e:
+              print('✗ Config validation failed:', e)
+              raise SystemExit(1)
+          PY
+
+      - name: Validate vocabulary manifest and packs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json, msgpack
+          vocab_dir = Path('vocabulary')
+          # 1) Manifest check
+          manifest = vocab_dir / 'manifest.json'
+          if manifest.exists():
+              try:
+                  data = json.loads(manifest.read_text(encoding='utf-8'))
+                  if not isinstance(data, dict):
+                      raise ValueError('manifest.json must be an object')
+                  print('✓ manifest.json validated')
+              except Exception as e:
+                  print('✗ manifest.json invalid:', e)
+                  raise SystemExit(1)
+          else:
+              print('ℹ️ manifest.json not found (optional)')
+
+          # 2) Pack structure checks (lightweight)
+          pack_files = list(vocab_dir.glob('*_v*.msgpack'))
+          ok = True
+          for pf in pack_files:
+              try:
+                  data = msgpack.unpackb(pf.read_bytes(), raw=False)
+                  for key in ['name','version','languages','tokens','subwords','special_tokens']:
+                      if key not in data:
+                          raise ValueError(f'{pf.name}: missing key {key}')
+                  # required special tokens
+                  required = {'<pad>','<unk>','<s>','</s>'}
+                  if not required.issubset(set(data.get('special_tokens',{}).keys())):
+                      raise ValueError(f'{pf.name}: missing required special tokens')
+              except Exception as e:
+                  print('✗ Pack invalid:', pf, e)
+                  ok = False
+          if not ok:
+              raise SystemExit(1)
+          print('✓ Packs validated')
+          PY

@@ -34,6 +34,8 @@ from monitoring.metrics_collector import (
     active_connections,
     gpu_utilization
 )
+# Shared constants for API and vocab format enforcement
+from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT
 from utils.logging_config import setup_logging
 from collections import OrderedDict
 # Import vocabulary manager
@@ -75,9 +77,15 @@ tracer = trace.get_tracer(__name__)
 
 # Environment variables for configuration
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
-JWT_SECRET = os.environ.get("DECODER_JWT_SECRET")
-if not JWT_SECRET or JWT_SECRET in {"jwtsecret123", "use-openssl-rand-hex-32-to-generate-a-secure-key"}:
-    raise RuntimeError("DECODER_JWT_SECRET must be set to a strong, random value.")
+# API version is imported from utils.constants (env-overridable)
+from utils.constants import API_VERSION
+
+# Centralized secrets bootstrap and access
+from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runtime_secrets
+bootstrap_secrets(role="decoder")
+# Validate required secrets for decoder at startup
+validate_runtime_secrets(role="decoder")
+JWT_SECRET = get_secret("DECODER_JWT_SECRET")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "your-hf-org/universal-translation-system")
 
@@ -494,30 +502,41 @@ class CompositionRequest(BaseModel):
     strategy: str = "average"
 
 # FastAPI application for serving
-app = FastAPI(title=API_TITLE, version=MODEL_VERSION, openapi_url="/openapi.json")
+# Use shared API_VERSION for API surface; keep MODEL_VERSION in /status
+app = FastAPI(title=API_TITLE, version=API_VERSION, openapi_url="/openapi.json")
 FastAPIInstrumentor.instrument_app(app)
 
 @app.on_event("startup")
 async def startup_validation():
-    # Validate critical env on startup
-    missing = []
-    def _check(name: str, val: Optional[str]):
-        if not val: missing.append(name)
-    # Support Docker secrets: if DECODER_JWT_SECRET_FILE is set, read from file
-    secret_file = os.environ.get("DECODER_JWT_SECRET_FILE")
-    if secret_file and os.path.exists(secret_file):
-        try:
-            with open(secret_file, 'r', encoding='utf-8') as f:
-                os.environ['DECODER_JWT_SECRET'] = f.read().strip()
-        except Exception as ex:
-            logger.error(f"Failed to read DECODER_JWT_SECRET_FILE: {ex}")
-    _check("DECODER_JWT_SECRET", os.environ.get("DECODER_JWT_SECRET"))
-    # RS256 for decoder admin endpoints is optional; if private key is set, require public key too
-    if os.environ.get("JWT_PRIVATE_KEY") and not os.environ.get("JWT_PUBLIC_KEY"):
-        raise RuntimeError("JWT_PRIVATE_KEY set but JWT_PUBLIC_KEY missing for decoder")
-    if missing:
-        logger.error(f"Missing required env: {', '.join(missing)}")
-        raise RuntimeError("Decoder startup validation failed: missing secrets")
+    # Centralized validation for decoder secrets and policy
+    try:
+        validate_runtime_secrets(role="decoder")
+    except Exception as ex:
+        logger.error(f"Decoder secret validation failed: {ex}")
+        raise
+
+    # Policy: API_VERSION must match core.apiVersion; vocab format must be supported
+    try:
+        import json
+        from pathlib import Path
+        cfg = json.loads(Path("version-config.json").read_text(encoding="utf-8"))
+        core_api = str(cfg.get("core", {}).get("apiVersion", ""))
+        if not core_api:
+            raise RuntimeError("core.apiVersion missing in version-config.json")
+        if str(API_VERSION) != core_api:
+            raise RuntimeError(f"API_VERSION ({API_VERSION}) != core.apiVersion ({core_api})")
+        manifest = Path("vocabulary/manifest.json")
+        if manifest.exists():
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            fmt = str(data.get("format_version", "")).split(".")[0]
+            from utils.constants import SUPPORTED_VOCAB_FORMAT
+            if fmt and fmt != str(SUPPORTED_VOCAB_FORMAT).split(".")[0]:
+                raise RuntimeError(
+                    f"Unsupported vocabulary format {data.get('format_version')} (supported major: {SUPPORTED_VOCAB_FORMAT})"
+                )
+    except Exception as ex:
+        logger.error(f"Startup policy check failed: {ex}")
+        raise
 
     # Build JWKS using shared utility
     from utils.jwks_utils import build_jwks_from_env, diff_kids
@@ -640,10 +659,11 @@ async def health():
 # enhanced status endpoint
 @app.get("/status", response_model=StatusResponse)
 async def status():
-    """Enhanced status with vocabulary info."""
+    """Enhanced status with API & model version info and vocabulary summary."""
     metrics_summary = get_metrics_summary()
 
     return {
+        "api_version": API_VERSION,
         "model_version": MODEL_VERSION,
         "healthy": True,
         "metrics": metrics_summary,

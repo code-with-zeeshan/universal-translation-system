@@ -1,0 +1,121 @@
+name: Kustomize Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g., v1.0.2). Overrides tag auto-detection."
+        required: false
+      namespace:
+        description: "Kubernetes namespace"
+        required: true
+      cluster:
+        description: "Cluster name or context label"
+        required: true
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set VERSION
+        id: setver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install kubectl and kustomize
+        run: |
+          curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl -sLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.3.0/kustomize_v5.3.0_linux_amd64.tar.gz
+          tar -xzf kustomize.tar.gz
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Configure kubeconfig (staging)
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${KUBECONFIG_STAGING_B64}" | base64 -d > $HOME/.kube/config
+        env:
+          KUBECONFIG_STAGING_B64: ${{ secrets.KUBECONFIG_STAGING_B64 }}
+
+      - name: Patch images with version and GHCR path (staging)
+        working-directory: kubernetes/overlays
+        run: |
+          sed -i "s#newName: ghcr.io/OWNER/REPO/decoder#newName: ghcr.io/${GITHUB_REPOSITORY}/decoder#g" kustomization.yaml
+          sed -i "s#newName: ghcr.io/OWNER/REPO/coordinator#newName: ghcr.io/${GITHUB_REPOSITORY}/coordinator#g" kustomization.yaml
+          sed -i "s/newTag: .*/newTag: ${{ steps.setver.outputs.version }}/g" kustomization.yaml || true
+
+      - name: Build manifests
+        working-directory: kubernetes/overlays
+        run: |
+          kustomize build . > ../../manifests.staging.yaml
+
+      - name: Apply manifests (staging)
+        env:
+          NAMESPACE: ${{ github.event.inputs.namespace }}
+        run: |
+          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n "$NAMESPACE" -f manifests.staging.yaml
+
+  deploy-production:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set VERSION
+        id: setver
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install kubectl and kustomize
+        run: |
+          curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl -sLo kustomize.tar.gz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.3.0/kustomize_v5.3.0_linux_amd64.tar.gz
+          tar -xzf kustomize.tar.gz
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Configure kubeconfig (production)
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${KUBECONFIG_PRODUCTION_B64}" | base64 -d > $HOME/.kube/config
+        env:
+          KUBECONFIG_PRODUCTION_B64: ${{ secrets.KUBECONFIG_PRODUCTION_B64 }}
+
+      - name: Patch images with version and GHCR path (production)
+        working-directory: kubernetes/overlays
+        run: |
+          sed -i "s#newName: ghcr.io/OWNER/REPO/decoder#newName: ghcr.io/${GITHUB_REPOSITORY}/decoder#g" kustomization.yaml
+          sed -i "s#newName: ghcr.io/OWNER/REPO/coordinator#newName: ghcr.io/${GITHUB_REPOSITORY}/coordinator#g" kustomization.yaml
+          sed -i "s/newTag: .*/newTag: ${{ steps.setver.outputs.version }}/g" kustomization.yaml || true
+
+      - name: Build manifests
+        working-directory: kubernetes/overlays
+        run: |
+          kustomize build . > ../../manifests.production.yaml
+
+      - name: Apply manifests (production)
+        env:
+          NAMESPACE: ${{ github.event.inputs.namespace }}
+        run: |
+          kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n "$NAMESPACE" -f manifests.production.yaml

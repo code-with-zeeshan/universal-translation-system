@@ -8,6 +8,9 @@ on:
       - '**/Package.swift'
       - '**/setup.py'
       - '**/*.podspec'
+      - 'universal-decoder-node/pyproject.toml'
+      - 'web/universal-translation-sdk/package.json'
+      - 'react-native/UniversalTranslationSDK/package.json'
 
 jobs:
   check-versions:
@@ -35,7 +38,7 @@ jobs:
     - name: Check version consistency
       run: |
         # Check that all files have matching versions
-        python -c "
+        python - <<'PY'
         import json
         import re
         from pathlib import Path
@@ -46,44 +49,86 @@ jobs:
         
         errors = []
         
-        # Check Android
+        # Android SDK
         build_gradle = Path('android/UniversalTranslationSDK/build.gradle')
         if build_gradle.exists():
-            content = build_gradle.read_text()
-            match = re.search(r'versionName \"([^\"]+)\"', content)
+            content = build_gradle.read_text(encoding='utf-8')
+            match = re.search(r'versionName\s+\"([^\"]+)\"', content)
             if match:
                 file_version = match.group(1)
                 config_version = config['components']['android-sdk']['version']
                 if file_version != config_version:
                     errors.append(f'Android: {file_version} != {config_version}')
         
-        # Check iOS podspec
+        # iOS podspec
         podspec = Path('ios/UniversalTranslationSDK.podspec')
         if podspec.exists():
-            content = podspec.read_text()
-            match = re.search(r's\.version\s*=\s*\'([^\']+)\'', content)
+            content = podspec.read_text(encoding='utf-8')
+            match = re.search(r"s\.version\s*=\s*'([^']+)'", content)
             if match:
                 file_version = match.group(1)
                 config_version = config['components']['ios-sdk']['version']
                 if file_version != config_version:
                     errors.append(f'iOS: {file_version} != {config_version}')
         
-        # Check Python
+        # Python package setup.py (decoder node)
         setup_py = Path('universal-decoder-node/setup.py')
         if setup_py.exists():
-            content = setup_py.read_text()
-            match = re.search(r'version\s*=\s*["\']([^"\']+)["\']', content)
+            content = setup_py.read_text(encoding='utf-8')
+            match = re.search(r'version\s*=\s*[\"\']([^\"\']+)[\"\']', content)
             if match:
                 file_version = match.group(1)
                 config_version = config['components']['python-package']['version']
                 if file_version != config_version:
-                    errors.append(f'Python: {file_version} != {config_version}')
+                    errors.append(f'Python setup.py (decoder-node): {file_version} != {config_version}')
+        
+        # Python package pyproject.toml (decoder node)
+        pyproject = Path('universal-decoder-node/pyproject.toml')
+        if pyproject.exists():
+            content = pyproject.read_text(encoding='utf-8')
+            match = re.search(r'^version\s*=\s*[\"\']([^\"\']+)[\"\']', content, re.M)
+            if match:
+                file_version = match.group(1)
+                config_version = config['components']['python-package']['version']
+                if file_version != config_version:
+                    errors.append(f'Python pyproject.toml (decoder-node): {file_version} != {config_version}')
+        
+        # Web SDK package.json
+        web_pkg = Path('web/universal-translation-sdk/package.json')
+        if web_pkg.exists():
+            import json as _json
+            pkg = _json.loads(web_pkg.read_text(encoding='utf-8'))
+            file_version = pkg.get('version')
+            config_version = config['components'].get('web-sdk', {}).get('version')
+            if config_version and file_version != config_version:
+                errors.append(f'Web SDK: {file_version} != {config_version}')
+        
+        # React Native SDK package.json
+        rn_pkg = Path('react-native/UniversalTranslationSDK/package.json')
+        if rn_pkg.exists():
+            import json as _json
+            pkg = _json.loads(rn_pkg.read_text(encoding='utf-8'))
+            file_version = pkg.get('version')
+            config_version = config['components'].get('react-native-sdk', {}).get('version')
+            if config_version and file_version != config_version:
+                errors.append(f'React Native SDK: {file_version} != {config_version}')
+        
+        # Root Python package setup.py
+        root_setup = Path('setup.py')
+        if root_setup.exists():
+            content = root_setup.read_text(encoding='utf-8')
+            match = re.search(r'version\s*=\s*[\"\']([^\"\']+)[\"\']', content)
+            if match:
+                file_version = match.group(1)
+                config_version = config['components'].get('root-python', {}).get('version')
+                if config_version and file_version != config_version:
+                    errors.append(f'Root Python setup.py: {file_version} != {config_version}')
         
         if errors:
             print('❌ Version mismatches found:')
             for error in errors:
                 print(f'  - {error}')
-            exit(1)
+            raise SystemExit(1)
         else:
             print('✅ All versions are consistent')
-        "
+        PY

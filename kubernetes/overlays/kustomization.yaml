@@ -1,0 +1,14 @@
+# Kustomize overlay for injecting image tags via k8s manifests
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../kubernetes/decoder-deployment.yaml
+  - ../../kubernetes/coordinator-deployment.yaml
+
+images:
+  - name: universal-decoder
+    newName: ghcr.io/OWNER/REPO/decoder
+    newTag: v1.0.0 # override per-release in CI
+  - name: universal-coordinator
+    newName: ghcr.io/OWNER/REPO/coordinator
+    newTag: v1.0.0 # override per-release in CI

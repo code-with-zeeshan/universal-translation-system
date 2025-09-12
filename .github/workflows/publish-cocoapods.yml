@@ -1,0 +1,85 @@
+name: Publish iOS Podspec
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-pod:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Validate versions
+        run: |
+          python3 scripts/version_manager.py validate
+          python3 scripts/version_manager.py validate-sync
+
+      - name: Verify publish secrets
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          python3 .github/scripts/check_publish_secrets.py
+
+      - name: Determine changed paths and bump target
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          prev_tag=""
+          if git describe --tags --abbrev=0 HEAD^ >/dev/null 2>&1; then
+            prev_tag=$(git describe --tags --abbrev=0 HEAD^)
+          fi
+          echo "prev_tag=$prev_tag" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$prev_tag" ]]; then
+            changed=$(git diff --name-only "$prev_tag"..HEAD)
+          else
+            changed="ALL"
+          fi
+
+          changed_rn=false
+          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^react-native/UniversalTranslationSDK/' >/dev/null; then
+            changed_rn=true
+          fi
+
+          rn_ver=$(python3 - <<'PY'
+import json
+with open('version-config.json','r',encoding='utf-8') as f:
+  cfg=json.load(f)
+print(cfg['components'].get('react-native-sdk',{}).get('version',''))
+PY
+          )
+          echo "rn_ver=$rn_ver" >> "$GITHUB_OUTPUT"
+
+          publish_pod=false
+          if [[ "$rn_ver" == "$TAG" && "$changed_rn" == "true" ]]; then publish_pod=true; fi
+          echo "publish_pod=$publish_pod" >> "$GITHUB_OUTPUT"
+
+      - name: Setup CocoaPods
+        if: steps.check.outputs.publish_pod == 'true'
+        run: |
+          sudo gem install cocoapods --no-document
+
+      - name: Lint Podspec
+        if: steps.check.outputs.publish_pod == 'true'
+        run: |
+          pod lib lint react-native/UniversalTranslationSDK/universal-translation-sdk.podspec --allow-warnings
+
+      - name: Push to trunk
+        if: steps.check.outputs.publish_pod == 'true'
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: |
+          pod trunk push react-native/UniversalTranslationSDK/universal-translation-sdk.podspec --allow-warnings --skip-tests

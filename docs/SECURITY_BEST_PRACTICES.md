@@ -16,12 +16,20 @@ This document outlines security best practices for deploying and operating the U
 ### Environment Variables
 - **Never commit secrets to version control**
 - Use environment variables for all sensitive information
+- Prefer `*_FILE` environment variables in containers and orchestrators; the system bootstraps these automatically at startup.
+- A centralized bootstrap validates required secrets and fails fast with actionable diagnostics.
+- See: [Environment Variables: Secret Bootstrap & Validation](environment-variables.md#secret-bootstrap--validation)
 - Consider using a secrets management solution like:
   - Kubernetes Secrets
   - HashiCorp Vault
   - AWS Secrets Manager
   - Azure Key Vault
   - Google Secret Manager
+
+### Rotation & JWKS
+- Use the rotation helper CLI: `tools/rotate_secrets.py` (supports HS256 and RS256).
+- Example scheduled rotation workflow is provided in `.github/workflows/scheduled-rotation.yml`.
+- RS256: maintain multiple public keys via `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||` separator; JWKS is built automatically and can be reloaded without restart.
 
 ### JWT Secrets
 - Generate strong, random JWT secrets:

@@ -1,7 +1,7 @@
 #!/bin/bash
 # scripts/deploy.sh
 
-set -e
+set -euo pipefail
 
 echo "🚀 Deploying Universal Translation System..."
 

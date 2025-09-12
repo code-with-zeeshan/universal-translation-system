@@ -9,6 +9,13 @@ from typing import Any, Dict, List, Optional, Union, Callable
 import redis
 from redis.connection import ConnectionPool
 
+# Prefer centralized secret/config access when available
+try:
+    from .secrets_bootstrap import bootstrap_secrets, get_secret
+    bootstrap_secrets(role=os.environ.get("UTS_ROLE", "general"))
+except Exception:
+    get_secret = None
+
 logger = logging.getLogger(__name__)
 
 class RedisManager:
@@ -39,7 +46,8 @@ class RedisManager:
         return cls._instance
     
     def __init__(self):
-        self.default_url = os.environ.get("REDIS_URL")
+        # URL may contain credentials; prefer centralized accessor to allow future vault integration
+        self.default_url = (get_secret("REDIS_URL") if get_secret else os.environ.get("REDIS_URL"))
         self.key_prefix = os.environ.get("REDIS_KEY_PREFIX", "translation:")
         self.connection_timeout = int(os.environ.get("REDIS_CONN_TIMEOUT", "2"))
         self.read_timeout = int(os.environ.get("REDIS_READ_TIMEOUT", "2"))

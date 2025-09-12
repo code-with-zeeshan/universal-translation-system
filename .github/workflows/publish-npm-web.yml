@@ -1,0 +1,45 @@
+name: Publish Web SDK to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+    paths:
+      - 'web/universal-translation-sdk/**'
+      - '.github/workflows/publish-npm-web.yml'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install deps and build
+        working-directory: web/universal-translation-sdk
+        run: |
+          npm ci
+          npm run build --if-present
+
+      - name: Publish (stable)
+        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-rc')
+        working-directory: web/universal-translation-sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish --access public
+
+      - name: Publish (pre-release tag)
+        if: startsWith(github.ref, 'refs/tags/v') && (contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc'))
+        working-directory: web/universal-translation-sdk
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ "$GITHUB_REF_NAME" == *"-alpha"* ]]; then TAG=alpha; elif [[ "$GITHUB_REF_NAME" == *"-beta"* ]]; then TAG=beta; else TAG=rc; fi
+          npm publish --tag "$TAG" --access public

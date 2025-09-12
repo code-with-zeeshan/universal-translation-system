@@ -1,0 +1,35 @@
+name: Semantic Release (Web SDK)
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'web/universal-translation-sdk/**'
+      - '.releaserc.json'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install semantic-release
+        run: |
+          npm install --no-save semantic-release @semantic-release/changelog @semantic-release/npm @semantic-release/git @semantic-release/commit-analyzer @semantic-release/release-notes-generator conventional-changelog-conventionalcommits
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npx semantic-release

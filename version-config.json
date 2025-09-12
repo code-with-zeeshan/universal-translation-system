@@ -1,19 +1,31 @@
 {
   "core": {
     "version": "1.0.0",
-    "minSupportedVersion": "1.0.0"
+    "minSupportedVersion": "1.0.0",
+    "apiVersion": "1.0.0",
+    "schemaHash": "",
+    "schemaHashVersion": ""
   },
   "components": {
     "encoder": {
       "version": "1.0.0",
       "compatibleWith": {
-        "decoder": ">=1.0.0 <2.0.0"
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
       }
     },
     "decoder": {
       "version": "1.0.0",
       "compatibleWith": {
-        "encoder": ">=1.0.0 <2.0.0"
+        "encoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
+      }
+    },
+    "coordinator": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0"
       }
     },
     "android-sdk": {
@@ -21,7 +33,8 @@
       "versionCode": 10000,
       "compatibleWith": {
         "encoder": ">=1.0.0 <2.0.0",
-        "decoder": ">=1.0.0 <2.0.0"
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
       }
     },
     "ios-sdk": {
@@ -29,18 +42,45 @@
       "buildNumber": "100",
       "compatibleWith": {
         "encoder": ">=1.0.0 <2.0.0",
-        "decoder": ">=1.0.0 <2.0.0"
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
       }
     },
     "python-package": {
       "version": "1.0.0",
       "compatibleWith": {
-        "decoder": ">=1.0.0 <2.0.0"
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
+      }
+    },
+    "web-sdk": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
+      }
+    },
+    "react-native-sdk": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
+      }
+    },
+    "root-python": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
       }
     }
   },
   "vocabularies": {
     "independent": true,
+    "supported_format": "1",
     "note": "Vocabulary packs version independently from the system"
   }
 }

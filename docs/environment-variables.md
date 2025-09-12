@@ -72,10 +72,17 @@ RS256 (optional):
 - **ENABLE_GPU_METRICS**: true/false
 - **ENABLE_VOCABULARY_METRICS**: true/false
 
+## Secret Bootstrap & Validation
+- The system supports `*_FILE` environment variables for sensitive values, which are loaded at startup (e.g., `DECODER_JWT_SECRET_FILE`, `COORDINATOR_SECRET_FILE`).
+- A central bootstrap resolves file-based secrets and maps env names to the internal credential manager when available.
+- At runtime, secrets are validated: minimum length (>= 32), and common placeholders are rejected.
+- Coordinator can operate with either HS256 (`COORDINATOR_JWT_SECRET`) or RS256 (provide `JWT_PRIVATE_KEY_FILE` and `JWT_PUBLIC_KEY_PATH`), enabling key rotation with multiple public keys.
+
 ## Security Tips
 1. Replace all defaults in production; store secrets in a vault/Secrets.
-2. Terminate TLS at your ingress/proxy.
-3. Rotate JWT secrets periodically.
+2. Prefer `*_FILE` pattern inside containers and orchestrators.
+3. Terminate TLS at your ingress/proxy.
+4. Rotate JWT secrets or RS256 keypairs periodically (see `tools/rotate_secrets.py`).
 
 ## Troubleshooting
 - Verify envs are set inside containers: `docker compose exec <svc> env | sort`

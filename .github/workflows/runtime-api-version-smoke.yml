@@ -1,0 +1,34 @@
+name: Runtime API Version Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      coordinator_url:
+        description: 'Coordinator base URL (e.g., http://localhost:9000)'
+        required: true
+        default: 'http://localhost:9000'
+      decoder_url:
+        description: 'Decoder base URL (e.g., http://localhost:8000)'
+        required: true
+        default: 'http://localhost:8000'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/runtime_api_version_check.py'
+      - '.github/workflows/runtime-api-version-smoke.yml'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run runtime API version check
+        env:
+          COORDINATOR_URL: ${{ github.event.inputs.coordinator_url || 'http://localhost:9000' }}
+          DECODER_URL: ${{ github.event.inputs.decoder_url || 'http://localhost:8000' }}
+        run: |
+          python scripts/runtime_api_version_check.py --coordinator "$COORDINATOR_URL" --decoder "$DECODER_URL"

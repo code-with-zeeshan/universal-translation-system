@@ -1,0 +1,89 @@
+name: Publish Web SDK to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate versions
+        run: |
+          python3 scripts/version_manager.py validate
+          python3 scripts/version_manager.py validate-sync
+
+      - name: Determine changed paths and bump target
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          prev_tag=""
+          if git describe --tags --abbrev=0 HEAD^ >/dev/null 2>&1; then
+            prev_tag=$(git describe --tags --abbrev=0 HEAD^)
+          fi
+          echo "prev_tag=$prev_tag" >> "$GITHUB_OUTPUT"
+
+          if [[ -n "$prev_tag" ]]; then
+            changed=$(git diff --name-only "$prev_tag"..HEAD)
+          else
+            changed="ALL"
+          fi
+
+          changed_web=false
+          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^web/universal-translation-sdk/' >/dev/null; then
+            changed_web=true
+          fi
+
+          web_ver=$(python3 - <<'PY'
+import json
+with open('version-config.json','r',encoding='utf-8') as f:
+  cfg=json.load(f)
+print(cfg['components'].get('web-sdk',{}).get('version',''))
+PY
+          )
+          echo "web_ver=$web_ver" >> "$GITHUB_OUTPUT"
+
+          publish_web=false
+          if [[ "$web_ver" == "$TAG" && "$changed_web" == "true" ]]; then publish_web=true; fi
+          echo "publish_web=$publish_web" >> "$GITHUB_OUTPUT"
+
+      - name: Set up NPM auth
+        if: steps.check.outputs.publish_web == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+
+      - name: Install and build
+        if: steps.check.outputs.publish_web == 'true'
+        working-directory: web/universal-translation-sdk
+        run: |
+          npm install
+          npm run build
+
+      - name: Publish to NPM
+        if: steps.check.outputs.publish_web == 'true'
+        working-directory: web/universal-translation-sdk
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish --access public

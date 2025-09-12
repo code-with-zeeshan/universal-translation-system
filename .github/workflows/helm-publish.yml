@@ -1,0 +1,36 @@
+name: Helm Chart Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.4'
+      - name: Lint chart
+        run: |
+          helm lint charts/uts
+      - name: Package chart
+        run: |
+          mkdir -p charts-packaged
+          helm package charts/uts -d charts-packaged
+      - name: Index chart repo
+        run: |
+          helm repo index charts-packaged --url https://$GITHUB_REPOSITORY_OWNER.github.io/${{ github.event.repository.name }}/
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./charts-packaged

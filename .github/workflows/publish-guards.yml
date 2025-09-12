@@ -1,0 +1,18 @@
+name: Publish Guards
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'universal-decoder-node/**'
+      - 'web/universal-translation-sdk/**'
+      - 'react-native/UniversalTranslationSDK/**'
+
+jobs:
+  check-version-consistency-before-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure versions match version-config.json
+        run: |
+          python .github/scripts/check_versions.py

@@ -1,0 +1,93 @@
+name: Automated Version Bump PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Type of release (patch, minor, major)'
+        required: true
+        default: 'patch'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump-and-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tools
+        run: |
+          npm i -g semantic-release @semantic-release/exec @semantic-release/git @semantic-release/changelog conventional-changelog-conventionalcommits
+          python -m pip install --upgrade pip
+          pip install semver
+
+      - name: Compute next version
+        id: next
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use semantic-release dry-run to compute next version from conventional commits
+          npx semantic-release --dry-run --ci false --plugins "@semantic-release/commit-analyzer,@semantic-release/release-notes-generator" || true
+          # Fallback: bump based on input if SR didn't output (for mono)
+          PY=$(python - <<'PY'
+import json,sys
+cfg=json.load(open('version-config.json','r',encoding='utf-8'))
+ver=cfg['core']['version']
+print(ver)
+PY
+          )
+          CUR=$(echo "$PY" | tail -n1)
+          TYPE="${{ github.event.inputs.release_type }}"
+          python - <<PY
+import sys
+import semver
+cur=sys.argv[1]
+type_=sys.argv[2]
+print(semver.bump_version(cur, type_))
+PY
+ "$CUR" "$TYPE" | tee next_version.txt
+          echo "version=$(cat next_version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Update version-config.json and propagate
+        run: |
+          NEXT="${{ steps.next.outputs.version }}"
+          echo "Next version: $NEXT"
+          python scripts/version_manager.py release "$NEXT"
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git checkout -b chore/release-v${{ steps.next.outputs.version }}
+          git add -A
+          git commit -m "chore: release ${{ steps.next.outputs.version }}"
+          git push -u origin HEAD
+
+      - name: Open Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: release ${{ steps.next.outputs.version }}"
+          title: "chore: release v${{ steps.next.outputs.version }}"
+          body: |
+            This PR bumps versions to v${{ steps.next.outputs.version }} using scripts/version_manager.py release.
+
+            - Propagated version to component manifests
+            - Please review changelog and publish workflows
+          branch: chore/release-v${{ steps.next.outputs.version }}

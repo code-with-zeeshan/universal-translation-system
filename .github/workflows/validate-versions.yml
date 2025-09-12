@@ -1,0 +1,47 @@
+name: Validate Versions and Compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install semver onnx
+
+      - name: Version compatibility (semver matrix)
+        run: |
+          python scripts/version_manager.py validate
+
+      - name: File version sync
+        run: |
+          python scripts/version_manager.py validate-sync
+
+      - name: API/Schema/Tokenizer checks
+        run: |
+          python scripts/compatibility_checks.py
+      - name: Per-service API version checks
+        env:
+          COORDINATOR_URL: ${{ vars.COORDINATOR_URL }}
+          DECODER_URL: ${{ vars.DECODER_URL }}
+        run: |
+          python .github/scripts/check_api_version_declared.py
+      - name: Optional deeper schema diff (hash + version bump)
+        run: |
+          pip install semver
+          python .github/scripts/openapi_proto_diff.py
+      - name: Dry-run version diff (no publish)
+        run: |
+          python .github/scripts/dry_run_version_diff.py

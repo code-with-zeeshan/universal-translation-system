@@ -3,26 +3,33 @@ import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
-import torch
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+
+# Make torch optional for registry operations
+try:
+    import torch  # type: ignore
+    TORCH_VERSION = getattr(torch, "__version__", None)
+except Exception:
+    TORCH_VERSION = None
 
 class ModelVersion:
     def __init__(self, model_dir: str = "models"):
-        self.model_dir = Path(model_dir)
-        self.model_dir.mkdir(exist_ok=True)
+        # Use absolute, repo-rooted path to avoid CWD issues
+        self.model_dir = Path(model_dir).resolve()
+        self.model_dir.mkdir(parents=True, exist_ok=True)
         self.registry_file = self.model_dir / "model_registry.json"
         self.registry = self._load_registry()
     
     def _load_registry(self) -> Dict[str, Any]:
         """Load model registry"""
         if self.registry_file.exists():
-            with open(self.registry_file, 'r') as f:
+            with open(self.registry_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        return {'models': {}}
+        return {'models': {}, 'latest': {}}
     
     def _save_registry(self):
         """Save model registry"""
-        with open(self.registry_file, 'w') as f:
+        with open(self.registry_file, 'w', encoding='utf-8') as f:
             json.dump(self.registry, f, indent=2)
     
     def _compute_model_hash(self, model_path: str) -> str:
@@ -44,7 +51,7 @@ class ModelVersion:
             raise FileNotFoundError(f"Model not found: {model_path}")
         
         # Compute version
-        model_hash = self._compute_model_hash(model_path)
+        model_hash = self._compute_model_hash(str(model_path))
         timestamp = datetime.now().strftime("%Y%m%d")
         version = f"v1.0.{timestamp}.{model_hash}"
         
@@ -60,20 +67,20 @@ class ModelVersion:
         self.registry['models'][version] = {
             'version': version,
             'type': model_type,
-            'path': str(versioned_path),
-            'original_path': str(model_path),
+            'path': str(versioned_path.resolve()),
+            'original_path': str(model_path.resolve()),
             'hash': model_hash,
             'size_mb': model_path.stat().st_size / 1024**2,
             'created_at': datetime.now().isoformat(),
-            'pytorch_version': torch.__version__,
+            'pytorch_version': TORCH_VERSION,
             'metrics': metrics or {},
             'metadata': metadata or {}
         }
         
-        # Update latest
-        self.registry['latest'] = {
-            model_type: version
-        }
+        # Update latest mapping without overwriting other entries
+        latest = self.registry.get('latest', {})
+        latest[model_type] = version
+        self.registry['latest'] = latest
         
         self._save_registry()
         
@@ -89,11 +96,11 @@ class ModelVersion:
     
     def list_versions(self, model_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """List all versions, optionally filtered by type"""
-        versions = []
+        versions: List[Dict[str, Any]] = []
         for version, info in self.registry['models'].items():
             if model_type is None or info['type'] == model_type:
                 versions.append(info)
         
         # Sort by creation date
-        versions.sort(key=lambda x: x['created_at'], reverse=True)
+        versions.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         return versions
