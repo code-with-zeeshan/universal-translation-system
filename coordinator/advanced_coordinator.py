@@ -1,5 +1,4 @@
 # coordinator/advanced_coordinator.py
-import etcd3
 import json
 import uuid
 from typing import List, Dict, Any, Optional, Tuple
@@ -8,6 +7,13 @@ import time
 import logging
 import os
 import threading
+
+# Conditional etcd import to avoid hard dependency when USE_ETCD=false
+USE_ETCD = os.environ.get("USE_ETCD", "false").lower() == "true"
+try:
+    import etcd3  # type: ignore
+except Exception:
+    etcd3 = None  # type: ignore
 
 import random
 from datetime import datetime, timedelta

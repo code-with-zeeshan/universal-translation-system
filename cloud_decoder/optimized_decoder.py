@@ -175,7 +175,7 @@ class AdapterManager:
                     "adapter_cache_hit",
                     extra={"adapter": adapter_name}
                 )
-                return
+                return self.cache[adapter_name]
 
             # --- Cache Miss ---
             # Check if another thread is already loading this adapter
@@ -196,7 +196,7 @@ class AdapterManager:
             async with self.lock:
                 if adapter_name in self.cache:
                     self.cache.move_to_end(adapter_name)
-                    return
+                    return self.cache[adapter_name]
                 else:
                     logger.error(
                         "adapter_wait_failed",
@@ -237,6 +237,8 @@ class AdapterManager:
                     "adapter_cache_loaded",
                     extra={"adapter": adapter_name}
                 )
+                # Return the loaded adapter instance
+                return self.cache[adapter_name]
         finally:
             # --- Signal other waiting threads and clean up ---
             async with self.lock:
@@ -308,27 +310,6 @@ class AdapterManager:
         """Returns a list of adapters currently hot in the cache."""
         async with self.lock:
             return list(self.cache.keys())
-            # Evict the least recently used adapter if the cache is full
-            if len(self.cache) >= self.max_cache_size:
-                oldest_adapter_name, _ = self.cache.popitem(last=False)
-                # Remove from the model's ModuleDict to free memory
-                if oldest_adapter_name in self.model.language_adapters:
-                    del self.model.language_adapters[oldest_adapter_name]
-                logger.info(f"Evicted adapter '{oldest_adapter_name}' from cache.")
-
-            # Load the new adapter
-            adapter_path = self.adapter_dir / f"best_{adapter_name}_adapter.pt"
-            if not adapter_path.exists():
-                logger.error(f"Adapter file not found: {adapter_path}")
-                # Don't add to cache if not found
-                return
-
-            # Use the model's own method to add and load the adapter
-            self.model.load_language_adapter(adapter_name, str(adapter_path))
-            
-            # Add the newly loaded adapter module to our cache
-            self.cache[adapter_name] = self.model.language_adapters[adapter_name]
-            logger.info(f"Successfully loaded and cached adapter '{adapter_name}'.")
 
     
 class OptimizedUniversalDecoder(nn.Module):

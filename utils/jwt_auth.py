@@ -296,13 +296,33 @@ class JWTAuth:
                 kwargs["issuer"] = self.issuer
                 
             # Decode token
-            payload = jwt.decode(
-                token,
-                self.secret_key,
-                algorithms=[self.algorithm],
-                options=options,
-                **kwargs
-            )
+            # Support RS verification-only using configured public keys when no secret/private key is set
+            if self.algorithm.startswith("RS") and not self.secret_key and getattr(self, "public_keys", []):
+                last_error = None
+                for pem in self.public_keys:
+                    try:
+                        payload = jwt.decode(
+                            token,
+                            pem,  # PEM-encoded public key string
+                            algorithms=[self.algorithm],
+                            options=options,
+                            **kwargs
+                        )
+                        break
+                    except Exception as e:
+                        last_error = e
+                        continue
+                else:
+                    # Exhausted all keys without success
+                    raise jwt.InvalidTokenError(str(last_error) if last_error else "RS256 verification failed")
+            else:
+                payload = jwt.decode(
+                    token,
+                    self.secret_key,
+                    algorithms=[self.algorithm],
+                    options=options,
+                    **kwargs
+                )
             
             # Verify token type
             if expected_type and payload.get("type") != expected_type:
