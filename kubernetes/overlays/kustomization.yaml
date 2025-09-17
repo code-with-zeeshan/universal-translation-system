@@ -4,11 +4,22 @@ kind: Kustomization
 resources:
   - ../../kubernetes/decoder-deployment.yaml
   - ../../kubernetes/coordinator-deployment.yaml
+  - ../../kubernetes/decoder-pdb.yaml
+  - ../../kubernetes/coordinator-pdb.yaml
+  - ../../kubernetes/decoder-hpa.yaml
+  - ../../kubernetes/coordinator-hpa.yaml
+
+# Monitoring: choose exactly ONE of these by environment overlays
+# Uncomment this to use ServiceMonitor-based scraping
+#  - ../../kubernetes/monitoring-servicemonitors.yaml
+
+# Or uncomment this to use PodMonitor-based scraping
+#  - ../../kubernetes/monitoring-podmonitors.yaml
 
 images:
   - name: universal-decoder
-    newName: ghcr.io/OWNER/REPO/decoder
+    newName: ghcr.io/code-with-zeeshan/universal-translation-system/decoder
     newTag: v1.0.0 # override per-release in CI
   - name: universal-coordinator
-    newName: ghcr.io/OWNER/REPO/coordinator
+    newName: ghcr.io/code-with-zeeshan/universal-translation-system/coordinator
     newTag: v1.0.0 # override per-release in CI

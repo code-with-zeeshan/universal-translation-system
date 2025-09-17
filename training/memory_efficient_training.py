@@ -140,25 +140,84 @@ class MemoryOptimizedTrainer:
             logger.warning(f"⚠️ Could not enable channels last: {e}")
 
     def _compile_model(self):
-        """Compile model with modern torch.compile"""
+        """Compile model with modern torch.compile and auto-recommendation."""
         try:
+            # Optional: auto-recommend compile mode when set to 'auto'
+            mode = self.config.compile_mode
+            if isinstance(mode, str) and mode.lower() == 'auto':
+                mode = self._recommend_compile_mode()
+                logger.info(f"🔧 Auto-selected compile mode: {mode}")
+
+            # Allow auto-tuning of dynamic/fullgraph/backend as well when using auto logic
+            dynamic = True
+            fullgraph = False
+            backend = 'inductor' if self.config.use_inductor else 'aot_eager'
+            if isinstance(self.config.compile_mode, str) and self.config.compile_mode.lower() == 'auto':
+                dynamic, fullgraph, backend = self._recommend_compile_flags()
+
             compile_kwargs = {
-                'mode': self.config.compile_mode,
-                'dynamic': True,
-                'fullgraph': False,
-                'backend': 'inductor' if self.config.use_inductor else 'aot_eager'
+                'mode': mode,
+                'dynamic': dynamic,
+                'fullgraph': fullgraph,
+                'backend': backend,
             }
             
-            # Modern compile options
             if hasattr(torch, '_dynamo'):
                 torch._dynamo.config.suppress_errors = True
                 torch._dynamo.config.cache_size_limit = 512
                 
             self.model = torch.compile(self.model, **compile_kwargs)
-            logger.info(f"✅ Model compiled with mode: {self.config.compile_mode}")
+            logger.info(f"✅ Model compiled with mode: {mode}")
             
         except Exception as e:
             logger.warning(f"⚠️ Could not compile model: {e}")
+
+    def _recommend_compile_mode(self) -> str:
+        """Heuristic recommender for torch.compile mode.
+        - 'max-autotune' for long runs on GPUs with >= 16GB and many steps
+        - 'reduce-overhead' for smaller GPUs/CPUs or frequent recompiles
+        - 'default' as fallback
+        """
+        try:
+            gpu_ok = torch.cuda.is_available()
+            vram_gb = 0
+            if gpu_ok:
+                props = torch.cuda.get_device_properties(0)
+                vram_gb = int(props.total_memory / (1024**3))
+
+            long_run = os.environ.get('TRAIN_TOTAL_STEPS')
+            long_run = int(long_run) if long_run and long_run.isdigit() else None
+
+            if gpu_ok and vram_gb >= 16 and (long_run is None or long_run >= 5000):
+                return 'max-autotune'
+            if not gpu_ok:
+                return 'reduce-overhead'
+            # Smaller GPUs or rapid shape changes benefit from reduce-overhead
+            return 'reduce-overhead'
+        except Exception:
+            return 'default'
+
+    def _recommend_compile_flags(self) -> tuple[bool, bool, str]:
+        """Recommend (dynamic, fullgraph, backend) based on device/run size.
+        - Larger GPUs & long runs: dynamic=False, fullgraph=True, backend='inductor'
+        - CPU or small GPUs / shape-changes: dynamic=True, fullgraph=False, backend='aot_eager'
+        """
+        try:
+            gpu_ok = torch.cuda.is_available()
+            vram_gb = 0
+            if gpu_ok:
+                props = torch.cuda.get_device_properties(0)
+                vram_gb = int(props.total_memory / (1024**3))
+            long_run = os.environ.get('TRAIN_TOTAL_STEPS')
+            long_run = int(long_run) if long_run and long_run.isdigit() else None
+
+            if gpu_ok and vram_gb >= 16 and (long_run is None or long_run >= 5000):
+                return (False, True, 'inductor')
+            if not gpu_ok:
+                return (True, False, 'aot_eager')
+            return (True, False, 'inductor')
+        except Exception:
+            return (True, False, 'inductor')
     
     def _enable_nested_tensors(self):
         """Enable nested tensor support for variable length sequences with full implementation"""

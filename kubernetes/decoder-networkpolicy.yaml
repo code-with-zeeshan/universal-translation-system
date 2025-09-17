@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: decoder-restrictive
+spec:
+  podSelector:
+    matchLabels:
+      app: decoder
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: coordinator
+        - podSelector:
+            matchLabels:
+              app: ingress  # adjust label if different in your cluster
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: coordinator
+      ports:
+        - protocol: TCP
+          port: 5100
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80

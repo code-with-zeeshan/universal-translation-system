@@ -1,20 +1,21 @@
-# Developer Onboarding Guide
+# Onboarding Guide (Developers and Operators)
 
-Welcome to the Universal Translation System! This guide helps you get set up and understand the system.
+Welcome to the Universal Translation System! This guide helps both contributors and operators get set up and run the system quickly and correctly.
 
 ## Table of Contents
-1. System Overview
-2. Getting Started
-3. Development Environment Setup
-4. Key Components
-5. Common Workflows
-6. Troubleshooting
-7. Resources
+1. System Overview(#System Overview)
+2. Getting Started(#Getting Started)
+3. Development Environment Setup(#Development Environment Setup)
+4. Key Components(#Key Components)
+5. Common Workflows(#Common Workflows)
+6. Coordinator and Redis(#Coordinator and Redis)
+7. Troubleshooting(#Troubleshooting)
+8. Resources(#Resources)
 
 ## System Overview
-- **Edge (Client)**: Lightweight universal encoder (35MB base + 2–4MB vocabulary packs)
-- **Cloud**: Decoder infrastructure returns translations
-- **Coordinator**: Routes requests to least-loaded healthy decoders; shares pool via Redis with periodic mirroring to disk
+- **Edge (Client)**: Lightweight universal encoder (35MB base + 2–4MB vocabulary packs). Optional language adapters (~2MB each) can be applied for domain/language tuning.
+- **Cloud**: Optimized Universal Decoder (6-layer transformer) returns translations; supports hot-loaded adapters and runtime vocab access.
+- **Coordinator**: Routes requests to least-loaded healthy decoders; manages pool via Redis with periodic mirroring to disk; exposes metrics and admin UI.
 
 ## Getting Started
 
@@ -38,13 +39,18 @@ python -m venv venv
 # Windows: .\venv\Scripts\activate
 # Linux/macOS: source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (choose what you need)
+# Minimal base runtime for running services
+pip install -r requirements/base.txt
+# Training + serving
+pip install -r requirements/train.txt -r requirements/serve.txt
+# Service-specific extras (optional)
+pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
 # Validate setup (creates missing dirs and checks dependencies)
 python main.py --mode setup --validate-only --verbose
 
-# Run a quick translation
+# Run a quick translation (non-interactive)
 python main.py --mode translate --text "Hello world" --source-lang en --target-lang es
 
 # Optional: smoke test utilities
@@ -62,17 +68,57 @@ cp .env.example .env
 # - COORDINATOR_JWT_SECRET or COORDINATOR_JWT_SECRET_FILE
 # - COORDINATOR_TOKEN or COORDINATOR_TOKEN_FILE
 # - INTERNAL_SERVICE_TOKEN or INTERNAL_SERVICE_TOKEN_FILE
-# - (Optional) JWT_PRIVATE_KEY_FILE and JWT_PUBLIC_KEY_PATH for RS256
+# - (Optional) JWT_PUBLIC_KEY_PATH and JWT_PRIVATE_KEY_FILE for RS256
 # - HF_HUB_REPO_ID (and HF_TOKEN if private)
 # - (Optional) LOG_LEVEL=INFO (DEBUG/INFO/WARNING/ERROR)
 ```
 - Secrets can be provided via `*_FILE` envs in Docker/Kubernetes; the services read from files when present.
+- If you change `.env`, restart compose or run with `--env-file .env` to ensure updates are picked up.
 
-#### 2) Prefetch artifacts (required before starting services)
+#### Quick .env template (local development)
+```env
+DECODER_JWT_SECRET=replace-with-strong-random
+COORDINATOR_SECRET=replace-with-strong-random
+COORDINATOR_JWT_SECRET=replace-with-strong-random
+COORDINATOR_TOKEN=replace-with-strong-random
+INTERNAL_SERVICE_TOKEN=replace-with-strong-random
+REDIS_PASSWORD=replace-with-strong-random
+# Optional
+HF_HUB_REPO_ID=code-with-zeeshan/universal-translation-system
+HF_TOKEN=your-hf-token
+JWT_ISS=local
+JWT_AUD=universal-translation
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
+# RS256 (optional)
+JWT_PUBLIC_KEY_PATH=./config/jwt_public.pem
+JWT_PRIVATE_KEY_FILE=./config/jwt_private.pem
+```
+
+#### Local test tokens (non-production)
+- Generate strong secrets:
+  ```powershell
+  python -c "import secrets; print(secrets.token_urlsafe(48))"
+  ```
+- Set the generated value for: `DECODER_JWT_SECRET`, `COORDINATOR_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN`, `REDIS_PASSWORD`.
+- After editing `.env`, run compose with `--env-file .env` or restart the stack.
+
+#### RS256 key pair (optional, local testing)
+- Generate keys (PowerShell + OpenSSL installed):
+  ```powershell
+  openssl genrsa -out config/jwt_private.pem 2048
+  openssl rsa -in config/jwt_private.pem -pubout -out config/jwt_public.pem
+  ```
+- Ensure `.env` has:
+  ```env
+  JWT_PUBLIC_KEY_PATH=./config/jwt_public.pem
+  JWT_PRIVATE_KEY_FILE=./config/jwt_private.pem
+  ```
+
+#### 2) Prefetch artifacts (recommended before starting services)
 ```bash
 # Fetch production encoder, vocab packs, and adapters from your HF repo
 python tools/prefetch_artifacts.py \
-  --repo_id your-org/universal-translation-system \
+  --repo_id code-with-zeeshan/universal-translation-system \
   --packs latin cjk \
   --adapters es fr \
   --models production/encoder.onnx
@@ -80,7 +126,7 @@ python tools/prefetch_artifacts.py \
 
 #### 3) Start services
 ```bash
-docker compose up -d --build encoder decoder redis coordinator prometheus grafana
+docker compose --env-file .env up -d --build encoder decoder redis coordinator prometheus grafana
 # Encoder:     http://localhost:8000
 # Decoder:     http://localhost:8001
 # Coordinator: http://localhost:8002
@@ -93,6 +139,24 @@ docker compose up -d --build encoder decoder redis coordinator prometheus grafan
   - http://localhost:8000/health
   - http://localhost:8001/health
   - http://localhost:8002/health
+- PowerShell one-liners:
+  ```powershell
+  iwr http://localhost:8000/health -UseBasicParsing | Select-Object -ExpandProperty Content
+  iwr http://localhost:8001/health -UseBasicParsing | Select-Object -ExpandProperty Content
+  iwr http://localhost:8002/health -UseBasicParsing | Select-Object -ExpandProperty Content
+  ```
+
+### Model Artifacts & Paths
+- **Models (local)**: `./models`
+  - `models/production/decoder.pt` (default expected by decoder)
+  - `models/model_registry.json` (optional)
+- **Vocabulary (local)**: `./vocabulary` (mounted to `/app/vocabs` in containers)
+  - Contains vocabulary packs and optional `manifest.json`
+- **Docker mounts**
+  - `./models` -> `/app/models`
+  - `./vocabulary` -> `/app/vocabs`
+
+See also: `docs/DEPLOYMENT.md` (Volumes and artifacts), `docs/Vocabulary_Guide.md`, `docs/API.md`.
 
 #### GPU notes
 - Ensure NVIDIA drivers + NVIDIA Container Toolkit are installed for decoder GPU support.
@@ -103,40 +167,48 @@ docker run --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
 
 ### Training for Production
 ```bash
-# Dynamic config (recommended; auto GPU detection)
-python main.py --mode train
+# Recommended: unified launcher (single-GPU/CPU)
+python -m training.launch train --config config/base.yaml
 
-# Force N GPUs or distributed
-python main.py --mode train --gpus 2 --distributed
+# Dynamic config (no YAML)
+python -m training.launch train --config dynamic --dynamic
 
-# Use a YAML config
-python main.py --mode train --training-config config/base.yaml
+# Force distributed on multiple GPUs
+python -m training.launch train --config config/archived_gpu_configs/training_generic_multi_gpu.yaml --distributed
 
 # Evaluate a checkpoint
-python main.py --mode evaluate --checkpoint checkpoints/.../best_model.pt
+python -m training.launch evaluate --config config/base.yaml --checkpoint checkpoints/.../best_model.pt
 
-# Export for deployment
-python main.py --mode export --format onnx --output-dir models/export
-# or
-python main.py --mode export --format torchscript --output-dir models/export
+# Export for deployment (see scripts/pipeline.py for advanced export)
+python scripts/pipeline.py convert --task pytorch-to-onnx --model-path models/encoder/universal_encoder_initial.pt --output-path models/encoder/universal_encoder.onnx
 ```
 - After exporting, either copy artifacts to `models/production/` and `vocabs/`, or publish to HF Hub and use `tools/prefetch_artifacts.py` with your repo.
 
+#### Optional: Warm‑start (Bootstrap) initial weights
+```bash
+# Create bootstrapped initial encoder/decoder weights (optional)
+python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_encoder_from_pretrained('xlm-roberta-base', 'models/encoder/universal_encoder_initial.pt', 1024)"
+python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_decoder_from_mbart('facebook/mbart-large-50', 'models/decoder/universal_decoder_initial.pt')"
+```
+- If the above files exist, the launcher auto‑loads them before training:
+  - `models/encoder/universal_encoder_initial.pt`
+  - `models/decoder/universal_decoder_initial.pt`
+
 ### Production Deployment Checklist
-- Secrets: set strong values for `DECODER_JWT_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN` (K8s Secrets, vault, etc.).
-- Artifacts: publish models/vocabs/adapters to HF Hub or your store; ensure access tokens are configured.
-- GPU: GPU nodes provisioned; requests/limits set; NVIDIA runtime installed.
-- Persistence: volumes/PVCs for `models/`, `vocabs/`, Redis data.
-- Networking: TLS termination, auth on public endpoints, proper CORS.
-- Monitoring: Prometheus + Grafana dashboards and alerts.
-- Scaling: multiple decoders; coordinator using Redis pool with mirroring to `configs/decoder_pool.json`.
+- **Secrets**: set strong values for `DECODER_JWT_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN` (K8s Secrets, vault, etc.). For RS256, set `JWT_PUBLIC_KEY_PATH` and `JWT_PRIVATE_KEY_FILE`.
+- **Artifacts**: publish models/vocabulary/adapters to HF Hub or your store; ensure access tokens are configured.
+- **GPU**: GPU nodes provisioned; requests/limits set; NVIDIA runtime installed.
+- **Persistence**: volumes/PVCs for `models/`, `vocabulary/`, Redis data (match mounts in docs/DEPLOYMENT.md).
+- **Networking**: TLS termination, auth on public endpoints, proper CORS.
+- **Monitoring**: Prometheus + Grafana dashboards and alerts.
+- **Scaling**: multiple decoders; coordinator using Redis pool with mirroring to `configs/decoder_pool.json`.
 - See: `docs/DEPLOYMENT.md`, `docs/DECODER_POOL.md`, `kubernetes/*.yaml`.
 
 ### Common Pitfalls
 - Docker Compose env: do not rely on shell expansions like `$(openssl ...)` in compose; use `.env` variables (already supported).
 - GPU on Windows: prefer WSL2 + NVIDIA toolkit.
 - HF Hub: private repos require `HF_TOKEN` available to services.
-- Missing artifacts: always prefetch models/vocabs before `docker compose up` or ensure decoder fetches on boot.
+- Missing artifacts: prefetch models/vocabs before `docker compose up`, or ensure decoder fetches on boot.
 
 ## Development Environment Setup
 
@@ -145,7 +217,7 @@ python main.py --mode export --format torchscript --output-dir models/export
 python -m venv venv
 # Windows: .\venv\Scripts\activate
 # Linux/macOS: source venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements/base.txt -r requirements/train.txt -r requirements/serve.txt
 ```
 
 ### Recommended VS Code extensions
@@ -162,6 +234,20 @@ docker build -t universal-decoder -f docker/decoder.Dockerfile .
 docker run --gpus all -p 8001:8001 universal-decoder
 ```
 
+### Windows PowerShell tips
+- Use backticks for line continuations or split commands. Example (prefetch):
+  ```powershell
+  python tools/prefetch_artifacts.py `
+    --repo_id code-with-zeeshan/universal-translation-system `
+    --packs latin cjk `
+    --adapters es fr `
+    --models production/encoder.onnx
+  ```
+- When using Docker Compose, prefer:
+  ```powershell
+  docker compose --env-file .env up -d --build encoder decoder redis coordinator prometheus grafana
+  ```
+
 ## Key Components
 - `encoder/`: Python encoder (training-time)
 - `encoder_core/`: C++ encoder core (deployment)
@@ -169,7 +255,7 @@ docker run --gpus all -p 8001:8001 universal-decoder
 - `cloud_decoder/`: Server-side decoder
 - `coordinator/`: Advanced routing, health, metrics, Redis-backed pool with disk mirroring
 - `monitoring/`: Prometheus/Grafana configs and collectors
-- SDKs: `android/`, `ios/`, `flutter/universal_translation_sdk/`, `react-native/UniversalTranslationSDK/`, `web/universal-translation-sdk/`
+- **SDKs**: `android/`, `ios/`, `flutter/universal_translation_sdk/`, `react-native/UniversalTranslationSDK/`, `web/universal-translation-sdk/`
 
 ## Common Workflows
 
@@ -216,6 +302,7 @@ docker run --gpus all -p 8001:8001 universal-decoder
   ```bash
   python -m training.launch train --config config/base.yaml
   ```
+  - Example archived GPU configs: `config/archived_gpu_configs/training_generic_gpu.yaml`, `training_generic_multi_gpu.yaml`, `training_t4.yaml`, `training_a100.yaml`
 - Evaluate:
   ```bash
   python -m training.launch evaluate --config config/base.yaml --checkpoint checkpoints/.../best_model.pt

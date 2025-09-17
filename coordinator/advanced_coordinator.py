@@ -44,9 +44,10 @@ from utils.exceptions import ConfigurationError, NetworkError
 from utils.security import validate_model_source, safe_load_model
 
 # --- Configuration and Constants ---
-from utils.logging_config import setup_logging
+from utils.logging_config import setup_logging, get_logger
 setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
-logger = logging.getLogger("coordinator")
+# Use structured logger adapter to encourage structured fields usage
+logger = get_logger("coordinator", context={"component": "coordinator"})
 
 # Configuration paths
 POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join("configs", "decoder_pool.json"))
@@ -98,8 +99,48 @@ if not _rs256_available:
 try:
     validate_runtime_secrets(role="coordinator")
 except Exception as _ex:
-    logger.error(f"Coordinator secret validation failed: {_ex}")
+    logger.error(
+        "coordinator_secret_validation_failed",
+        extra={"error": str(_ex)}
+    )
     raise
+
+# Optional: prefetch artifacts on startup (useful if coordinator shares volumes)
+try:
+    from utils.artifact_store import ArtifactStore
+    store = ArtifactStore()
+    packs = os.environ.get("PREFETCH_VOCAB_GROUPS", "").split(",") if os.environ.get("PREFETCH_VOCAB_GROUPS") else []
+    adapters = os.environ.get("PREFETCH_ADAPTERS", "").split(",") if os.environ.get("PREFETCH_ADAPTERS") else []
+    models = os.environ.get("PREFETCH_MODELS", "").split(",") if os.environ.get("PREFETCH_MODELS") else []
+    for p in filter(None, [s.strip() for s in packs]):
+        try:
+            store.ensure_vocab_pack(p)
+        except Exception as e:
+            logger.warning(
+                "coordinator_prefetch_vocab_pack_failed",
+                extra={"pack": p, "error": str(e)}
+            )
+    for a in filter(None, [s.strip() for s in adapters]):
+        try:
+            store.ensure_adapter(a)
+        except Exception as e:
+            logger.warning(
+                "coordinator_prefetch_adapter_failed",
+                extra={"adapter": a, "error": str(e)}
+            )
+    for m in filter(None, [s.strip() for s in models]):
+        try:
+            store.ensure_model(m)
+        except Exception as e:
+            logger.warning(
+                "coordinator_prefetch_model_failed",
+                extra={"model": m, "error": str(e)}
+            )
+except Exception as e:
+    logger.info(
+        "coordinator_artifact_prefetch_skipped",
+        extra={"error": str(e)}
+    )
 
 # API configuration
 API_HOST = os.environ.get("API_HOST", "0.0.0.0")
@@ -118,13 +159,22 @@ ETCD_PREFIX = os.environ.get("ETCD_PREFIX", "/universal-translation/decoders/")
 try:
     MIRROR_INTERVAL_SECONDS = int(os.environ.get("COORDINATOR_MIRROR_INTERVAL", "60"))
 except ValueError:
-    logger.warning("Invalid COORDINATOR_MIRROR_INTERVAL; defaulting to 60s")
+    logger.warning(
+        "coordinator_mirror_interval_invalid",
+        extra={"raw": os.environ.get("COORDINATOR_MIRROR_INTERVAL")}
+    )
     MIRROR_INTERVAL_SECONDS = 60
 # Enforce a sensible minimum
 if MIRROR_INTERVAL_SECONDS < 5:
-    logger.warning(f"COORDINATOR_MIRROR_INTERVAL too low ({MIRROR_INTERVAL_SECONDS}s); clamping to 5s")
+    logger.warning(
+        "coordinator_mirror_interval_too_low",
+        extra={"value": MIRROR_INTERVAL_SECONDS}
+    )
     MIRROR_INTERVAL_SECONDS = 5
-logger.info(f"Coordinator mirror interval: {MIRROR_INTERVAL_SECONDS}s")
+logger.info(
+    "coordinator_mirror_interval",
+    extra={"seconds": MIRROR_INTERVAL_SECONDS}
+)
 
 # Initialize utilities
 api_key_manager = APIKeyManager()
@@ -154,6 +204,61 @@ app = FastAPI(
     description="Coordinates requests across a pool of decoder nodes."
 )
 
+# Graceful shutdown wiring
+from utils.shutdown_handler import GracefulShutdown
+_shutdown = None
+# Track background tasks and file observer for graceful shutdown
+BACKGROUND_TASKS: List[asyncio.Task] = []
+JWKS_RELOAD_TASK: Optional[asyncio.Task] = None
+FILE_OBSERVER: Optional[Observer] = None
+
+@app.on_event("startup")
+async def _install_shutdown():
+    global _shutdown
+    def _cleanup():
+        try:
+            # Cancel background tasks
+            try:
+                for t in list(BACKGROUND_TASKS):
+                    try:
+                        t.cancel()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            try:
+                if JWKS_RELOAD_TASK:
+                    try:
+                        JWKS_RELOAD_TASK.cancel()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            # Stop file observer
+            try:
+                if FILE_OBSERVER:
+                    FILE_OBSERVER.stop()
+                    FILE_OBSERVER.join(timeout=1.0)
+            except Exception:
+                pass
+            # Stop Redis health check thread
+            try:
+                rm = RedisManager.get_instance()
+                rm.stop_health_check()
+            except Exception:
+                pass
+            # Flush telemetry if supported
+            try:
+                provider = trace.get_tracer_provider()
+                shutdown = getattr(provider, "shutdown", None)
+                if callable(shutdown):
+                    shutdown()
+            except Exception:
+                pass
+        except Exception:
+            pass
+    _shutdown = GracefulShutdown(_cleanup)
+
 # Runtime policy: enforce declared API version and supported vocab format
 @app.on_event("startup")
 async def _startup_api_policy():
@@ -178,7 +283,10 @@ async def _startup_api_policy():
                     f"Unsupported vocabulary format {data.get('format_version')} (supported major: {SUPPORTED_VOCAB_FORMAT})"
                 )
     except Exception as ex:
-        logger.error(f"Startup policy check failed: {ex}")
+        logger.error(
+            "startup_policy_check_failed",
+            extra={"error": str(ex)}
+        )
         raise
 
 # JWT validation settings
@@ -203,10 +311,11 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
                 rm = RedisManager.get_instance()
                 client = rm.get_client()
                 if client and client.sismember("revoked_jti", jti):
-                    raise HTTPException(status_code=401, detail="Token revoked")
+                    # Standardize error details
+                    raise HTTPException(status_code=401, detail="Invalid token")
             except Exception:
                 pass
-        if JWT_PUBLIC_KEY:
+        if JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH:
             # Parse token header to pick appropriate key by 'kid' if present
             unverified_header = jwt.get_unverified_header(token)
             kid = unverified_header.get("kid")
@@ -222,8 +331,9 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
                         break
             if key_to_use is None:
                 # Fallback to the first provided PEM if JWKS missing or no kid match
+                pem_source = (os.environ.get("JWT_PUBLIC_KEY") or "").split("||")[0]
                 key_to_use = serialization.load_pem_public_key(
-                    (os.environ.get("JWT_PUBLIC_KEY") or "").split("||")[0].encode("utf-8"),
+                    pem_source.encode("utf-8"),
                     backend=default_backend(),
                 )
             jwt.decode(
@@ -326,10 +436,7 @@ requests_errors = Counter('coordinator_requests_errors', 'Total errors', ['endpo
 decoder_active = Gauge('coordinator_decoder_active', 'Active decoders')
 decoder_load = Gauge('coordinator_decoder_load', 'Current load per decoder', ['node_id'])
 
-# Health endpoint (no sensitive info)
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+
 
 # --- Live Config Reloading ---
 # Use a thread-safe event to signal a reload request from the watchdog thread to the main async loop
@@ -899,32 +1006,17 @@ pool = DecoderPool()
 bearer_scheme = HTTPBearer()
 
 def get_current_user(token: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
-    """Dependency for JWT-based API authentication."""
+    """Dependency for JWT-based API authentication. Reuses central validator to avoid duplication."""
     try:
-        if JWT_PUBLIC_KEY:
-            jwt.decode(
-                token.credentials,
-                JWT_PUBLIC_KEY,
-                algorithms=["RS256"],
-                options={"require": ["exp", "iat", "nbf"]},
-                issuer=JWT_ISS,
-                audience=JWT_AUD,
-            )
-        else:
-            jwt.decode(
-                token.credentials,
-                JWT_SECRET,
-                algorithms=["HS256"],
-                options={"require": ["exp", "iat", "nbf"]},
-                issuer=JWT_ISS,
-                audience=JWT_AUD,
-            )
-    except jwt.PyJWTError:
+        # Reuse the central JWT validator (includes revocation check)
+        require_jwt(token)
+    except HTTPException:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return True
 
 def get_session(request: Request) -> bool:
     """Dependency to check for a valid session cookie for the dashboard."""
@@ -989,8 +1081,9 @@ async def startup_event():
     else:
         logger.warning("JWT public keys provided but no valid RSA keys parsed for JWKS")
 
-    # Start the background tasks
-    asyncio.create_task(background_tasks())
+    # Start the background tasks and keep references for shutdown
+    task = asyncio.create_task(background_tasks())
+    BACKGROUND_TASKS.append(task)
 
     # Background job to periodically reload JWT_PUBLIC_KEY/JWT_PUBLIC_KEY_PATH for rotation without restart
     async def jwks_reload_loop():
@@ -1010,15 +1103,17 @@ async def startup_event():
                 logger.debug(f"JWKS reload loop error: {ex}")
             await asyncio.sleep(300)  # reload every 5 minutes
 
-    asyncio.create_task(jwks_reload_loop())
+    global JWKS_RELOAD_TASK
+    JWKS_RELOAD_TASK = asyncio.create_task(jwks_reload_loop())
 
     # Start the watchdog observer to monitor the config file
-    observer = Observer()
+    global FILE_OBSERVER
+    FILE_OBSERVER = Observer()
     pool_dir = os.path.dirname(POOL_PATH)
     if not os.path.exists(pool_dir):
         os.makedirs(pool_dir)
-    observer.schedule(PoolReloadHandler(), pool_dir, recursive=False)
-    observer.start()
+    FILE_OBSERVER.schedule(PoolReloadHandler(), pool_dir, recursive=False)
+    FILE_OBSERVER.start()
     logger.info(f"Started watching {pool_dir} for configuration changes.")    
 
 # --- API Endpoints ---
@@ -1167,7 +1262,8 @@ async def handle_zero_shot_request(request: Request, source_lang: str, target_la
         headers = {
             'Content-Type': request.headers['Content-Type'], 
             # IMPORTANT: We tell the decoder to use the composed adapter
-            'X-Target-Language': composed_adapter_name,
+            'X-Target-Language': target_lang,
+            'X-Adapter-Override': composed_adapter_name,
             'X-Domain': domain or ''
         }
         async with httpx.AsyncClient() as client:
@@ -1291,16 +1387,84 @@ async def jwks():
     # Public discovery of RS256 keys for verifiers
     return JSONResponse({"keys": JWKS_KEYS})
 
-# --- Metrics Endpoint ---
-@app.get("/metrics")
+# --- Probe & Metrics Routers ---
+probe_router = APIRouter(tags=["Probes"])
+metrics_router = APIRouter(tags=["Metrics"]) 
+
+@metrics_router.get("/metrics")
 async def metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Prometheus metrics endpoint (protected)."""
     require_jwt(credentials)
     return Response(generate_latest(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
+@probe_router.get("/health")
+async def health():
+    """Liveness probe with build/version info."""
+    try:
+        from pathlib import Path
+        import json
+        vc = json.loads(Path('version-config.json').read_text(encoding='utf-8'))
+        core = vc.get('core', {})
+        version = core.get('version')
+        api_version = core.get('apiVersion')
+    except Exception:
+        version, api_version = None, None
+    return {"status": "ok", "version": version, "apiVersion": api_version}
+
+@probe_router.get("/ready")
+async def ready():
+    """Readiness probe: RS256 JWKS availability when configured + pool state."""
+    from utils.service_health import load_version_info, jwks_readiness, build_ready_payload
+    version = load_version_info()
+
+    # JWKS required when RS256 configured via JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH
+    jwks_ok = jwks_readiness(env=os.environ, jwks_keys=JWKS_KEYS)
+
+    # Decoder pool state (informational)
+    try:
+        total_nodes = len(pool.nodes)
+        healthy_nodes = len(pool.get_healthy_decoders())
+    except Exception:
+        total_nodes = healthy_nodes = 0
+
+    # Optional downstream readiness
+    redis_ok = True
+    etcd_ok = True
+    try:
+        # Redis check only if configured/available
+        try:
+            rm = RedisManager.get_instance()
+            client = rm.get_client()
+            if client:
+                redis_ok = bool(client.ping())
+        except Exception:
+            # If not configured or error, leave as True (optional)
+            redis_ok = True
+        # etcd check if USE_ETCD enabled
+        if USE_ETCD:
+            try:
+                etcd = etcd3.client(host=ETCD_HOST, port=ETCD_PORT)
+                _ = etcd.status()
+                etcd_ok = True
+            except Exception:
+                etcd_ok = False
+    except Exception:
+        pass
+
+    checks = {
+        "jwks": jwks_ok,
+        "pool": {"total": total_nodes, "healthy": healthy_nodes},
+        "redis": redis_ok,
+        "etcd": etcd_ok,
+    }
+    payload = build_ready_payload(component="coordinator", version=version, checks=checks)
+    return JSONResponse(content=payload, status_code=200 if payload["ready"] else 503)
+
 # --- Include Routers ---
 app.include_router(api_router)
 app.include_router(admin_router)
+app.include_router(probe_router)
+app.include_router(metrics_router)
 
 # --- Main Entry Point ---
 if __name__ == "__main__":

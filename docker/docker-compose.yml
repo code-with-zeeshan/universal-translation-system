@@ -44,13 +44,28 @@ services:
       context: ..
       dockerfile: docker/decoder.Dockerfile
     volumes:
-      - ../cloud_decoder:/app
-      - ../models/decoder:/models/decoder
-      - ../vocabulary:/vocabulary
+      - ../models/decoder:/models/decoder:ro
+      - ../vocabulary:/vocabulary:ro
+      - ../logs:/app/logs
+      - decoder_cache:/app/.cache
     container_name: decoder_service
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 16g
+        reservations:
+          cpus: '2'
+          memory: 8g
+    gpus: all
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
     ports:
-      - "8080:8080"  # Adjust as needed for your API
+      - "8001:8001"
     secrets:
       - decoder_jwt_secret
       - jwt_private_key
@@ -60,6 +75,20 @@ services:
       # RS256 support (optional)
       JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key
       JWT_PUBLIC_KEY_PATH: /run/secrets/jwt_public_key
+      API_PORT: 8001
+      OMP_NUM_THREADS: 4
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  decoder_cache:
+  # existing secrets section remains below
 
 secrets:
   decoder_jwt_secret:

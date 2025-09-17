@@ -165,9 +165,12 @@ flowchart LR
 ### 1) SDKs and Edge Encoder
 - **Platforms:** Android, iOS, Flutter, React Native, Web (WASM optional).
 - **Encoder Core:** C++ implementation for native platforms with FFI bindings; TypeScript + WASM for the web.
+- **Encoder Architecture:** UniversalEncoder (PyTorch) with RotaryEmbedding (RoPE) and SwiGLU‑based custom transformer layers; hidden size 1024 by default; exposes adapter hooks.
+- **Adapters:** LanguageAdapter (1024→64→1024 with GELU + LayerNorm). AdapterUniversalEncoder manages loading/saving adapters, edge quantization, and composition.
 - **Vocabulary System:**
   - Packs of 2–4MB per language (Latin ~3MB, CJK ~4MB, etc.).
   - Dynamic download on demand; cached locally with versioning; LRU for memory efficiency.
+  - UnifiedVocabularyManager maps `language_to_pack_mapping` under `vocabulary.vocab_dir`.
 - **Output Payload:** Embeddings serialized via MsgPack and compressed with LZ4 to minimize bandwidth.
 - **Fallbacks:** SDKs can fall back to cloud‑only encoding if local edge encoding is unavailable.
 
@@ -181,7 +184,9 @@ flowchart LR
 
 ### 3) Decoder Nodes (Data Plane)
 - **Serving:** Litserve (faster than FastAPI for high‑throughput ML inference) hosting PyTorch models.
+- **Runtime Model:** AdapterUniversalEncoder is instantiated server‑side; language adapters are hot‑loaded (LRU) and can be composed on demand via internal endpoints.
 - **Model Architecture:** 6‑layer transformer with cross‑attention; supports dynamic adapter loading per language/domain.
+- **Vocabulary:** Runtime access to vocabulary packs; uses `vocabulary/` path in containers (`/app/vocabs`).
 - **GPU Acceleration:** Targets GPUs like T4, 3090, V100, A100; memory‑optimized for multi‑concurrency.
 - **Health & Metrics:** Each node publishes `/health` and `/metrics` endpoints; autoscaling driven via metrics in K8s.
 
@@ -247,8 +252,8 @@ flowchart LR
 
 ## Ports & Endpoints
 
-- **Decoder Node (default):** Port `8000` — `/decode`, `/health`, `/metrics`. 
-- **Coordinator (default):** Port `5100` — `/decode`, `/health`, `/metrics` (+ admin endpoints). 
+- **Decoder Node (default):** Port `8001` — `/decode`, `/health`, `/metrics`. 
+- **Coordinator (default):** Port `8002` — `/api/decode`, `/api/status`, `/metrics` (+ admin endpoints). 
 - **Observability:** Prometheus scrapes `/metrics`; Grafana reads from Prometheus; OTEL collector ingests traces.
 
 ---

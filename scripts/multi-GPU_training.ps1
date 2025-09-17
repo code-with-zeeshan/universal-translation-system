@@ -32,8 +32,8 @@ if (-not $torchrun) {
     exit 1
 }
 
-# Use absolute path to repo to avoid cd chaining
-$repoRoot = "c:\Users\DELL\universal-translation-system"
+# Use script directory as repo root to avoid hardcoded paths
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
 # Run distributed training
 & torchrun --nproc_per_node $NumGpus --master_port 29500 -m training.launch train --distributed --config "$repoRoot\config\archived_gpu_configs\training_generic_multi_gpu.yaml"

@@ -120,7 +120,7 @@ training:
   cpu_offload: false
   activation_offload: false
   compile_model: true
-  compile_mode: "reduce-overhead"
+  compile_mode: "auto"
   flash_attention: true
   use_fp8: false
   max_split_size: 512

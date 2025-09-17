@@ -11,7 +11,12 @@ source venv/bin/activate
 
 # 2. Upgrade pip and install core requirements
 pip install --upgrade pip
-pip install -r requirements.txt
+# Base runtime
+pip install -r requirements/base.txt
+# Training + serving
+pip install -r requirements/train.txt -r requirements/serve.txt
+# Optional service-specific extras
+# pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
 # 3. Install additional system dependencies (if needed)
 # For Ubuntu/Debian:

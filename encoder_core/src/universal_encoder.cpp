@@ -105,19 +105,22 @@ std::vector<int32_t> UniversalEncoder::tokenize(const std::string& text, const s
     // Add language token
     std::string lang_token = "<" + source_lang + ">";
     tokens.push_back(current_vocab->getTokenId(lang_token));
-    // Production: Use SentencePiece or similar tokenizer
-    // TODO: Integrate SentencePiece tokenizer here
-    // Example placeholder:
-    // std::vector<std::string> sp_tokens = sentencepiece_tokenizer.Encode(text);
-    // for (const auto& tok : sp_tokens) {
-    //     tokens.push_back(current_vocab->getTokenId(tok));
-    // }
-    // For now, fallback to whitespace tokenization
+    // Tokenization: prefer vocab-guided subword segmentation
+    // If a whole-word token exists, use it; otherwise, fall back to BPE-style
+    // subword tokenization implemented in VocabularyPack::tokenizeUnknown.
     std::istringstream iss(text);
     std::string word;
     while (iss >> word) {
         std::transform(word.begin(), word.end(), word.begin(), ::tolower);
-        tokens.push_back(current_vocab->getTokenId(word));
+        int32_t id = current_vocab->getTokenId(word);
+        int32_t unk_id = current_vocab->special_tokens.count("<unk>") ? current_vocab->special_tokens.at("<unk>") : 1;
+        if (id != unk_id) {
+            tokens.push_back(id);
+        } else {
+            // Use subword tokenizer provided by the vocabulary pack
+            auto sub_ids = current_vocab->tokenizeUnknown(word);
+            tokens.insert(tokens.end(), sub_ids.begin(), sub_ids.end());
+        }
     }
     // Add EOS token
     tokens.push_back(current_vocab->getTokenId("</s>"));

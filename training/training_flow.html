@@ -487,7 +487,7 @@
             </div>
             <h1>Universal Translation Training Flow</h1>
             <p class="subtitle">
-                A comprehensive training pipeline orchestrated by <code class="code">ModernUniversalSystemTrainer</code>, 
+                A comprehensive training pipeline orchestrated by <code class="code">training/intelligent_trainer.py</code>, 
                 from pretrained bootstrapping to production-ready quantized models.
             </p>
         </header>
@@ -550,7 +550,7 @@
                             <span class="section-icon">🔄</span>
                             <div>
                                 <div class="section-title">Pretrained Sources</div>
-                                <div class="section-subtitle">bootstrap_from_pretrained.py</div>
+                                <div class="section-subtitle">training/bootstrap_from_pretrained.py
                             </div>
                         </div>
                         <div class="data-list">
@@ -592,7 +592,7 @@
                             <span class="section-icon">📈</span>
                             <div>
                                 <div class="section-title">Language Tiers</div>
-                                <div class="section-subtitle">progressive_training.py</div>
+                                <div class="section-subtitle">training/progressive_training.py
                             </div>
                         </div>
                         <div class="tier-grid">
@@ -627,7 +627,7 @@
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item highlight">Language-specific adapters</div>
+                            <div class="data-item highlight">Language-specific adapters (encoder/train_adapters.py)</div>
                             <div class="data-item highlight">Cumulative knowledge retention</div>
                             <div class="data-item"><code class="code">tier1_epoch_10.pt</code></div>
                             <div class="data-item"><code class="code">tier2_epoch_8.pt</code></div>
@@ -650,7 +650,7 @@
                             <span class="section-icon">🌐</span>
                             <div>
                                 <div class="section-title">Distributed Features</div>
-                                <div class="section-subtitle">UnifiedDistributedTrainer</div>
+                                <div class="section-subtitle">training/intelligent_trainer.py (FSDP utilities)
                             </div>
                         </div>
                         <div class="data-list">
@@ -694,7 +694,7 @@
                             <span class="section-icon">💾</span>
                             <div>
                                 <div class="section-title">Memory Optimizations</div>
-                                <div class="section-subtitle">memory_efficient_training.py</div>
+                                <div class="section-subtitle">training/memory_efficient_training.py
                             </div>
                         </div>
                         <div class="data-list">
@@ -782,7 +782,7 @@
                             <span class="section-icon">🔄</span>
                             <div>
                                 <div class="section-title">Export Formats</div>
-                                <div class="section-subtitle">convert_models.py</div>
+                                <div class="section-subtitle">training/convert_models.py
                             </div>
                         </div>
                         <div class="data-list">
@@ -840,6 +840,45 @@
                 distributed training at scale, and quality-preserving quantization, the pipeline ensures optimal performance 
                 across all deployment scenarios. The system leverages modern PyTorch features including torch.compile, 
                 Flash Attention, FSDP, and mixed precision training to achieve production-ready models with minimal resources.
+            </p>
+        </section>
+
+        <section class="summary" style="margin-top: 24px;">
+            <h2>How to Run</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-label">1. Bootstrap</div>
+                    <div class="summary-value">
+                        <code class="code">python training/bootstrap_from_pretrained.py --config configs/decoder_pool.json</code>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">2. Progressive Train</div>
+                    <div class="summary-value">
+                        <code class="code">python training/progressive_training.py --config configs/decoder_pool.json</code>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">3. Memory-Efficient</div>
+                    <div class="summary-value">
+                        <code class="code">python training/memory_efficient_training.py --config configs/decoder_pool.json</code>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">4. Train Adapters</div>
+                    <div class="summary-value">
+                        <code class="code">python encoder/train_adapters.py --config configs/decoder_pool.json --lang es</code>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">5. Convert/Export</div>
+                    <div class="summary-value">
+                        <code class="code">python training/convert_models.py --input checkpoints/best.pt --format onnx</code>
+                    </div>
+                </div>
+            </div>
+            <p class="summary-description">
+                For a one-stop solution that adapts to your hardware, use <code class="code">training/intelligent_trainer.py</code>.
             </p>
         </section>
     </div>

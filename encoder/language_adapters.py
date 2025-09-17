@@ -201,24 +201,36 @@ class AdapterUniversalEncoder(nn.Module):
             adapter_size_mb = (adapter_params * 4) / (1024 * 1024)
             logger.info(f"✅ Saved {lang} adapter: {adapter_size_mb:.2f}MB")
 
-    def compose_adapters(self, source_adapter_name: str, target_adapter_name: str, composition_strategy: str = 'average') -> str:
+    def compose_adapters(
+        self,
+        source_adapter_name: str,
+        target_adapter_name: str,
+        composition_strategy: str = 'average',
+        **kwargs
+    ) -> str:
         """
-        Creates a temporary, composed adapter for zero-shot translation.
+        Create a composed adapter from two existing adapters using various strategies.
 
-        Args:
-            source_adapter_name: The adapter for the source language (e.g., 'es').
-            target_adapter_name: The adapter for the target language (e.g., 'de').
-            composition_strategy: The method to use for composition.
+        Supported strategies and kwargs:
+        - 'average': no kwargs
+        - 'weighted': weights: List[float] of length 2
+        - 'task_vector_add': base_adapter_name: str
+        - 'task_vector_subtract': base_adapter_name: str
+        - 'fisher': fisher_weights: List[Dict[str, Tensor]] for each adapter
+        - 'regmean': lambda_reg: float
+        - 'ties': threshold: float = 0.1, density: Optional[float] = None
+        - 'dare': drop_rate: float = 0.5, rescale: bool = True
+        - 'magnitude_pruning': sparsity: float = 0.5
+        - 'linear_combination': coefficients: List[float] of length 2
 
-        Returns:
-            The name of the newly created temporary adapter (e.g., 'es->de_composed').
+        Returns the name of the composed adapter.
         """
         if source_adapter_name not in self.language_adapters or \
            target_adapter_name not in self.language_adapters:
             raise ValueError("Both source and target adapters must be loaded before composition.")
 
-        composed_name = f"{source_adapter_name}->{target_adapter_name}_composed"
-        
+        composed_name = f"{source_adapter_name}->{target_adapter_name}_composed:{composition_strategy}"
+
         # Avoid re-creating if it already exists
         if composed_name in self.language_adapters:
             return composed_name
@@ -226,18 +238,110 @@ class AdapterUniversalEncoder(nn.Module):
         source_adapter = self.language_adapters[source_adapter_name]
         target_adapter = self.language_adapters[target_adapter_name]
 
+        # Dispatch to strategy
         if composition_strategy == 'average':
-            # For a pivot-based approach (Source -> English -> Target), we might
-            # conceptually "subtract" the source and "add" the target.
-            # A simple average is a good starting point.
             composed_state_dict = AdapterComposition.average_weights([source_adapter, target_adapter])
+        elif composition_strategy == 'weighted':
+            weights = kwargs.get('weights')
+            if not weights or len(weights) != 2:
+                raise ValueError("'weighted' strategy requires weights=[w1, w2]")
+            composed_state_dict = AdapterComposition.weighted_average([source_adapter, target_adapter], weights)
+        elif composition_strategy in ('task_vector_add', 'task_vector_subtract'):
+            base_name = kwargs.get('base_adapter_name')
+            if not base_name or base_name not in self.language_adapters:
+                raise ValueError("Provide valid base_adapter_name for task vector strategy")
+            op = 'add' if composition_strategy == 'task_vector_add' else 'subtract'
+            base = self.language_adapters[base_name]
+            # Add target task vector and subtract source (or vice versa) depending on use-case
+            composed_state_dict = AdapterComposition.task_vector_arithmetic(
+                base_adapter=base,
+                task_adapters=[source_adapter, target_adapter],
+                scaling_factors=kwargs.get('scaling_factors', [1.0, 1.0]),
+                operation=op
+            )
+        elif composition_strategy == 'fisher':
+            fisher_weights = kwargs.get('fisher_weights')
+            if not fisher_weights or len(fisher_weights) != 2:
+                raise ValueError("'fisher' strategy requires fisher_weights for each adapter")
+            composed_state_dict = AdapterComposition.fisher_weighted_average(
+                [source_adapter, target_adapter], fisher_weights
+            )
+        elif composition_strategy == 'regmean':
+            lambda_reg = float(kwargs.get('lambda_reg', 0.1))
+            composed_state_dict = AdapterComposition.regmean([source_adapter, target_adapter], lambda_reg)
+        elif composition_strategy == 'ties':
+            threshold = float(kwargs.get('threshold', 0.1))
+            density = kwargs.get('density', None)
+            composed_state_dict = AdapterComposition.ties_merging([source_adapter, target_adapter], threshold, density)
+        elif composition_strategy == 'dare':
+            drop_rate = float(kwargs.get('drop_rate', 0.5))
+            rescale = bool(kwargs.get('rescale', True))
+            composed_state_dict = AdapterComposition.dare_merging([source_adapter, target_adapter], drop_rate, rescale)
+        elif composition_strategy == 'magnitude_pruning':
+            sparsity = float(kwargs.get('sparsity', 0.5))
+            composed_state_dict = AdapterComposition.magnitude_pruning_merge([source_adapter, target_adapter], sparsity)
+        elif composition_strategy == 'linear_combination':
+            coefficients = kwargs.get('coefficients')
+            if not coefficients or len(coefficients) != 2:
+                raise ValueError("'linear_combination' requires coefficients=[c1, c2]")
+            composed_state_dict = AdapterComposition.linear_combination([source_adapter, target_adapter], coefficients)
         else:
             raise NotImplementedError(f"Composition strategy '{composition_strategy}' not implemented.")
 
         # Create a new adapter and load the composed weights
         self.add_language_adapter(composed_name)
         self.language_adapters[composed_name].load_state_dict(composed_state_dict)
-        
-        logger.info(f"Created composed adapter '{composed_name}' using '{composition_strategy}' strategy.")
-        
+
+        logger.info(
+            f"Created composed adapter '{composed_name}' using '{composition_strategy}' strategy."
+        )
+        return composed_name
+
+    def compose_multiple_adapters(
+        self,
+        adapter_names: List[str],
+        composition_strategy: str = 'average',
+        composed_name: Optional[str] = None,
+        **kwargs
+    ) -> str:
+        """
+        Compose an arbitrary list of adapters. See compose_adapters for strategies/kwargs.
+        """
+        if not adapter_names or len(adapter_names) < 2:
+            raise ValueError("Provide at least two adapter_names to compose.")
+        missing = [n for n in adapter_names if n not in self.language_adapters]
+        if missing:
+            raise ValueError(f"Adapters not loaded: {missing}")
+
+        modules = [self.language_adapters[n] for n in adapter_names]
+        composed_name = composed_name or f"{'+' .join(adapter_names)}_composed:{composition_strategy}"
+        if composed_name in self.language_adapters:
+            return composed_name
+
+        if composition_strategy == 'average':
+            state = AdapterComposition.average_weights(modules)
+        elif composition_strategy == 'weighted':
+            weights = kwargs.get('weights')
+            if not weights or len(weights) != len(modules):
+                raise ValueError("'weighted' requires weights matching adapter count")
+            state = AdapterComposition.weighted_average(modules, weights)
+        elif composition_strategy == 'regmean':
+            state = AdapterComposition.regmean(modules, float(kwargs.get('lambda_reg', 0.1)))
+        elif composition_strategy == 'ties':
+            state = AdapterComposition.ties_merging(modules, float(kwargs.get('threshold', 0.1)), kwargs.get('density'))
+        elif composition_strategy == 'dare':
+            state = AdapterComposition.dare_merging(modules, float(kwargs.get('drop_rate', 0.5)), bool(kwargs.get('rescale', True)))
+        elif composition_strategy == 'magnitude_pruning':
+            state = AdapterComposition.magnitude_pruning_merge(modules, float(kwargs.get('sparsity', 0.5)))
+        elif composition_strategy == 'linear_combination':
+            coeffs = kwargs.get('coefficients')
+            if not coeffs or len(coeffs) != len(modules):
+                raise ValueError("'linear_combination' requires coefficients matching adapter count")
+            state = AdapterComposition.linear_combination(modules, coeffs)
+        else:
+            raise NotImplementedError(f"Composition strategy '{composition_strategy}' not implemented for multiple adapters.")
+
+        self.add_language_adapter(composed_name)
+        self.language_adapters[composed_name].load_state_dict(state)
+        logger.info(f"Created composed adapter '{composed_name}' using '{composition_strategy}' strategy from {adapter_names}.")
         return composed_name

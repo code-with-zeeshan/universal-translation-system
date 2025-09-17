@@ -17,8 +17,11 @@
 **Symptoms**: Import errors, module not found errors
 **Solution**: 
 ```bash
-# Install all dependencies
-pip install -r requirements.txt
+# Install all dependencies (modular)
+# Base runtime + training + serving (adjust as needed)
+pip install -r requirements/base.txt -r requirements/train.txt -r requirements/serve.txt
+# Optional: decoder-specific and coordinator-specific extras
+pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
 # Check for missing dependencies
 python scripts/check_dependencies.py
@@ -177,7 +180,8 @@ pack = manager.get_vocab_for_pair(source_lang='en', target_lang='fr')
 2. Check for corruption in vocabulary files
 3. Regenerate vocabulary:
 ```bash
-python vocabulary/create_vocabulary.py --lang <language_code> --data <path_to_data>
+# Use the unified creator (programmatic usage recommended)
+python vocabulary/unified_vocabulary_creator.py  # See earlier example for Python usage
 ```
 
 ## Performance Issues

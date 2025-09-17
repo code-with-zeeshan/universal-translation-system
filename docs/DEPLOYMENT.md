@@ -16,7 +16,7 @@ This guide covers local (Docker Compose) and Kubernetes deployment for the Unive
 # Optional: create .env and set secrets (JWTs, tokens) before running
 
 # Build and start encoder, decoder, redis, coordinator, prometheus, grafana
-docker compose up -d --build encoder decoder redis coordinator prometheus grafana
+docker compose --env-file .env up -d --build encoder decoder redis coordinator prometheus grafana
 
 # View logs for a service
 docker compose logs -f decoder
@@ -48,9 +48,14 @@ See `docs/environment-variables.md` and `.env.example`.
 
 ### Volumes and artifacts
 - **Models**: `./models` mounted to `/app/models`
+  - Expected default: `/app/models/production/decoder.pt`
+  - Optional registry: `/app/models/model_registry.json`
 - **Vocabulary**: `./vocabulary` mounted to `/app/vocabs`
   - If you previously used `./vocabs`, either rename to `vocabulary` or update mounts consistently.
+  - Contents: vocabulary packs; optional `manifest.json`
 - Ensure directories exist locally before starting containers.
+
+See also: `docs/ONBOARDING.md` (Model Artifacts & Paths) and `docs/Vocabulary_Guide.md` (runtime config for packs).
 
 ### GPU notes
 - The `decoder` service requests one NVIDIA GPU and sets `CUDA_VISIBLE_DEVICES=0`.

@@ -21,7 +21,14 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 # Default settings
-DEFAULT_ALGORITHM = "HS256"
+import os
+# Prefer RS256 when public key config is present or explicitly requested
+_default_alg = "HS256"
+if os.getenv("UTS_JWT_DEFAULT_ALG"):
+    _default_alg = os.getenv("UTS_JWT_DEFAULT_ALG")
+elif os.getenv("JWT_PUBLIC_KEY") or os.getenv("JWT_PUBLIC_KEY_PATH"):
+    _default_alg = "RS256"
+DEFAULT_ALGORITHM = _default_alg
 DEFAULT_EXPIRATION = 30 * 60  # 30 minutes
 DEFAULT_REFRESH_EXPIRATION = 7 * 24 * 60 * 60  # 7 days
 
@@ -44,28 +51,49 @@ class JWTAuth:
         Initialize JWT authentication manager.
         
         Args:
-            secret_key: Secret key for signing tokens
+            secret_key: Secret or private key (PEM) for signing tokens (HS256 or RS256)
             algorithm: JWT algorithm
             token_expiration: Token expiration time in seconds
             refresh_expiration: Refresh token expiration time in seconds
             audience: Expected audience for tokens
             issuer: Expected issuer for tokens
         """
-        # Prefer explicit argument, then unified credential keys
-        self.secret_key = secret_key or get_credential("jwt_secret") or \
-                          get_credential("coordinator_jwt_secret") or \
-                          get_credential("decoder_jwt_secret")
-        if not self.secret_key:
-            raise AuthenticationError("JWT secret key not configured (tried jwt_secret/coordinator_jwt_secret/decoder_jwt_secret)")
-            
+        # Resolve algorithm and credentials
         self.algorithm = algorithm
         self.token_expiration = token_expiration
         self.refresh_expiration = refresh_expiration
         self.audience = audience
         self.issuer = issuer
         
+        # Signing key (HS256 secret or RS256 private key) if present
+        self.secret_key = secret_key or get_credential("jwt_secret") or \
+                          get_credential("coordinator_jwt_secret") or \
+                          get_credential("decoder_jwt_secret")
+        
+        # For RS256 verification-only mode, allow loading public keys from env without secret
+        self.public_keys: List[str] = []
+        if self.algorithm.startswith("RS"):
+            pems: List[str] = []
+            pk_env = os.getenv("JWT_PUBLIC_KEY") or ""
+            if pk_env:
+                pems.extend([p for p in pk_env.split("||") if p.strip()])
+            pk_paths = os.getenv("JWT_PUBLIC_KEY_PATH") or ""
+            for path in [p for p in pk_paths.split("||") if p.strip()]:
+                try:
+                    with open(path, "rb") as f:
+                        pems.append(f.read().decode("utf-8"))
+                except Exception:
+                    continue
+            self.public_keys = pems
+        
+        if not self.secret_key and not getattr(self, "public_keys", []):
+            raise AuthenticationError(
+                "JWT keys not configured: provide HS secret (jwt_secret/coordinator_jwt_secret/decoder_jwt_secret) "
+                "or RS public key(s) via JWT_PUBLIC_KEY/JWT_PUBLIC_KEY_PATH"
+            )
+        
         logger.debug(
-            f"Initialized JWT auth with algorithm={algorithm}, "
+            f"Initialized JWT auth with algorithm={self.algorithm}, "
             f"expiration={token_expiration}s"
         )
         

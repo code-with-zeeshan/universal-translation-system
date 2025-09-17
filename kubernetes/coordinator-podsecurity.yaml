@@ -1,0 +1,57 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: coordinator-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: coordinator
+---
+apiVersion: policy/v1
+kind: PodSecurityPolicy
+metadata:
+  name: coordinator-psp
+  annotations:
+    seccomp.security.alpha.kubernetes.io/allowedProfileNames: 'runtime/default'
+    apparmor.security.beta.kubernetes.io/allowedProfileNames: 'runtime/default'
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  seLinux:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 10001
+        max: 10001
+  supplementalGroups:
+    rule: 'MustRunAs'
+    ranges:
+      - min: 10001
+        max: 10001
+  volumes:
+    - 'configMap'
+    - 'secret'
+    - 'emptyDir'
+  hostNetwork: false
+  hostPID: false
+  hostIPC: false
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: coordinator-limits
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "250m"
+        memory: "256Mi"

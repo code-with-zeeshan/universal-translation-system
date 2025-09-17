@@ -47,7 +47,7 @@ Use the consolidated launcher with subcommands.
   python -m training.launch train --config dynamic --dynamic
   ```
 
-- Archived GPU configs (hardware-aware presets):
+- Hardware-aware presets:
   ```bash
   # Examples
   python -m training.launch train --config config/archived_gpu_configs/training_generic_gpu.yaml
@@ -78,6 +78,11 @@ Use the consolidated launcher with subcommands.
     --config config/training_generic_multi_gpu.yaml \
     --distributed \
     --experiment-name exp_multi
+  ```
+
+- Evaluation:
+  ```bash
+  python -m training.launch evaluate --config config/base.yaml --checkpoint checkpoints/exp_generic_gpu/best_model.pt
   ```
   - Uses PyTorch distributed with `nccl` backend by default when CUDA is available.
 
@@ -127,22 +132,32 @@ python -m training.launch profile \
 ## 7. Bootstrapping From Pretrained (Optional)
 Create initial encoder/decoder weights from pretrained models to warm-start training:
 ```bash
-python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; \
-b=B(); b.create_encoder_from_pretrained('xlm-roberta-base', 'models/encoder/universal_encoder_initial.pt', 1024)"
+python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_encoder_from_pretrained('xlm-roberta-base', 'models/encoder/universal_encoder_initial.pt', 1024)"
+python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_decoder_from_mbart('facebook/mbart-large-50', 'models/decoder/universal_decoder_initial.pt')"
 ```
-- This produces `models/encoder/universal_encoder_initial.pt` (and similar for decoder if used).
-- The launcher will automatically load these if present.
+- Produces:
+  - `models/encoder/universal_encoder_initial.pt`
+  - `models/decoder/universal_decoder_initial.pt`
+- The training launcher automatically loads these if present (see `training/launch.py:initialize_models`).
 
 ## 8. Quantization and Export (Post-Training)
-Produce deployment-friendly variants (INT8, FP16, mixed):
+Produce deployment-friendly variants (INT8, FP16, mixed) and optional ONNX/CoreML/TFLite conversions.
+
+- Quantize encoder (A/B tested):
 ```bash
-python -c "from training.quantization_pipeline import EncoderQuantizer; \
-q=EncoderQuantizer(); q.create_deployment_versions( \
-  'checkpoints/exp_generic_gpu/best_model.pt', \
-  calibration_data_path=None, \
-  test_data_path='data/processed/test_final.txt' )"
+python -c "from training.quantization_pipeline import EncoderQuantizer; q=EncoderQuantizer(); q.create_deployment_versions('checkpoints/exp_generic_gpu/best_model.pt', test_data_path='data/processed/test_final.txt')"
 ```
-- Outputs additional model files (e.g., `_int8.pt`, `_fp16.pt`) plus a comparison report.
+- Outputs additional model files (e.g., `_int8.pt`, `_fp16.pt`, `_mixed.pt`, `_static_int8.pt` when calibration provided) plus a comparison report.
+
+- Convert encoder to ONNX:
+```bash
+python -c "import torch; from training.convert_models import ModelConverter as C; dummy=torch.randint(0,50000,(1,128)); C.pytorch_to_onnx('checkpoints/exp_generic_gpu/best_model.pt','models/export/encoder.onnx', dummy)"
+```
+- Convert ONNX to CoreML or TFLite (optional):
+```bash
+python -c "from training.convert_models import ModelConverter as C; C.onnx_to_coreml('models/export/encoder.onnx','models/export/encoder.mlpackage')"
+python -c "from training.convert_models import ModelConverter as C; C.onnx_to_tflite('models/export/encoder.onnx','models/export/encoder.tflite')"
+```
 
 ## 9. Monitoring & Logs
 - Logs directory: set via `--log-dir` (default `logs/`).

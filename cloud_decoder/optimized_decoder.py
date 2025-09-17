@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 import numpy as np
 import litserve as ls
-from fastapi import FastAPI, Request, Header, Depends, HTTPException
+from fastapi import FastAPI, Request, Header, Depends, HTTPException, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -18,7 +18,11 @@ import base64
 import asyncio
 from typing import List, Dict, Optional, Tuple, Any, Union
 import time
-import triton_python_backend_utils as pb_utils
+# Optional: available in NVIDIA Triton Python backend environments
+try:
+    import triton_python_backend_utils as pb_utils  # type: ignore
+except Exception:
+    pb_utils = None  # Safe fallback when not running under Triton
 import msgpack
 import lz4.frame
 import logging
@@ -36,7 +40,7 @@ from monitoring.metrics_collector import (
 )
 # Shared constants for API and vocab format enforcement
 from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT
-from utils.logging_config import setup_logging
+from utils.logging_config import setup_logging, get_logger
 from collections import OrderedDict
 # Import vocabulary manager
 from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
@@ -85,6 +89,37 @@ from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runt
 bootstrap_secrets(role="decoder")
 # Validate required secrets for decoder at startup
 validate_runtime_secrets(role="decoder")
+
+# Optional: prefetch artifacts on startup from HF Hub based on env hints
+try:
+    from utils.artifact_store import ArtifactStore
+    store = ArtifactStore()
+    packs = os.environ.get("PREFETCH_VOCAB_GROUPS", "").split(",") if os.environ.get("PREFETCH_VOCAB_GROUPS") else []
+    adapters = os.environ.get("PREFETCH_ADAPTERS", "").split(",") if os.environ.get("PREFETCH_ADAPTERS") else []
+    models = os.environ.get("PREFETCH_MODELS", "").split(",") if os.environ.get("PREFETCH_MODELS") else []
+    for p in filter(None, [s.strip() for s in packs]):
+        try:
+            store.ensure_vocab_pack(p)
+        except Exception as e:
+            logger.warning(f"Prefetch pack failed for {p}: {e}")
+    for a in filter(None, [s.strip() for s in adapters]):
+        try:
+            store.ensure_adapter(a)
+        except Exception as e:
+            logger.warning(f"Prefetch adapter failed for {a}: {e}")
+    for m in filter(None, [s.strip() for s in models]):
+        try:
+            store.ensure_model(m)
+        except Exception as e:
+            logger.warning(
+                "prefetch_model_failed",
+                extra={"model": m, "error": str(e)}
+            )
+except Exception as e:
+    logger.info(
+        "artifact_prefetch_skipped",
+        extra={"error": str(e)}
+    )
 JWT_SECRET = get_secret("DECODER_JWT_SECRET")
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "your-hf-org/universal-translation-system")
@@ -97,7 +132,8 @@ API_TITLE = os.environ.get("API_TITLE", "Cloud Decoder API")
 
 # Initialize logging (centralized)
 setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
-logger = logging.getLogger("decoder")
+# Use structured logger adapter to encourage structured fields usage
+logger = get_logger("decoder", context={"component": "decoder"})
 
 # Initialize utilities
 api_key_manager = APIKeyManager()
@@ -121,7 +157,10 @@ class AdapterManager:
         self.lock = asyncio.Lock()
         self.loading_events: Dict[str, asyncio.Event] = {}
         
-        logger.info(f"AdapterManager initialized for repo '{self.repo_id}' with cache size: {self.max_cache_size}")
+        logger.info(
+            "adapter_manager_initialized",
+            extra={"repo": self.repo_id, "cache_size": self.max_cache_size}
+        )
 
     async def get_adapter(self, adapter_name: str):
         """
@@ -132,25 +171,38 @@ class AdapterManager:
         async with self.lock:
             if adapter_name in self.cache: # Cache Hit
                 self.cache.move_to_end(adapter_name) # Mark as recently used
-                logger.debug(f"Adapter cache hit for '{adapter_name}'")
+                logger.debug(
+                    "adapter_cache_hit",
+                    extra={"adapter": adapter_name}
+                )
                 return
 
             # --- Cache Miss ---
             # Check if another thread is already loading this adapter
             if adapter_name in self.loading_events:
+                # Another coroutine is loading this adapter; wait for it without holding the lock
                 event = self.loading_events[adapter_name]
-                # Release the main lock and wait for the other thread to finish
-                async with self.lock.released():
-                    logger.info(f"Adapter '{adapter_name}' is being loaded by another task, waiting...")
-                    await event.wait()
-                # After waiting, the adapter should be in the cache. Re-acquire lock and check again.
-                async with self.lock:
-                    if adapter_name in self.cache:
-                        self.cache.move_to_end(adapter_name)
-                        return
-                    else: # Should not happen, but as a fallback
-                        logger.error(f"Waited for adapter '{adapter_name}' but it was not loaded.")
-                        raise RuntimeError(f"Failed to load adapter {adapter_name}")
+            else:
+                event = None
+
+        # If someone else is loading, wait here (lock released)
+        if event is not None:
+            logger.info(
+                "adapter_loading_wait",
+                extra={"adapter": adapter_name}
+            )
+            await event.wait()
+            # After waiting, check cache again
+            async with self.lock:
+                if adapter_name in self.cache:
+                    self.cache.move_to_end(adapter_name)
+                    return
+                else:
+                    logger.error(
+                        "adapter_wait_failed",
+                        extra={"adapter": adapter_name}
+                    )
+                    raise RuntimeError(f"Failed to load adapter {adapter_name}")
 
             # This is the first thread to request this adapter, so it will load it.
             # Create an event to signal other threads.
@@ -163,19 +215,28 @@ class AdapterManager:
 
             # --- Re-acquire lock to update the shared cache state ---
             async with self.lock:
-                logger.info(f"Adapter cache miss for '{adapter_name}'. Loading from disk...")
+                logger.info(
+                    "adapter_cache_miss_loading",
+                    extra={"adapter": adapter_name}
+                )
                 # Evict if cache is full
                 if len(self.cache) >= self.max_cache_size:
                     oldest_adapter_name, _ = self.cache.popitem(last=False)
                     if oldest_adapter_name in self.model.language_adapters:
                         del self.model.language_adapters[oldest_adapter_name]
-                    logger.info(f"Evicted adapter '{oldest_adapter_name}' from cache.")
+                    logger.info(
+                        "adapter_cache_evicted",
+                        extra={"adapter": oldest_adapter_name}
+                    )
 
                 # Load the new adapter into the model
                 adapter_path = self.adapter_dir / f"best_{adapter_name}_adapter.pt"
                 self.model.load_language_adapter(adapter_name, str(adapter_path))
                 self.cache[adapter_name] = self.model.language_adapters[adapter_name]
-                logger.info(f"Successfully loaded and cached adapter '{adapter_name}'.")
+                logger.info(
+                    "adapter_cache_loaded",
+                    extra={"adapter": adapter_name}
+                )
         finally:
             # --- Signal other waiting threads and clean up ---
             async with self.lock:
@@ -195,10 +256,16 @@ class AdapterManager:
         local_adapter_path = self.adapter_dir / adapter_filename
         
         if local_adapter_path.exists():
-            logger.debug(f"Adapter '{adapter_name}' already exists locally at {local_adapter_path}")
+            logger.debug(
+                "adapter_exists_locally",
+                extra={"adapter": adapter_name, "path": str(local_adapter_path)}
+            )
             return
 
-        logger.info(f"Adapter '{adapter_name}' not found locally. Downloading from Hugging Face Hub repo: {self.repo_id}")
+        logger.info(
+            "adapter_download_begin",
+            extra={"adapter": adapter_name, "repo": self.repo_id}
+        )
         
         # The filename within the HF repo (e.g., "adapters/best_es_adapter.pt")
         repo_filename = f"adapters/{adapter_filename}"
@@ -214,15 +281,27 @@ class AdapterManager:
                 local_dir=str(self.adapter_dir),
                 local_dir_use_symlinks=False  # Use copies for robustness in containers
             )
-            logger.info(f"✅ Successfully downloaded adapter '{adapter_name}' to {local_adapter_path}")
+            logger.info(
+                "adapter_download_success",
+                extra={"adapter": adapter_name, "path": str(local_adapter_path)}
+            )
         except HfHubHTTPError as e:
             if e.response.status_code == 404:
-                logger.error(f"❌ Adapter '{repo_filename}' not found in repo '{self.repo_id}'.")
+                logger.error(
+                    "adapter_download_404",
+                    extra={"repo_file": repo_filename, "repo": self.repo_id}
+                )
                 raise FileNotFoundError(f"Adapter not found on Hub: {repo_filename}") from e
-            logger.error(f"❌ HTTP error downloading adapter '{adapter_name}': {e}")
+            logger.error(
+                "adapter_download_http_error",
+                extra={"adapter": adapter_name, "error": str(e)}
+            )
             raise IOError(f"Failed to download adapter: {e}") from e
         except Exception as e:
-            logger.error(f"❌ An unexpected error occurred during adapter download: {e}")
+            logger.error(
+                "adapter_download_unexpected_error",
+                extra={"adapter": adapter_name, "error": str(e)}
+            )
             raise IOError(f"Failed to download adapter: {e}") from e
 
     async def get_loaded_adapters(self) -> List[str]:
@@ -251,11 +330,7 @@ class AdapterManager:
             self.cache[adapter_name] = self.model.language_adapters[adapter_name]
             logger.info(f"Successfully loaded and cached adapter '{adapter_name}'.")
 
-    def get_loaded_adapters(self) -> List[str]:
-        """Returns a list of adapters currently hot in the cache."""
-        with self.lock:
-            return list(self.cache.keys())
-
+    
 class OptimizedUniversalDecoder(nn.Module):
     """
     Custom decoder optimized for low-end GPUs (T4, RTX 3060)
@@ -560,10 +635,61 @@ async def startup_validation():
                 logger.debug(f"Decoder JWKS reload loop error: {ex}")
             await asyncio.sleep(300)
 
-    asyncio.create_task(jwks_reload_loop_decoder())
+    global JWKS_RELOAD_TASK
+    JWKS_RELOAD_TASK = asyncio.create_task(jwks_reload_loop_decoder())
 
 # CORS and Security headers middleware
 from fastapi.middleware.cors import CORSMiddleware
+
+# Wire graceful shutdown
+from utils.shutdown_handler import GracefulShutdown
+
+shutdown_ref = None
+# Track background task and file observer for graceful shutdown
+JWKS_RELOAD_TASK: Optional[asyncio.Task] = None
+FILE_OBSERVER: Optional[Observer] = None
+
+@app.on_event("startup")
+async def _install_shutdown_handler():
+    """Install graceful shutdown to cleanup resources."""
+    global shutdown_ref
+    def cleanup():
+        try:
+            # Cancel JWKS reload task
+            try:
+                if JWKS_RELOAD_TASK:
+                    JWKS_RELOAD_TASK.cancel()
+            except Exception:
+                pass
+            # Stop file observer
+            try:
+                if FILE_OBSERVER:
+                    FILE_OBSERVER.stop()
+                    FILE_OBSERVER.join(timeout=1.0)
+            except Exception:
+                pass
+            # Stop Redis health check thread
+            try:
+                from utils.redis_manager import RedisManager
+                RedisManager.get_instance().stop_health_check()
+            except Exception:
+                pass
+            # Flush OpenTelemetry if supported
+            try:
+                provider = trace.get_tracer_provider()
+                shutdown = getattr(provider, "shutdown", None)
+                if callable(shutdown):
+                    shutdown()
+            except Exception:
+                pass
+            # Placeholders for decoder-specific cleanup (e.g., GPU cache flush)
+            try:
+                pass
+            except Exception:
+                pass
+        except Exception:
+            pass
+    shutdown_ref = GracefulShutdown(cleanup)
 
 # Restrictive defaults; adjust ALLOWED_ORIGINS via env if needed
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "").split(",") if os.environ.get("ALLOWED_ORIGINS") else []
@@ -643,18 +769,16 @@ class ConfigReloadHandler(FileSystemEventHandler):
                 print("[Decoder] Config file changed, reloading...")
                 # Reload config logic here
                 # (For demo, just print. In production, update in-memory config.)
-observer = Observer()
-observer.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
-observer.start()
+# Track file observer for shutdown
+FILE_OBSERVER = Observer()
+FILE_OBSERVER.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
+FILE_OBSERVER.start()
 
 class StatusResponse(BaseModel):
     model_version: str
     healthy: bool
 
-# basic health endpoint (no sensitive info)
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+
 
 # enhanced status endpoint
 @app.get("/status", response_model=StatusResponse)
@@ -670,15 +794,6 @@ async def status():
         "vocabulary": metrics_summary.get('vocabulary', {})
     }
 
-    with tracer.start_as_current_span("status_endpoint") as span:
-        # Get vocabulary version info
-        vocab_versions = vocabulary_manager.get_vocabulary_version_info()
-
-        span.set_attribute("model_version", MODEL_VERSION)
-        span.set_attribute("vocabulary_packs", json.dumps(vocab_versions))
-
-        return {"model_version": MODEL_VERSION, "healthy": True, "vocabulary_packs": vocab_versions}
-
 TRUSTED_PROXIES = {h.strip() for h in os.environ.get("TRUSTED_PROXIES", "").split(",") if h.strip()}
 
 def _get_client_id(request: Request) -> str:
@@ -693,7 +808,7 @@ def _get_client_id(request: Request) -> str:
     return request.client.host if request.client else 'unknown'
 
 @app.post("/decode")
-async def decode(request: Request, x_target_language: str = Header(None)):
+async def decode(request: Request, x_target_language: str = Header(None), x_adapter_override: str = Header(None)):
     client_id = _get_client_id(request)
     allowed, message = rate_limiter.is_allowed(client_id)
     if not allowed:
@@ -714,6 +829,17 @@ async def decode(request: Request, x_target_language: str = Header(None)):
             # Get vocabulary pack for target language
             target_lang = x_target_language or "en"
             vocab_pack = vocabulary_manager.get_vocab_for_pair("en", target_lang)
+
+            # Optional: override adapter (e.g., composed adapter name) for zero-shot
+            adapter_to_use = x_adapter_override
+            if adapter_to_use and isinstance(model, AdapterUniversalEncoder):
+                try:
+                    if adapter_to_use not in model.language_adapters:
+                        # Composition should have registered it; skip I/O
+                        pass
+                    model.loaded_adapters.add(adapter_to_use)
+                except Exception:
+                    adapter_to_use = None
             
             # Run decoder inference
             if model is None:
@@ -768,24 +894,53 @@ async def decode(request: Request, x_target_language: str = Header(None)):
 async def jwks_decoder():
     return JSONResponse({"keys": JWKS_KEYS})
 
-# metrics endpoint (protected)
-@app.get("/metrics")
-async def metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
+# Health and readiness endpoints using routers
+probe_router = APIRouter(tags=["Probes"])
+metrics_router = APIRouter(tags=["Metrics"])
+admin_router = APIRouter(tags=["Admin"]) 
+
+@probe_router.get('/health')
+async def decoder_health():
+    """Liveness probe with build/version info."""
+    from utils.service_health import load_version_info
+    v = load_version_info()
+    return {"status": "ok", "version": v.get("version"), "apiVersion": v.get("apiVersion")}
+
+@probe_router.get('/ready')
+async def decoder_ready():
+    """Readiness probe: checks model, vocabulary manager, and JWKS (when RS256 configured)."""
+    from utils.service_health import load_version_info, jwks_readiness, build_ready_payload
+
+    version = load_version_info()
+    jwks_ok = jwks_readiness(env=os.environ, jwks_keys=JWKS_KEYS)
+
+    checks = {
+        "model": model is not None,
+        "vocabulary": vocabulary_manager is not None,
+        "jwks": jwks_ok,
+    }
+    payload = build_ready_payload(component="decoder", version=version, checks=checks)
+    return JSONResponse(content=payload, status_code=200 if payload["ready"] else 503)
+
+@metrics_router.get("/metrics")
+async def decoder_metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Prometheus metrics endpoint (protected)."""
-    # Validate JWT
     require_jwt(credentials)
     from prometheus_client import generate_latest
-    
-    # Collect vocabulary metrics before generating response
     collect_vocabulary_metrics()
-    
-    return Response(generate_latest(), media_type="text/plain")        
+    return Response(generate_latest(), media_type="text/plain")
 
-@app.post("/admin/reload_model")
+# Admin endpoints
+@admin_router.post("/admin/reload_model")
 def reload_model(credentials: HTTPAuthorizationCredentials = Depends(require_jwt)):
     with tracer.start_as_current_span("reload_model"):
         # ... reload model logic ...
         return {"status": "Model reloaded"}
+
+# Mount routers
+app.include_router(probe_router)
+app.include_router(metrics_router)
+app.include_router(admin_router)
 
 # OpenAPI and Swagger UI are available at /openapi.json and /docs
 # All endpoints are traced, and admin endpoints require JWT
@@ -849,6 +1004,11 @@ vocabulary_manager = VocabularyManager()
 async def startup():
     global model, adapter_manager
 
+    # Fast path for tests/CI to avoid heavy startup
+    if os.environ.get("UTS_TEST_MODE") == "1":
+        logger.info("UTS_TEST_MODE=1 detected: skipping heavy decoder startup")
+        return
+
     # Prefetch artifacts from Hugging Face (models/vocabs/adapters) if configured
     try:
         from utils.artifact_store import ArtifactStore
@@ -864,16 +1024,25 @@ async def startup():
                 try:
                     store.ensure_vocab_pack(p)
                 except Exception as e:
-                    logger.warning(f"Prefetch vocab pack '{p}' failed: {e}")
+                    logger.warning(
+                        "prefetch_vocab_pack_failed",
+                        extra={"pack": p, "error": str(e)}
+                    )
         adapters = os.environ.get("PREFETCH_ADAPTERS", "").strip()
         if adapters:
             for a in [x.strip() for x in adapters.split(",") if x.strip()]:
                 try:
                     store.ensure_adapter(a)
                 except Exception as e:
-                    logger.warning(f"Prefetch adapter '{a}' failed: {e}")
+                    logger.warning(
+                        "prefetch_adapter_failed",
+                        extra={"adapter": a, "error": str(e)}
+                    )
     except Exception as e:
-        logger.warning(f"Artifact prefetch skipped or failed: {e}")
+        logger.warning(
+            "artifact_prefetch_skipped_or_failed",
+            extra={"error": str(e)}
+        )
     
     # Load model
     model = OptimizedUniversalDecoder().to(device)
@@ -898,140 +1067,105 @@ async def startup():
         logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
 
 
-@app.post("/decode")
-async def decode(request: Request):
-    """
-    Decode encoder output to target language
-    """
-    try:
-        # Read compressed data
-        compressed_data = await request.body()
-
-        # Add to batch
-        result = await batcher.add_request({
-            'compressed_data': compressed_data,
-            'target_lang': request.headers.get('x-target-language'),
-            'domain': request.headers.get('x-domain')
-        })
-
-        return JSONResponse(content=result)
-
-    except Exception as e:
-        logger.error(f"Decode error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.route('/health', methods=['GET'])
-async def health(request):
-    """Health check endpoint"""
-    return {"status": "healthy", "device": str(device)}
-
-# +++ ADDED: New endpoint for the coordinator +++
+# Endpoint for the coordinator
 @app.get("/loaded_adapters", response_model=List[str])
 async def get_loaded_adapters_endpoint():
     """Returns a list of adapters currently loaded in the GPU cache."""
     if not adapter_manager:
         raise HTTPException(status_code=503, detail="Adapter manager not initialized")
-    return adapter_manager.get_loaded_adapters()    
+    return await adapter_manager.get_loaded_adapters()
 
 async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
-    """Process batch on GPU with maximum efficiency and dynamic adapter loading"""
+    """Process a batch on GPU with dynamic adapter loading and correct tensor handling.
 
-    # Ensure artifacts exist for each target language/domain before heavy work
+    Expects each item in `batch` to contain:
+      - 'compressed_data': bytes (encoder output in custom compressed format)
+      - 'target_lang': str
+      - optional 'domain': str
+    Returns a list of result dicts ordered to match the input `batch`.
+    """
+    if model is None:
+        raise RuntimeError("Model is not initialized")
+    if adapter_manager is None:
+        raise RuntimeError("Adapter manager is not initialized")
+
+    # Best-effort artifact ensure before heavy compute
     try:
         from utils.artifact_store import ArtifactStore
         store = ArtifactStore()
     except Exception:
         store = None
 
-    # Group requests by target language to minimize adapter swapping
-    requests_by_lang = defaultdict(list)
+    # Group by adapter to minimize swaps
+    requests_by_adapter: Dict[str, List[Dict[str, Any]]] = {}
     for i, item in enumerate(batch):
-        # Determine the adapter needed (e.g., 'es' or 'es_medical')
-        target_lang = item.get('target_lang', 'en')
-        domain = item.get('domain')
-        adapter_name = f"{target_lang}_{domain}" if domain else target_lang
-        requests_by_lang[adapter_name].append({'original_index': i, 'data': item})
-        # Best-effort ensure packs/adapters
+        tgt = item.get("target_lang", "en")
+        dom = item.get("domain")
+        adapter_name = f"{tgt}_{dom}" if dom else tgt
+        requests_by_adapter.setdefault(adapter_name, []).append({
+            "original_index": i,
+            "data": item,
+            "target_lang": tgt,
+        })
         if store:
             try:
-                store.ensure_for_language_pair('en', target_lang, adapter=adapter_name)
+                store.ensure_for_language_pair("en", tgt, adapter=adapter_name)
             except Exception as e:
                 logger.debug(f"ensure_for_language_pair skipped: {e}")
 
-    all_results = [None] * len(batch)
+    all_results: List[Optional[Dict]] = [None] * len(batch)
 
-    for adapter_name, requests in requests_by_lang.items():
-        # --- DYNAMIC LOADING HAPPENS HERE ---
-        adapter_manager.get_adapter(adapter_name)
+    # Process each adapter group
+    for adapter_name, requests in requests_by_adapter.items():
+        # Ensure adapter is loaded (async)
+        await adapter_manager.get_adapter(adapter_name)
 
-        # Prepare the sub-batch for this language/adapter
-        # ... (your existing batch preparation logic: decompress, stack tensors) ...
+        # Decompress and collect tensors
+        hidden_list: List[torch.Tensor] = []
+        mask_list: List[torch.Tensor] = []
+        tgt_langs: List[str] = []
+        orig_indices: List[int] = []
+        for r in requests:
+            decomp = decompress_encoder_output(r["data"]["compressed_data"])  # tensors on correct device
+            hidden_list.append(decomp["hidden_states"])   # [1, T, H]
+            mask_list.append(decomp["attention_mask"])    # [1, T]
+            tgt_langs.append(r["target_lang"])            # e.g., 'es'
+            orig_indices.append(r["original_index"])      # original position in batch
 
-        with torch.no_grad(), torch.cuda.amp.autocast():
-            # Pass the adapter name to the forward pass
-            encoder_output = model(encoder_hidden, attention_mask, language=adapter_name)
-            # ... (your existing generation and decoding logic) ...
+        # Concatenate along batch dimension
+        encoder_hidden = torch.cat(hidden_list, dim=0)            # [B, T, H]
+        encoder_mask = torch.cat(mask_list, dim=0)                 # [B, T]
 
-        # Place results back in the correct order
-        for i, result in enumerate(sub_batch_results):
-            original_index = requests[i]['original_index']
-            all_results[original_index] = result
-            
-    return all_results    
-    
-    with torch.cuda.amp.autocast():  # Mixed precision for speed
-        # Prepare batch tensors
-        encoder_outputs = []
-        encoder_masks = []
-        target_langs = []
-        
-        for item in batch:
-            # Decompress encoder output
-            decompressed = decompress_encoder_output(item['compressed_data'])
+        # Choose target language id (group should be homogeneous)
+        target_lang_ids = [vocabulary_manager.language_to_pack.get(lang, 3) for lang in tgt_langs]
+        target_lang_id = target_lang_ids[0]
 
-            encoder_outputs.append(decompressed['hidden_states'])
-            encoder_masks.append(decompressed['attention_mask'])
-            target_langs.append(item['target_lang'])
-        
-        # Stack tensors
-        encoder_hidden = torch.tensor(np.stack(encoder_outputs)).to(device)
-        encoder_mask = torch.tensor(np.stack(encoder_masks)).to(device)
-        
-        # Get target language IDs
-        target_lang_ids = [vocabulary_manager.language_to_pack.get(lang, 3) for lang in target_langs]
-        
-        # Generate translations
+        # Generate outputs
         with torch.no_grad():
-            output_ids = model.generate(
+            generated_ids, _scores = model.generate(
                 encoder_hidden,
                 encoder_mask,
-                target_lang_ids[0],  # Assuming same target lang for batch
+                target_lang_id,
                 max_length=128,
                 temperature=0.7,
                 top_k=50,
-                top_p=0.9
+                top_p=0.9,
             )
-        
-        # Decode to text
-        results = []
-        for i, output in enumerate(output_ids):
-            # Get vocabulary pack for target language
-            vocab_pack = vocabulary_manager.get_vocab_for_pair('en', target_langs[i])
 
-            # Decode tokens to text
-            tokens = output.cpu().numpy()
-            text = decode_tokens_to_text(tokens, vocab_pack)
+        # Decode per-sample and place back in original order
+        for i in range(generated_ids.size(0)):
+            vocab_pack = vocabulary_manager.get_vocab_for_pair("en", tgt_langs[i])
+            tokens_np = generated_ids[i].detach().cpu().numpy()
+            text = decode_tokens_to_text(tokens_np, vocab_pack)
+            all_results[orig_indices[i]] = {
+                "translation": text,
+                "target_lang": tgt_langs[i],
+            }
 
-            results.append({
-                'translation': text,
-                'target_lang': target_langs[i],
-                'scores': scores if scores else None
-            })
-        
-        return results
+    return all_results
 
 
-def decompress_encoder_output(self, compressed_data: bytes) -> Dict:
+def decompress_encoder_output(compressed_data: bytes) -> Dict:
     """Decompress encoder output with correct 16-byte header parsing.
     Expects bytes; raises if provided a different type.
     """
@@ -1057,8 +1191,8 @@ def decompress_encoder_output(self, compressed_data: bytes) -> Dict:
     hidden_states = dequantized_embeddings.reshape(1, seq_len, hidden_dim)
 
     return {
-        'hidden_states': torch.tensor(hidden_states, device=self.device),
-        'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=self.device)
+        'hidden_states': torch.tensor(hidden_states, device=device),
+        'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=device)
     }
 
 def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
@@ -1097,9 +1231,9 @@ async def compose_adapter_endpoint(request: CompositionRequest):
         raise HTTPException(status_code=503, detail="Model not initialized or does not support adapters.")
     
     try:
-        # Ensure the base adapters are loaded first
-        adapter_manager.get_adapter(request.source_adapter)
-        adapter_manager.get_adapter(request.target_adapter)
+        # Ensure the base adapters are loaded first (await async operations)
+        await adapter_manager.get_adapter(request.source_adapter)
+        await adapter_manager.get_adapter(request.target_adapter)
         
         # Perform the composition
         composed_name = model.compose_adapters(

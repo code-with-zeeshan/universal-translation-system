@@ -32,7 +32,10 @@ def _log_system_info(logger: logging.Logger):
     logger.info("=" * 60)
 
 class SensitiveDataFilter(logging.Filter):
-    """Mask common sensitive values in log messages."""
+    """Mask common sensitive values in log messages and structured fields.
+    - Scrubs message strings via regex (best-effort)
+    - Scrubs record attributes added via `extra={}` (structured fields)
+    """
     SENSITIVE_KEYS = (
         'authorization', 'proxy-authorization', 'x-api-key', 'api_key', 'apikey',
         'token', 'access_token', 'refresh_token', 'secret', 'password', 'jwt',
@@ -40,23 +43,81 @@ class SensitiveDataFilter(logging.Filter):
     )
     MASK = '***'
 
+    def _mask_value(self, key: str, value):
+        try:
+            if value is None:
+                return value
+            # Strings: mask fully
+            if isinstance(value, str):
+                return self.MASK
+            # Dicts: shallow-mask by key
+            if isinstance(value, dict):
+                return {k: (self.MASK if str(k).lower() in self.SENSITIVE_KEYS else v) for k, v in value.items()}
+            # Sequences: mask string-like elements
+            if isinstance(value, (list, tuple)):
+                return [self.MASK if isinstance(v, str) else v for v in value]
+            # Fallback: mask
+            return self.MASK
+        except Exception:
+            return self.MASK
+
     def filter(self, record: logging.LogRecord) -> bool:
+        import re
+        # 1) Scrub message content (best-effort)
         msg = str(record.getMessage())
-        lowered = msg.lower()
         for key in self.SENSITIVE_KEYS:
-            if key in lowered:
-                # naive masking: replace after key= or key: patterns
-                for sep in ('=', ':', '=>'):
-                    needle = f"{key}{sep}"
-                    if needle in lowered:
-                        parts = msg.split(sep)
-                        if len(parts) > 1:
-                            parts[-1] = ' ' + self.MASK
-                            record.msg = sep.join(parts)
-                            return True
-                record.msg = msg.replace(msg, self.MASK)
-                return True
+            patterns = [
+                rf'(?i)({key})\s*[:=]\s*[^,\s\"]+',
+                rf'(?i)"({key})"\s*:\s*"[^"]*"',
+                rf'(?i)\b({key})\b\s*=>\s*[^,\s\"]+',
+            ]
+            for pat in patterns:
+                msg = re.sub(
+                    pat,
+                    lambda m: re.sub(r'(:|=|=>).*', lambda _: f"{m.group(1)}: {self.MASK}", m.group(0), count=1),
+                    msg,
+                )
+        record.msg = msg
+
+        # 2) Scrub structured fields added via LoggerAdapter/extra
+        try:
+            rec_dict = record.__dict__
+            for k in list(rec_dict.keys()):
+                if isinstance(k, str) and k.lower() in self.SENSITIVE_KEYS:
+                    rec_dict[k] = self._mask_value(k, rec_dict.get(k))
+            # Common nested containers
+            for container_key in ("extra", "context", "payload"):
+                if container_key in rec_dict and isinstance(rec_dict[container_key], dict):
+                    nested = rec_dict[container_key]
+                    for nk in list(nested.keys()):
+                        if isinstance(nk, str) and nk.lower() in self.SENSITIVE_KEYS:
+                            nested[nk] = self._mask_value(nk, nested.get(nk))
+        except Exception:
+            # Never break logging
+            pass
         return True
+
+class StructuredLoggerAdapter(logging.LoggerAdapter):
+    """Enforces structured logging with `extra` context and avoids string interpolation of secrets.
+    Usage: logger.info("event", extra={"user_id": uid, "action": action})
+    """
+    def process(self, msg, kwargs):
+        # Ensure `extra` exists and is a dict
+        extra = kwargs.get("extra") or {}
+        if not isinstance(extra, dict):
+            extra = {"extra": str(extra)}
+        # Attach adapter context under `context` and merge flat extras
+        base = dict(self.extra) if isinstance(self.extra, dict) else {}
+        # Provide a namespaced context to avoid collisions
+        combined_extra = {**extra}
+        if base:
+            combined_extra["context"] = {**base, **combined_extra.get("context", {})}
+        kwargs["extra"] = combined_extra
+        return msg, kwargs
+
+def get_logger(name: str, context: dict | None = None) -> StructuredLoggerAdapter:
+    """Return a structured logger adapter bound with optional context."""
+    return StructuredLoggerAdapter(logging.getLogger(name), context or {})
 
 def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
     """Setup comprehensive logging configuration"""
@@ -69,6 +130,9 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
         # Non-fatal; logging will still proceed
         pass
 
+    # Choose formatter dynamically
+    use_json = os.getenv('LOG_FORMAT', '').lower() == 'json'
+
     LOGGING_CONFIG = {
         'version': 1,
         'disable_existing_loggers': False,
@@ -80,6 +144,10 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'detailed': {
                 'format': '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s() - %(message)s',
                 'datefmt': '%Y-%m-%d %H:%M:%S'
+            },
+            'json': {
+                '()': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+                'format': '%(asctime)s %(name)s %(levelname)s %(filename)s %(lineno)d %(funcName)s %(message)s'
             }
         },
         'filters': {
@@ -91,7 +159,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'console': {
                 'class': 'logging.StreamHandler',
                 'level': log_level,
-                'formatter': 'standard',
+                'formatter': 'json' if use_json else 'standard',
                 'filters': ['sensitive'],
                 'stream': sys.stdout
             },
@@ -99,7 +167,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'DEBUG',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': f'{log_dir}/translation_system.log',
                 'maxBytes': 10485760,
@@ -108,7 +176,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'error_file': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'ERROR',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': f'{log_dir}/errors.log',
                 'maxBytes': 10485760,
@@ -118,7 +186,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file_training': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'DEBUG',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': 'logs/training/training.log',
                 'maxBytes': 10485760,
@@ -127,7 +195,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file_data': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': 'logs/data/data.log',
                 'maxBytes': 10485760,
@@ -136,7 +204,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file_monitoring': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': 'logs/monitoring/monitoring.log',
                 'maxBytes': 10485760,
@@ -145,7 +213,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file_coordinator': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': 'logs/coordinator/coordinator.log',
                 'maxBytes': 10485760,
@@ -154,7 +222,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file_decoder': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': 'logs/decoder/decoder.log',
                 'maxBytes': 10485760,
@@ -163,7 +231,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
             'file_vocabulary': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
-                'formatter': 'detailed',
+                'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': 'logs/vocabulary/vocabulary.log',
                 'maxBytes': 10485760,

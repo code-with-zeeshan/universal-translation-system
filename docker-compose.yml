@@ -41,6 +41,12 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - JWT_ISS=${JWT_ISS}
       - JWT_AUD=${JWT_AUD}
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_HUB_REPO_ID=${HF_HUB_REPO_ID}
+      - HF_HUB_REVISION=${HF_HUB_REVISION:-main}
+      - PREFETCH_VOCAB_GROUPS=${PREFETCH_VOCAB_GROUPS}
+      - PREFETCH_ADAPTERS=${PREFETCH_ADAPTERS}
+      - PREFETCH_MODELS=${PREFETCH_MODELS}
     volumes:
       - ./models:/app/models
       - ./config:/app/config
@@ -91,18 +97,29 @@ services:
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
       - POOL_CONFIG_PATH=${POOL_CONFIG_PATH:-configs/decoder_pool.json}
       - API_HOST=0.0.0.0
-      - API_PORT=${COORDINATOR_PORT:-8002}
+      - API_PORT=${COORDINATOR_PORT:-5100}
       - API_WORKERS=${COORDINATOR_WORKERS:-1}
       - API_TITLE=${COORDINATOR_TITLE:-Universal Translation Coordinator}
       - DECODER_POOL=${DECODER_POOL:-decoder:8001}
-      - REDIS_URL=redis://:$(REDIS_PASSWORD)@redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - JWT_PRIVATE_KEY_FILE=/run/secrets/jwt_private_key
+      - JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public_key
+      - UTS_HMAC_KEY=${UTS_HMAC_KEY}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
       - JWT_ISS=${JWT_ISS}
       - JWT_AUD=${JWT_AUD}
+      - HF_TOKEN=${HF_TOKEN}
+      - HF_HUB_REPO_ID=${HF_HUB_REPO_ID}
+      - HF_HUB_REVISION=${HF_HUB_REVISION:-main}
+      - PREFETCH_VOCAB_GROUPS=${PREFETCH_VOCAB_GROUPS}
+      - PREFETCH_ADAPTERS=${PREFETCH_ADAPTERS}
+      - PREFETCH_MODELS=${PREFETCH_MODELS}
     volumes:
       - ./configs:/app/configs
+      - ./models:/app/models
+      - ./vocabs:/app/vocabs
     ports:
-      - "${COORDINATOR_PORT:-8002}:8002"
+      - "${COORDINATOR_PORT:-5100}:5100"
     depends_on:
       - encoder
       - decoder

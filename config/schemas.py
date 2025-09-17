@@ -55,7 +55,8 @@ class VocabularyConfig(BaseModel):
         "ar": "arabic", "hi": "devanagari",
         "ru": "cyrillic", "uk": "cyrillic", "th": "thai"
     }
-    vocab_dir: str = "vocabs"
+    # Standardize directory name to match repo structure
+    vocab_dir: str = "vocabulary"
     dynamic_vocabulary: bool = True
     vocab_switch_penalty: float = 0.001
 

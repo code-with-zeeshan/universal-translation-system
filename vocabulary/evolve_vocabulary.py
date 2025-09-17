@@ -34,12 +34,42 @@ class VocabularyEvolver:
         # This part needs to be connected to your live system's analytics instance.
         # Example: usage_report = self.analytics_manager.get_usage_report() # Assuming VocabularyManager has this method
         
-        # TODO: Replace this with loading from your actual analytics data
-        # For now, using a placeholder for unknown tokens
-        simulated_unknowns = {'new_tech_word': 1500, 'trending_meme': 1200, 'rare_word': 50}
+        # Prefer real analytics when available
+        unknowns = {}
+        try:
+            # Try Redis first (sorted set: unknown_token_counts)
+            from utils.redis_manager import RedisManager
+            rm = RedisManager.get_instance()
+            client = rm.get_client()
+            if client:
+                # Top 1000 unknown tokens by frequency
+                zitems = client.zrevrange('unknown_token_counts', 0, 1000, withscores=True)
+                # Convert bytes to str and float scores to int counts
+                unknowns = { (k.decode('utf-8') if isinstance(k, (bytes, bytearray)) else str(k)): int(v) for k, v in zitems }
+        except Exception as e:
+            logger.warning(f"Redis analytics unavailable: {e}")
+        
+        if not unknowns:
+            # Optional: load from JSON file if provided via env
+            import os, json
+            analytics_path = os.environ.get('EVOLVE_ANALYTICS_JSON')
+            if analytics_path and os.path.exists(analytics_path):
+                try:
+                    with open(analytics_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        # Expecting {"unknown_token_counts": {token: count, ...}}
+                        unknowns = data.get('unknown_token_counts', {})
+                        # Coerce counts to int
+                        unknowns = {str(k): int(v) for k, v in unknowns.items()}
+                except Exception as e:
+                    logger.warning(f"Failed loading analytics JSON {analytics_path}: {e}")
+        
+        if not unknowns:
+            logger.warning("Falling back to simulated analytics; provide Redis or EVOLVE_ANALYTICS_JSON for real data.")
+            unknowns = {'new_tech_word': 1500, 'trending_meme': 1200, 'rare_word': 50}
         
         tokens_to_promote = {
-            token: count for token, count in simulated_unknowns.items()
+            token: count for token, count in unknowns.items()
             if count >= self.promotion_threshold
         }
 

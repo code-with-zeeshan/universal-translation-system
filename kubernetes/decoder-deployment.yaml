@@ -30,21 +30,29 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /health
+            path: /ready
             port: 8000
-          initialDelaySeconds: 5
+          initialDelaySeconds: 15
           periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 2
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
         resources:
           requests:
             nvidia.com/gpu: 1
             memory: "8Gi"
-            cpu: "4"
+            cpu: "2"
           limits:
             nvidia.com/gpu: 1
             memory: "16Gi"
-            cpu: "8"
+            cpu: "4"
         env:
         - name: CUDA_VISIBLE_DEVICES
           value: "0"
@@ -69,8 +77,10 @@ spec:
         volumeMounts:
         - name: models
           mountPath: /app/models
+          readOnly: true
         - name: vocabs
           mountPath: /app/vocabs
+          readOnly: true
         - name: uts-secrets
           mountPath: /var/run/secrets/uts
           readOnly: true

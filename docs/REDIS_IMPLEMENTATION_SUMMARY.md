@@ -53,7 +53,10 @@ The `docker-compose.yml` file includes a Redis service and required health check
 
 ## 6. Requirements Updates
 
-The `requirements.txt` ensures the Redis dependency is available.
+Use the modular requirements files to ensure Redis and related dependencies are installed:
+- Base: `-r requirements/base.txt` (includes `redis>=5`) 
+- Serving/tracing: `-r requirements/serve.txt`
+- Coordinator-specific: `-r requirements/coordinator.txt` if you enable etcd discovery
 
 ## 7. Documentation
 

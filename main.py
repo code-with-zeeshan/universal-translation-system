@@ -119,6 +119,26 @@ class HardwareConfig:
         else:
             return f"{base}/training_generic_multi_gpu.yaml"  # Default multi GPU
 
+    @staticmethod
+    def get_compile_recommendation(gpu_names: List[str]) -> Tuple[bool, str]:
+        """
+        Recommend torch.compile usage and mode based on GPU class.
+        Returns: (compile_model, compile_mode)
+        """
+        primary = (gpu_names[0].lower() if gpu_names else "")
+        # Map families to (mode, enabled)
+        mapping = [
+            (['h100', 'a100', 'amd mi250', 'mi300'], ("max-autotune", True)),
+            (['v100', 'l4'], ("reduce-overhead", True)),
+            (['t4', 'rtx 4090', 'rtx 4080', 'rtx 4070', 'rtx 3090', 'rtx 3080', 'rtx 3070', 'rtx 3060'], ("reduce-overhead", True)),
+        ]
+        for keys, (mode, enabled) in mapping:
+            for k in keys:
+                if k in primary:
+                    return enabled, mode
+        # CPU or unknown GPUs: prefer no compile or conservative default
+        return False, "default"
+
 
 class UniversalTranslationSystem:
     """Main system orchestrator"""
@@ -239,7 +259,7 @@ class UniversalTranslationSystem:
     
     def _check_data_availability(self) -> bool:
         """Check if data directories exist"""
-        data_dirs = ['data/processed', 'data/raw', 'vocabs']
+        data_dirs = ['data/processed', 'data/raw', 'vocabulary']
         missing = []
         
         for dir_path in data_dirs:
@@ -375,9 +395,12 @@ class UniversalTranslationSystem:
             except ValueError:
                 logger.warning(f"Invalid GPU selection: {selection}")
         
-        # Interactive selection
-        logger.info(f"\nFound {self.gpu_count} GPUs: {', '.join(self.gpu_names)}")
+        # Non-interactive default in CI/containers: use all GPUs unless overridden
+        if os.environ.get("CI") or os.environ.get("NON_INTERACTIVE"):  # CI or explicit non-interactive
+            return self.gpu_count
         
+        # Interactive selection for local runs
+        logger.info(f"\nFound {self.gpu_count} GPUs: {', '.join(self.gpu_names)}")
         while True:
             choice = input(
                 f"How many GPUs to use? (1-{self.gpu_count}, or 'all') [all]: "

@@ -1,0 +1,38 @@
+# PodMonitors are useful if you don't expose a Service, or want direct pod scraping.
+# Requires Prometheus Operator CRDs.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: coordinator-podmonitor
+  labels:
+    release: prometheus  # adjust to your helm release label
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app: coordinator
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: decoder-podmonitor
+  labels:
+    release: prometheus  # adjust to your helm release label
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app: decoder
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

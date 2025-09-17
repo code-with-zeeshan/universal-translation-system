@@ -153,10 +153,17 @@ def main():
     parser.add_argument("--tags", type=str, help="Comma-separated tags for this node (e.g., 'production,high-memory')")
     args = parser.parse_args()
 
-    # Get Redis URL from environment if not provided
-    redis_url = args.redis_url or os.environ.get("REDIS_URL")
-    coordinator_url = args.coordinator_url or os.environ.get("COORDINATOR_URL")
-    api_key = args.api_key or os.environ.get("COORDINATOR_API_KEY")
+    # Get URLs/tokens from centralized accessor if available, with env fallback
+    try:
+        from utils.secrets_bootstrap import bootstrap_secrets, get_secret
+        bootstrap_secrets(role=os.environ.get("UTS_ROLE", "general"))
+        redis_url = args.redis_url or get_secret("REDIS_URL") or os.environ.get("REDIS_URL")
+        coordinator_url = args.coordinator_url or get_secret("COORDINATOR_URL") or os.environ.get("COORDINATOR_URL")
+        api_key = args.api_key or get_secret("COORDINATOR_API_KEY") or os.environ.get("COORDINATOR_API_KEY")
+    except Exception:
+        redis_url = args.redis_url or os.environ.get("REDIS_URL")
+        coordinator_url = args.coordinator_url or os.environ.get("COORDINATOR_URL")
+        api_key = args.api_key or os.environ.get("COORDINATOR_API_KEY")
     
     node_id = str(uuid.uuid4())
     

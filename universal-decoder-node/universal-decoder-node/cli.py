@@ -89,16 +89,38 @@ def status(endpoint: str, detailed: bool):
             click.echo("❌ Decoder is unhealthy")
         
         if detailed:
-            # Get detailed status
+            # Readiness probe
+            try:
+                ready_resp = requests.get(f"{endpoint}/ready", timeout=5)
+                if ready_resp.status_code in (200, 503):
+                    ready_data = ready_resp.json()
+                    ready_flag = ready_data.get('ready', False)
+                    checks = ready_data.get('checks', {})
+                    click.echo(f"\n🟢 Ready: {ready_flag}")
+                    if not ready_flag:
+                        click.echo(f"  Checks: {json.dumps(checks, indent=2)}")
+            except Exception:
+                click.echo("\n⚠️  Readiness endpoint not available")
+            
+            # Detailed status
             status_resp = requests.get(f"{endpoint}/status", timeout=5)
             if status_resp.status_code == 200:
                 status_data = status_resp.json()
+                api_ver = status_data.get('api_version') or status_data.get('apiVersion') or 'unknown'
                 click.echo(f"\n📊 Detailed Status:")
+                click.echo(f"  API Version: {api_ver}")
                 click.echo(f"  Model Version: {status_data.get('model_version', 'unknown')}")
                 click.echo(f"  Device: {status_data.get('device', 'unknown')}")
                 click.echo(f"  GPU Available: {status_data.get('gpu_available', False)}")
                 if status_data.get('gpu_name'):
                     click.echo(f"  GPU Name: {status_data['gpu_name']}")
+                # Vocabulary info if present
+                vocab = status_data.get('vocabulary', {})
+                packs = vocab.get('loaded_packs')
+                if isinstance(packs, list):
+                    click.echo(f"  Vocab Packs Loaded: {len(packs)}")
+            else:
+                click.echo(f"\n❌ Status endpoint returned {status_resp.status_code}")
     
     except requests.exceptions.ConnectionError:
         click.echo("❌ Cannot connect to decoder service")

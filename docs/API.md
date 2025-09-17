@@ -68,7 +68,7 @@ const data = await res.json();
 - Returns basic health info.
 - Response:
 ```json
-{ "status": "healthy", "device": "cuda" }
+{ "status": "healthy", "device": "cuda", "adapters": ["es", "fr"], "vocab_packs": ["latin"] }
 ```
 
 ### GET /status
@@ -272,3 +272,8 @@ Common ISO codes used by headers and payloads (non‑exhaustive): `en, es, fr, d
 - If you deploy a decoder directly to clients, use its `/decode` endpoint.
 - OpenAPI docs are available on each service for introspection at runtime.
 - Binary schema reference: see `docs/schemas/binary_payload_schema.md`.
+
+## Related Documentation
+- See `docs/ONBOARDING.md` (Model Artifacts & Paths) for local paths and mounts.
+- See `docs/DEPLOYMENT.md` (Volumes and artifacts) for container mounts and defaults.
+- See `docs/Vocabulary_Guide.md` for vocabulary runtime configuration.

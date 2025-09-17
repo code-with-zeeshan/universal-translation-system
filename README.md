@@ -59,11 +59,17 @@ cp .env.example .env
 # Edit .env with your configuration
 
 # Option 1: Run with Docker Compose (recommended)
-docker-compose up -d
+# Ensure secrets and env are set; prefer --env-file to pick up changes
+docker compose --env-file .env up -d
 
 # Option 2: Manual Setup
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (modular)
+# Base runtime
+pip install -r requirements/base.txt
+# Add training + serving
+pip install -r requirements/train.txt -r requirements/serve.txt
+# Optional service-specific extras
+pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
 # Run components individually
 python cloud_decoder/optimized_decoder.py
@@ -73,42 +79,59 @@ python coordinator/advanced_coordinator.py
 python docs/train_from_scratch.py --config config/training_default.yaml
 ```
 
+### CI: Enforce schema hash up-to-date
+
+Add a step to your CI pipeline to ensure version-config.json is regenerated when schemas change.
+
+Example GitHub Actions step:
+
+```yaml
+- name: Verify schema hash is up-to-date
+  shell: bash
+  run: |
+    python scripts/update_schema_hash.py
+    git diff --exit-code version-config.json || {
+      echo "version-config.json schemaHash drifted. Run 'python scripts/update_schema_hash.py' and commit the change.";
+      exit 1;
+    }
+```
+
 ## 🧭 Unified Pipeline CLI
 
 Use a single entrypoint to run data, vocabulary, training, and more.
 
 - Location: `scripts/pipeline.py`
-- Prereq: `pip install -r requirements.txt`
+- Prereq: `pip install -r requirements/base.txt -r requirements/train.txt -r requirements/serve.txt` (add service extras as needed)
 
-Examples:
+Examples (run from repo root):
 
 ```bash
 # Data pipeline (all stages)
-python scripts/pipeline.py data --config config/training_generic_gpu.yaml
+python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml
 
 # Data pipeline (specific stages)
 # Valid stages: download_evaluation download_training sample_filter augment create_ready validate vocabulary
-python scripts/pipeline.py data --config config/training_generic_gpu.yaml --stages download_training create_ready
+python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml --stages download_training create_ready
 
 # Vocabulary creation
-python scripts/pipeline.py vocab --mode production --corpus-dir data/processed --output-dir vocabs
+python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
 
 # Bootstrap pretrained encoder/decoder
-python scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
+python ./scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
 
 # Train (delegates to training.launch)
-python scripts/pipeline.py train --config config/training_generic_gpu.yaml --distributed
+python ./scripts/pipeline.py train --config ./config/training_generic_gpu.yaml --distributed
 
 # Evaluate, Profile, Compare
-python scripts/pipeline.py evaluate --config config/training_generic_gpu.yaml --checkpoint models/.../best_model.pt
-python scripts/pipeline.py profile --config config/training_generic_gpu.yaml --profile-steps 25 --benchmark
-python scripts/pipeline.py compare --experiments runs/exp1 runs/exp2
+python ./scripts/pipeline.py evaluate --config ./config/training_generic_gpu.yaml --checkpoint ./models/.../best_model.pt
+python ./scripts/pipeline.py profile --config ./config/training_generic_gpu.yaml --profile-steps 25 --benchmark
+python ./scripts/pipeline.py compare --experiments ./runs/exp1 ./runs/exp2
 
 # Convert models
-python scripts/pipeline.py convert --task pytorch-to-onnx --model-path models/encoder/universal_encoder_initial.pt --output-path models/encoder/universal_encoder.onnx
+python ./scripts/pipeline.py convert --task pytorch-to-onnx --model-path ./models/encoder/universal_encoder_initial.pt --output-path ./models/encoder/universal_encoder.onnx
 
 # Full pipeline: data -> vocab -> bootstrap -> train -> convert
-python scripts/pipeline.py all --config config/training_generic_gpu.yaml
+python ./scripts/pipeline.py all --config ./config/training_generic_gpu.yaml
 ```
 
 Notes:
@@ -132,32 +155,73 @@ python scripts/pipeline.py train --help
 ### Windows PowerShell examples
 
 ```powershell
+# Run from repository root (cloned anywhere). Use absolute path via $PWD for reliability.
 # Data pipeline (all stages)
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" data --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml"
+python "$PWD\scripts\pipeline.py" data --config "$PWD\config\training_generic_gpu.yaml"
 
 # Data pipeline (specific stages)
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" data --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --stages download_training create_ready
+python "$PWD\scripts\pipeline.py" data --config "$PWD\config\training_generic_gpu.yaml" --stages download_training create_ready
 
 # Vocabulary creation
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" vocab --mode production --corpus-dir "c:\Users\DELL\universal-translation-system\data\processed" --output-dir "c:\Users\DELL\universal-translation-system\vocabs"
+python "$PWD\scripts\pipeline.py" vocab --mode production --corpus-dir "$PWD\data\processed" --output-dir "$PWD\vocabs"
 
 # Bootstrap pretrained encoder/decoder
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
+python "$PWD\scripts\pipeline.py" bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
 
 # Train (delegates to training.launch)
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" train --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --distributed
+python "$PWD\scripts\pipeline.py" train --config "$PWD\config\training_generic_gpu.yaml" --distributed
 
 # Evaluate, Profile, Compare
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" evaluate --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --checkpoint "c:\Users\DELL\universal-translation-system\models\...\best_model.pt"
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" profile --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml" --profile-steps 25 --benchmark
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" compare --experiments "c:\Users\DELL\universal-translation-system\runs\exp1" "c:\Users\DELL\universal-translation-system\runs\exp2"
+python "$PWD\scripts\pipeline.py" evaluate --config "$PWD\config\training_generic_gpu.yaml" --checkpoint "$PWD\models\...\best_model.pt"
+python "$PWD\scripts\pipeline.py" profile --config "$PWD\config\training_generic_gpu.yaml" --profile-steps 25 --benchmark
+python "$PWD\scripts\pipeline.py" compare --experiments "$PWD\runs\exp1" "$PWD\runs\exp2"
 
 # Convert models
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" convert --task pytorch-to-onnx --model-path "c:\Users\DELL\universal-translation-system\models\encoder\universal_encoder_initial.pt" --output-path "c:\Users\DELL\universal-translation-system\models\encoder\universal_encoder.onnx"
+python "$PWD\scripts\pipeline.py" convert --task pytorch-to-onnx --model-path "$PWD\models\encoder\universal_encoder_initial.pt" --output-path "$PWD\models\encoder\universal_encoder.onnx"
 
 # Full pipeline: data -> vocab -> bootstrap -> train -> convert
-python "c:\Users\DELL\universal-translation-system\scripts\pipeline.py" all --config "c:\Users\DELL\universal-translation-system\config\training_generic_gpu.yaml"
+python "$PWD\scripts\pipeline.py" all --config "$PWD\config\training_generic_gpu.yaml"
 ```
+
+### Linux/macOS examples
+
+```bash
+# Run from repository root
+# Data pipeline (all stages)
+python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml
+
+# Data pipeline (specific stages)
+python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml --stages download_training create_ready
+
+# Vocabulary creation
+python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
+
+# Bootstrap pretrained encoder/decoder
+python ./scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
+
+# Train (delegates to training.launch)
+python ./scripts/pipeline.py train --config ./config/training_generic_gpu.yaml --distributed
+
+# Evaluate, Profile, Compare
+python ./scripts/pipeline.py evaluate --config ./config/training_generic_gpu.yaml --checkpoint ./models/.../best_model.pt
+python ./scripts/pipeline.py profile --config ./config/training_generic_gpu.yaml --profile-steps 25 --benchmark
+python ./scripts/pipeline.py compare --experiments ./runs/exp1 ./runs/exp2
+
+# Convert models
+python ./scripts/pipeline.py convert --task pytorch-to-onnx --model-path ./models/encoder/universal_encoder_initial.pt --output-path ./models/encoder/universal_encoder.onnx
+
+# Full pipeline: data -> vocab -> bootstrap -> train -> convert
+python ./scripts/pipeline.py all --config ./config/training_generic_gpu.yaml
+```
+
+## 📦 Model Artifacts & Paths
+- **Models (local):** `./models`
+  - Defaults: `./models/production/encoder.pt`, `./models/production/decoder.pt`
+  - Optional registry: `./models/model_registry.json`
+- **Vocabulary (local):** `./vocabulary` (mounted to `/app/vocabs` in containers)
+  - Packs and optional `manifest.json`
+
+See also: [docs/ONBOARDING.md](docs/ONBOARDING.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## 📱 SDK Integration
 
@@ -199,10 +263,10 @@ const result = await translator.translate({
 
 ## 🏗️ Architecture
 
-- **Encoder**: Runs on device, converts text to language-agnostic embeddings
-- **Decoder**: Runs on server (Litserve), converts embeddings to target language
+- **Encoder**: Runs on device, converts text to language-agnostic embeddings (RoPE + SwiGLU)
+- **Decoder**: Runs on server (Litserve), converts embeddings to target language; supports hot‑loaded adapters
 - **Coordinator**: Manages decoder pool, handles load balancing and health monitoring
-- **Vocabulary Packs**: Downloadable language-specific token mappings
+- **Vocabulary Packs**: Downloadable language-specific token mappings (2–4MB packs)
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
@@ -213,22 +277,20 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - SDKs: [SDK Integration Guide](docs/SDK_INTEGRATION.md) | Publishing: [SDK_PUBLISHING.md](docs/SDK_PUBLISHING.md)
 - APIs: [API Documentation](docs/API.md)
 - Deployment: [Deployment Guide](docs/DEPLOYMENT.md)
-- Decoder Pool: [Decoder Pool Management](docs/DECODER_POOL.md)
 - Environment: [Environment Variables](docs/environment-variables.md)
+- Onboarding: [Onboarding Guide](docs/ONBOARDING.md)
 
 ### Full Docs
 - [Vision & Architecture](docs/VISION.md)
 - [Architecture Details](docs/ARCHITECTURE.md)
+- [Onboarding Guide](docs/ONBOARDING.md)
 - [Environment Variables](docs/environment-variables.md)
 - [Training Guide](docs/TRAINING.md)
-- [Adding New Languages](docs/Adding_New_languages.md)
-- [Future Roadmap](docs/future_plan.md)
+- [Vocabulary Guide](docs/Vocabulary_Guide.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
-- [SDK Integration Guide](docs/SDK_INTEGRATION.md)
+- [Decoder Pool Management](docs/DECODER_POOL.md)
 - [CI: Build & Upload to HF](docs/CI_BUILD_UPLOAD.md)
 - [Monitoring Guide](monitoring/README.md)
-- [Vocabulary Guide](docs/Vocabulary_Guide.md)
-- [Decoder Pool Management](docs/DECODER_POOL.md)
 - [API Documentation](docs/API.md)
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)
 - [Troubleshooting Guide](docs/TROUBLESHOOT.md)

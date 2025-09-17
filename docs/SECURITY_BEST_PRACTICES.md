@@ -166,9 +166,12 @@ FROM python:3.9-slim
 # Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies (modular)
+COPY requirements/base.txt /app/requirements/base.txt
+COPY requirements/serve.txt /app/requirements/serve.txt
+# Add per-service extras as needed, e.g., coordinator or decoder
+COPY requirements/coordinator.txt /app/requirements/coordinator.txt
+RUN pip install --no-cache-dir -r /app/requirements/base.txt -r /app/requirements/serve.txt -r /app/requirements/coordinator.txt
 
 # Copy application code
 COPY . /app

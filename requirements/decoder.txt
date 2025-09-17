@@ -1,0 +1,13 @@
+# Decoder-service specific add-ons
+# Base and serve should be installed alongside this if building the decoder image:
+#   -r base.txt
+#   -r serve.txt
+
+# Event loop optimization (non-Windows)
+uvloop>=0.19.0; platform_system != 'Windows'
+# Faster JSON
+orjson>=3.9.10
+# Retry helpers used in node/HTTP ops
+tenacity>=8.2.3
+# Hugging Face Hub access for prefetch
+huggingface_hub>=0.20.0

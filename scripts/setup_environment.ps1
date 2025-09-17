@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = "c:\Users\DELL\universal-translation-system"
+$repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 function Assert-LastExit {
@@ -26,8 +26,14 @@ $venvActivate = Join-Path $VenvPath "Scripts\Activate.ps1"
 # 2. Upgrade pip and install core requirements
 python -m pip install --upgrade pip
 Assert-LastExit "pip upgrade failed"
-python -m pip install -r "$repoRoot\requirements.txt"
-Assert-LastExit "requirements install failed"
+# Base runtime
+python -m pip install -r "$repoRoot\requirements\base.txt"
+Assert-LastExit "base requirements install failed"
+# Training + serving
+python -m pip install -r "$repoRoot\requirements\train.txt" -r "$repoRoot\requirements\serve.txt"
+Assert-LastExit "train/serve requirements install failed"
+# Optional service-specific extras
+# python -m pip install -r "$repoRoot\requirements\decoder.txt" -r "$repoRoot\requirements\coordinator.txt"
 
 # 3. Optional: Additional system checks
 try {

@@ -398,39 +398,24 @@
         }
         
         /* Utility classes */
-        .text-muted {
-            color: var(--text-secondary);
-        }
-        
-        .font-mono {
-            font-family: var(--font-mono);
-        }
-        
-        /* Smooth scroll */
-        html {
-            scroll-behavior: smooth;
-        }
-        
-        /* Focus styles */
-        *:focus {
-            outline: 2px solid var(--color-primary);
-            outline-offset: 2px;
-        }
-        
-        /* Skip to content */
         .skip-link {
             position: absolute;
-            top: -40px;
-            left: 0;
-            background: var(--color-primary);
-            color: white;
-            padding: var(--space-2) var(--space-4);
-            text-decoration: none;
-            border-radius: var(--radius-sm);
+            left: -999px;
+            top: auto;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
         }
-        
         .skip-link:focus {
-            top: var(--space-2);
+            left: 16px;
+            top: 16px;
+            width: auto;
+            height: auto;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
         }
     </style>
 </head>
@@ -449,7 +434,7 @@
             </div>
             <h1>Multilingual Translation Data Pipeline</h1>
             <p class="subtitle">
-                A comprehensive data processing workflow orchestrated by <code class="code">practical_data_pipeline.py</code>, 
+                A comprehensive data processing workflow orchestrated by <code class="code">data/unified_data_pipeline.py</code>, 
                 from strategic planning to vocabulary-ready datasets.
             </p>
         </header>
@@ -468,7 +453,7 @@
                             <span class="section-icon">⚙️</span>
                             <div>
                                 <div class="section-title">Configuration Input</div>
-                                <div class="section-subtitle">data/config.yaml + smart_data_downloader.py</div>
+                                <div class="section-subtitle">configs/data_config.yaml + data/unified_data_downloader.py</div>
                             </div>
                         </div>
                         <div class="data-list">
@@ -510,13 +495,13 @@
                             <span class="section-icon">🎯</span>
                             <div>
                                 <div class="section-title">Curated Sources</div>
-                                <div class="section-subtitle">download_curated_data.py</div>
+                                <div class="section-subtitle">data/unified_data_downloader.py</div>
                             </div>
                         </div>
                         <div class="data-list">
                             <div class="data-item">FLORES-200 benchmark</div>
                             <div class="data-item">Tatoeba community data</div>
-                            <div class="data-item">OPUS samples (100MB limit)</div>
+                            <div class="data-item">OPUS samples (configurable limits)</div>
                             <div class="data-item">HTTP retry strategy</div>
                         </div>
                     </div>
@@ -529,147 +514,99 @@
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item"><code class="code">flores200/</code> - 1000 sentences/lang</div>
-                            <div class="data-item"><code class="code">tatoeba_en_*/</code> - Up to 100k pairs</div>
+                            <div class="data-item"><code class="code">flores200/</code> - benchmark samples</div>
+                            <div class="data-item"><code class="code">tatoeba_en_*/</code> - pairs per language</div>
                             <div class="data-item"><code class="code">opus/*.txt</code> - Tab-separated</div>
-                            <div class="data-item">Total: ~100MB evaluation data</div>
+                            <div class="data-item">Totals configurable via config</div>
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Stage 3 -->
             <div class="stage stage-3">
                 <div class="stage-number">3</div>
                 <div class="stage-header">
-                    <h2 class="stage-title">Training Data Collection</h2>
-                    <p class="stage-description">Download large-scale training data with streaming</p>
+                    <h2 class="stage-title">Processing & Normalization</h2>
+                    <p class="stage-description">Clean, normalize, deduplicate and split datasets</p>
                 </div>
                 <div class="stage-content">
                     <div class="section">
                         <div class="section-header">
-                            <span class="section-icon">🌐</span>
+                            <span class="section-icon">🧹</span>
                             <div>
-                                <div class="section-title">Data Sources</div>
-                                <div class="section-subtitle">download_training_data.py</div>
+                                <div class="section-title">Preprocessing</div>
+                                <div class="section-subtitle">data/unified_data_pipeline.py</div>
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item">HuggingFace streaming mode</div>
-                            <div class="data-item">OPUS-100, OpenSubtitles, MultiUN</div>
-                            <div class="data-item">Facebook NLLB-seed</div>
-                            <div class="data-item">WMT19/20/21 datasets</div>
-                            <div class="data-item">CCMatrix web crawl</div>
+                            <div class="data-item">Language detection & filtering</div>
+                            <div class="data-item">Normalization & punctuation fixes</div>
+                            <div class="data-item">Deduplication (MinHash)</div>
+                            <div class="data-item">Train/Val/Test splits</div>
                         </div>
                     </div>
                     <div class="section output">
                         <div class="section-header">
-                            <span class="section-icon">💾</span>
+                            <span class="section-icon">📦</span>
                             <div>
-                                <div class="section-title">Raw Training Data</div>
-                                <div class="section-subtitle">data/raw/</div>
+                                <div class="section-title">Processed Output</div>
+                                <div class="section-subtitle">data/processed/</div>
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item"><code class="code">nllb_en-*/</code> - NLLB pairs</div>
-                            <div class="data-item"><code class="code">opus/opus-100/</code> - OPUS data</div>
-                            <div class="data-item"><code class="code">wmt/*/</code> - Competition data</div>
-                            <div class="data-item">Batch processing (1000 samples)</div>
+                            <div class="data-item"><code class="code">en_es_train.txt</code> • <code class="code">en_es_val.txt</code></div>
+                            <div class="data-item"><code class="code">en_es_test.txt</code></div>
+                            <div class="data-item">Per language-pair files</div>
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Stage 4 -->
             <div class="stage stage-4">
                 <div class="stage-number">4</div>
                 <div class="stage-header">
-                    <h2 class="stage-title">Quality Sampling & Filtering</h2>
-                    <p class="stage-description">Extract high-quality sentence pairs with multiple filters</p>
+                    <h2 class="stage-title">Vocabulary Creation</h2>
+                    <p class="stage-description">Build unified vocabulary packs for training and deployment</p>
                 </div>
                 <div class="stage-content">
                     <div class="section">
                         <div class="section-header">
-                            <span class="section-icon">🔍</span>
+                            <span class="section-icon">📚</span>
                             <div>
-                                <div class="section-title">Quality Filters</div>
-                                <div class="section-subtitle">smart_sampler.py</div>
+                                <div class="section-title">Vocabulary Builder</div>
+                                <div class="section-subtitle">vocabulary/unified_vocabulary_creator.py</div>
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item">Length filter (5-50 words)</div>
-                            <div class="data-item">Ratio filter (0.5-2.0)</div>
-                            <div class="data-item">Numeric consistency check</div>
-                            <div class="data-item">Quality heuristics (no URLs, etc)</div>
-                            <div class="data-item">Memory-mapped file processing</div>
+                            <div class="data-item">Latin and CJK packs</div>
+                            <div class="data-item">Subword modeling (optional)</div>
+                            <div class="data-item">Special tokens per language</div>
                         </div>
                     </div>
                     <div class="section output">
                         <div class="section-header">
-                            <span class="section-icon">✨</span>
+                            <span class="section-icon">✅</span>
                             <div>
-                                <div class="section-title">Sampled Data</div>
-                                <div class="section-subtitle">data/sampled/*_sampled.txt</div>
+                                <div class="section-title">Vocabulary Output</div>
+                                <div class="section-subtitle">vocabulary/</div>
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item highlight">Format: src\ttgt\tsrc_lang\ttgt_lang</div>
-                            <div class="data-item"><code class="code">en-es</code>: 2M sentences</div>
-                            <div class="data-item"><code class="code">en-zh</code>: 1.5M sentences</div>
-                            <div class="data-item">Quality retention: ~40-60%</div>
+                            <div class="data-item"><code class="code">latin_pack.json</code> • <code class="code">cjk_pack.json</code></div>
+                            <div class="data-item">Size ~2–4MB per pack</div>
                         </div>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Stage 5 -->
             <div class="stage stage-5">
                 <div class="stage-number">5</div>
                 <div class="stage-header">
-                    <h2 class="stage-title">Synthetic Data Augmentation</h2>
-                    <p class="stage-description">Generate additional training data using NLLB models</p>
-                </div>
-                <div class="stage-content">
-                    <div class="section">
-                        <div class="section-header">
-                            <span class="section-icon">🤖</span>
-                            <div>
-                                <div class="section-title">Augmentation Methods</div>
-                                <div class="section-subtitle">synthetic_augmentation.py</div>
-                            </div>
-                        </div>
-                        <div class="data-list">
-                            <div class="data-item">NLLB-200-distilled-1.3B model</div>
-                            <div class="data-item">Backtranslation pipeline</div>
-                            <div class="data-item">Sentence-BERT quality check</div>
-                            <div class="data-item">Pivot translation (via English)</div>
-                            <div class="data-item">Batch size: 32 (GPU) / 1 (CPU)</div>
-                        </div>
-                    </div>
-                    <div class="section output">
-                        <div class="section-header">
-                            <span class="section-icon">🎯</span>
-                            <div>
-                                <div class="section-title">Augmented Data</div>
-                                <div class="section-subtitle">data/final/</div>
-                            </div>
-                        </div>
-                        <div class="data-list">
-                            <div class="data-item"><code class="code">augmented_en-*/</code> - Backtranslated</div>
-                            <div class="data-item"><code class="code">pivot_pairs/*-*_pivot.txt</code></div>
-                            <div class="data-item">Quality threshold: 0.8 cosine sim</div>
-                            <div class="data-item">Additional ~20% data volume</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Stage 6 -->
-            <div class="stage stage-6">
-                <div class="stage-number">6</div>
-                <div class="stage-header">
-                    <h2 class="stage-title">Training Data Preparation</h2>
-                    <p class="stage-description">Create final training files and monolingual corpora</p>
+                    <h2 class="stage-title">Integration</h2>
+                    <p class="stage-description">Wire processed data into training via ModernParallelDataset</p>
                 </div>
                 <div class="stage-content">
                     <div class="section">
@@ -677,101 +614,85 @@
                             <span class="section-icon">🔗</span>
                             <div>
                                 <div class="section-title">Pipeline Connection</div>
-                                <div class="section-subtitle">pipeline_connector.py</div>
+                                <div class="section-subtitle">utils/dataset_classes.py (ModernParallelDataset)</div>
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item">Split parallel → monolingual</div>
-                            <div class="data-item">Merge all sampled data</div>
-                            <div class="data-item">Include augmented data</div>
-                            <div class="data-item">Create vocabulary input</div>
+                            <div class="data-item">Tokenization via vocabulary packs</div>
+                            <div class="data-item">Batching and masking</div>
+                            <div class="data-item">Adapter-ready batch schema</div>
                         </div>
                     </div>
                     <div class="section output">
                         <div class="section-header">
-                            <span class="section-icon">📝</span>
+                            <span class="section-icon">🚀</span>
                             <div>
-                                <div class="section-title">Training Ready</div>
-                                <div class="section-subtitle">data/processed/</div>
+                                <div class="section-title">Ready for Training</div>
+                                <div class="section-subtitle">Seamless handoff to training</div>
                             </div>
                         </div>
                         <div class="data-list">
-                            <div class="data-item highlight"><code class="code">train_final.txt</code> - All pairs</div>
-                            <div class="data-item highlight"><code class="code">*_corpus.txt</code> - Monolingual</div>
-                            <div class="data-item">Ready for vocabulary creation</div>
-                            <div class="data-item">Ready for model training</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Stage 7 -->
-            <div class="stage stage-7">
-                <div class="stage-number">7</div>
-                <div class="stage-header">
-                    <h2 class="stage-title">Validation & Vocabulary</h2>
-                    <p class="stage-description">Validate dataset and create vocabulary packs</p>
-                </div>
-                <div class="stage-content">
-                    <div class="section">
-                        <div class="section-header">
-                            <span class="section-icon">✔️</span>
-                            <div>
-                                <div class="section-title">Validation Checks</div>
-                                <div class="section-subtitle">_validate_final_dataset()</div>
-                            </div>
-                        </div>
-                        <div class="data-list">
-                            <div class="data-item">Total size verification</div>
-                            <div class="data-item">Sentence count statistics</div>
-                            <div class="data-item">Distribution validation</div>
-                            <div class="data-item">Target size comparison</div>
-                        </div>
-                    </div>
-                    <div class="section output">
-                        <div class="section-header">
-                            <span class="section-icon">📚</span>
-                            <div>
-                                <div class="section-title">Vocabulary Output</div>
-                                <div class="section-subtitle">vocabulary_connector.py → vocabs/</div>
-                            </div>
-                        </div>
-                        <div class="data-list">
-                            <div class="data-item highlight">Language group packs</div>
-                            <div class="data-item highlight">Production vocabulary</div>
-                            <div class="data-item">✅ Pipeline complete!</div>
-                            <div class="data-item">Total: ~8GB optimized data</div>
+                            <div class="data-item">Data feeders configured</div>
+                            <div class="data-item">Validation and test folds</div>
                         </div>
                     </div>
                 </div>
             </div>
         </main>
-        
+
         <section class="summary">
-            <h2>Pipeline Summary</h2>
+            <h2>Data Pipeline Summary</h2>
             <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-label">Stages</div>
+                    <div class="summary-value">5</div>
+                </div>
                 <div class="summary-item">
                     <div class="summary-label">Languages</div>
                     <div class="summary-value">20</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label">Language Pairs</div>
-                    <div class="summary-value">25</div>
+                    <div class="summary-label">Outputs</div>
+                    <div class="summary-value">Processed + Vocabs</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label">Pipeline Stages</div>
-                    <div class="summary-value">7</div>
-                </div>
-                <div class="summary-item">
-                    <div class="summary-label">Total Data</div>
-                    <div class="summary-value">~8GB</div>
+                    <div class="summary-label">Integration</div>
+                    <div class="summary-value">Training-ready</div>
                 </div>
             </div>
             <p class="summary-description">
-                The Universal Translation System's data pipeline implements a sophisticated, modular approach to multilingual data processing. 
-                Using configuration-driven strategies, intelligent sampling, and modern augmentation techniques with NLLB models, 
-                the pipeline efficiently processes raw data into high-quality training datasets. The system ensures balanced representation 
-                across all 20 languages while maintaining quality standards and optimizing for computational resources.
+                The data pipeline converts raw multilingual sources into cleaned, normalized, and split datasets,
+                then builds unified vocabulary packs. Outputs are designed to feed directly into training via ModernParallelDataset.
+            </p>
+        </section>
+
+        <section class="summary" style="margin-top: 24px;">
+            <h2>How to Run</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-label">1. Downloader</div>
+                    <div class="summary-value">
+                        <code class="code">python data/unified_data_downloader.py --config configs/decoder_pool.json</code>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">2. Pipeline (dry-run)</div>
+                    <div class="summary-value">
+                        <code class="code">python data/unified_data_pipeline.py --dry-run --config configs/decoder_pool.json</code>
+                    </div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">3. Full Pipeline</div>
+                    <div class="summary-value">
+                        <code class="code">python data/unified_data_pipeline.py --config configs/decoder_pool.json</code>
+                    </div>
+                </div>
+            </div>
+            <p class="summary-description">
+                Use <code class="code">--dry-run</code> to synthesize small local datasets for a quick end-to-end validation.
+            </p>
+            <p class="summary-description">
+                Files referenced above are clickable when hosted; in local dev, navigate to the exact paths.
             </p>
         </section>
     </div>

@@ -91,8 +91,13 @@ cd universal-translation-system
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install requirements
-pip install -r requirements.txt
+# Install requirements (modular)
+# Base runtime
+pip install -r requirements/base.txt
+# Training + serving
+pip install -r requirements/train.txt -r requirements/serve.txt
+# Optional service-specific extras
+pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
 # Run components individually
 python cloud_decoder/optimized_decoder.py

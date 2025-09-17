@@ -1,0 +1,37 @@
+# Requires Prometheus Operator (kube-prometheus-stack) and the monitoring.coreos.com CRDs installed
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: coordinator-servicemonitor
+  labels:
+    release: prometheus  # adjust to your helm release label
+spec:
+  selector:
+    matchLabels:
+      app: coordinator
+  namespaceSelector:
+    any: true
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: decoder-servicemonitor
+  labels:
+    release: prometheus  # adjust to your helm release label
+spec:
+  selector:
+    matchLabels:
+      app: decoder
+  namespaceSelector:
+    any: true
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

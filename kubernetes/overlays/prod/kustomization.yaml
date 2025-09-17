@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../decoder-deployment.yaml
+  - ../../coordinator-deployment.yaml
+  - ../../decoder-pdb.yaml
+  - ../../coordinator-pdb.yaml
+  - ../../decoder-hpa.yaml
+  - ../../coordinator-hpa.yaml
+  - ../../monitoring-servicemonitors.yaml
+images:
+  - name: universal-decoder
+    newName: ghcr.io/code-with-zeeshan/universal-translation-system/decoder
+    newTag: v1.0.0
+  - name: universal-coordinator
+    newName: ghcr.io/code-with-zeeshan/universal-translation-system/coordinator
+    newTag: v1.0.0

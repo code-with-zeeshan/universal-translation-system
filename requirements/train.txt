@@ -1,0 +1,14 @@
+# Training-specific dependencies
+
+# Experiment tracking, pruning, progress
+tensorboard>=2.13.0
+torch-pruning>=1.3.0
+tqdm>=4.66.0
+wandb>=0.16.0
+
+# Evaluation
+nltk>=3.8.0
+sacrebleu>=2.4.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+unbabel-comet>=2.0.0

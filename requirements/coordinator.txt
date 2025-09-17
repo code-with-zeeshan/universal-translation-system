@@ -1,0 +1,5 @@
+# Coordinator-service specific add-ons
+# Ensure base.txt and serve.txt are installed as well when running the coordinator.
+
+# etcd service discovery (optional feature)
+etcd3>=0.12.0

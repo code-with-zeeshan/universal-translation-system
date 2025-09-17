@@ -393,63 +393,273 @@ class DecoderService:
         self.app = self._create_app()
         
     def _create_app(self) -> FastAPI:
-        """Create FastAPI application"""
+        """Create FastAPI application with compatibility features"""
+        from fastapi.middleware.cors import CORSMiddleware
+        from starlette.responses import Response
+        import base64
+        import json
+
+        # Optional OpenTelemetry instrumentation (no-op if not installed)
+        try:
+            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # type: ignore
+            otel_enabled = True
+        except Exception:
+            FastAPIInstrumentor = None  # type: ignore
+            otel_enabled = False
+
+        # API versioning and validation setup
+        self.api_version = os.environ.get("DECODER_API_VERSION", None)
+        if not self.api_version:
+            # Read from version-config.json when present
+            try:
+                cfg = json.loads(Path("version-config.json").read_text(encoding="utf-8"))
+                self.api_version = str(cfg.get("core", {}).get("apiVersion", self.model_version))
+            except Exception:
+                self.api_version = self.model_version
+
         app = FastAPI(
             title="Universal Decoder API",
-            version=self.model_version,
+            version=self.api_version,
             description="High-performance translation decoder service"
         )
-        
+
+        # Instrument app if OTEL available
+        if otel_enabled and FastAPIInstrumentor:
+            try:
+                FastAPIInstrumentor.instrument_app(app)
+            except Exception:
+                pass
+
         # Add HTTPS middleware with configuration
         add_https_middleware(
-            app, 
+            app,
             enforce_https=self.config.enforce_https,
             https_port=self.config.https_port
         )
-        
+
+        # CORS (optional via env)
+        allowed = os.environ.get("ALLOWED_ORIGINS", "").split(",") if os.environ.get("ALLOWED_ORIGINS") else []
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[o.strip() for o in allowed if o.strip()],
+            allow_credentials=False,
+            allow_methods=["POST", "GET", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Client-ID", "X-Request-ID"],
+        )
+
+        # Security headers middleware
+        @app.middleware("http")
+        async def add_security_headers(request, call_next):
+            response = await call_next(request)
+            response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+            return response
+
+        # JWKS/RS256 config
+        self.jwks_keys: List[Dict] = []
+        self.jwt_iss = os.environ.get("JWT_ISS")
+        self.jwt_aud = os.environ.get("JWT_AUD")
+        self.jwt_public_key = os.environ.get("JWT_PUBLIC_KEY")  # May contain multiple PEMs separated by ||
+        self.jwt_public_key_path = os.environ.get("JWT_PUBLIC_KEY_PATH")
+        self.trusted_proxies = {h.strip() for h in os.environ.get("TRUSTED_PROXIES", "").split(",") if h.strip()}
+
+        def _load_public_pems() -> list[str]:
+            pems: list[str] = []
+            try:
+                if self.jwt_public_key_path and Path(self.jwt_public_key_path).exists():
+                    pems.append(Path(self.jwt_public_key_path).read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            if self.jwt_public_key:
+                pems.extend([p.strip() for p in self.jwt_public_key.split("||") if p.strip()])
+            return pems
+
+        def _build_jwks_from_env() -> list[dict]:
+            # If JWKS json provided directly, prefer it
+            try:
+                raw = os.environ.get("JWKS_KEYS_JSON")
+                if raw:
+                    data = json.loads(raw)
+                    if isinstance(data, dict) and "keys" in data:
+                        return data["keys"]
+                    if isinstance(data, list):
+                        return data
+            except Exception:
+                pass
+            # Derive JWKS from PEMs when cryptography is available
+            try:
+                from cryptography.hazmat.primitives import serialization, hashes  # type: ignore
+                from cryptography.hazmat.primitives.asymmetric import rsa  # type: ignore
+                from cryptography.hazmat.backends import default_backend  # type: ignore
+                pems = _load_public_pems()
+                keys = []
+                for idx, pem in enumerate(pems):
+                    try:
+                        key = serialization.load_pem_public_key(pem.encode("utf-8"), backend=default_backend())
+                        if isinstance(key, rsa.RSAPublicKey):
+                            numbers = key.public_numbers()
+                            n = base64.urlsafe_b64encode(numbers.n.to_bytes((numbers.n.bit_length() + 7) // 8, "big")).decode("utf-8").rstrip("=")
+                            e = base64.urlsafe_b64encode(numbers.e.to_bytes((numbers.e.bit_length() + 7) // 8, "big")).decode("utf-8").rstrip("=")
+                            keys.append({"kty": "RSA", "alg": "RS256", "use": "sig", "kid": f"k{idx}", "n": n, "e": e})
+                    except Exception:
+                        continue
+                return keys
+            except Exception:
+                return []
+
+        def _jwks_readiness() -> bool:
+            # Ready if RS256 configured and we have some keys; or HS256 secret present
+            if self.jwt_public_key or (self.jwt_public_key_path and Path(self.jwt_public_key_path).exists()) or os.environ.get("JWKS_KEYS_JSON"):
+                return len(self.jwks_keys) > 0
+            return bool(self.jwt_secret)
+
+        def _get_client_id(req: Request) -> str:
+            hdr = req.headers.get("X-Client-ID")
+            if hdr:
+                return hdr
+            xff = req.headers.get("X-Forwarded-For")
+            if xff and req.client and req.client.host in self.trusted_proxies:
+                return xff.split(",")[0].strip()
+            return req.client.host if req.client else "unknown"
+
         security = HTTPBearer()
-        
+
         def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
             token = credentials.credentials
+            # Try RS256 first if keys are configured; fallback to HS256
             try:
-                jwt.decode(token, self.jwt_secret, algorithms=["HS256"])
+                if (self.jwt_public_key or self.jwt_public_key_path or os.environ.get("JWKS_KEYS_JSON")) and self.jwks_keys:
+                    # Try kid-based selection when present
+                    try:
+                        unverified = jwt.get_unverified_header(token)
+                        kid = unverified.get("kid")
+                    except Exception:
+                        kid = None
+
+                    key_to_use = None
+                    if kid:
+                        for k in self.jwks_keys:
+                            if k.get("kid") == kid and k.get("kty") == "RSA":
+                                try:
+                                    from cryptography.hazmat.primitives.asymmetric import rsa  # type: ignore
+                                    from cryptography.hazmat.primitives import serialization  # type: ignore
+                                    from cryptography.hazmat.backends import default_backend  # type: ignore
+                                    n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
+                                    e = int.from_bytes(base64.urlsafe_b64decode(k["e"] + "=="), byteorder="big")
+                                    pub_numbers = rsa.RSAPublicNumbers(e, n)
+                                    key_to_use = pub_numbers.public_key(default_backend())
+                                except Exception:
+                                    key_to_use = None
+                                break
+                    # Fallback to first PEM when kid route not available
+                    if key_to_use is None:
+                        for pem in _load_public_pems():
+                            try:
+                                key_to_use = pem
+                                break
+                            except Exception:
+                                continue
+                    if key_to_use is not None:
+                        jwt.decode(
+                            token,
+                            key_to_use,
+                            algorithms=["RS256"] if not isinstance(key_to_use, str) else ["RS256", "HS256"],
+                            options={"require": ["exp", "iat", "nbf"]},
+                            issuer=self.jwt_iss,
+                            audience=self.jwt_aud,
+                        )
+                        return
+                # HS256 fallback
+                jwt.decode(
+                    token,
+                    self.jwt_secret,
+                    algorithms=["HS256"],
+                    options={"require": ["exp", "iat", "nbf"]},
+                    issuer=self.jwt_iss,
+                    audience=self.jwt_aud,
+                )
             except Exception:
                 raise HTTPException(status_code=401, detail="Invalid token")
-        
+
         @app.on_event("startup")
         async def startup():
+            # Validate API version against version-config.json if present
+            try:
+                cfg = json.loads(Path("version-config.json").read_text(encoding="utf-8"))
+                core_api = str(cfg.get("core", {}).get("apiVersion", ""))
+                if core_api and str(self.api_version) != core_api:
+                    raise RuntimeError(f"API_VERSION ({self.api_version}) != core.apiVersion ({core_api})")
+            except FileNotFoundError:
+                pass
+            except Exception as ex:
+                logger.warning(f"API version validation skipped/failed: {ex}")
+
+            # Build JWKS on startup
+            try:
+                self.jwks_keys = _build_jwks_from_env()
+            except Exception:
+                self.jwks_keys = []
+
             await self._initialize()
             asyncio.create_task(self.batcher.process_batches(self._process_batch_gpu))
-            
+
             # Export profiling data periodically if enabled
             if self.config.profiling.enable_profiling:
                 async def export_profiling_data():
                     while True:
                         await asyncio.sleep(3600)  # Export every hour
                         function_profiler.export_stats()
-            
+                asyncio.create_task(export_profiling_data())
+
         @app.get("/health")
         async def health():
-            """Health check endpoint"""
+            """Liveness probe"""
             return {
-                "status": "healthy",
+                "status": "ok",
                 "device": str(self.device),
                 "model_loaded": self.model is not None
             }
-        
+
+        @app.get("/ready")
+        async def ready():
+            """Readiness probe similar to cloud decoder"""
+            checks = {
+                "model": self.model is not None,
+                "vocabulary": self.vocabulary_manager is not None,
+                "jwks": _jwks_readiness(),
+            }
+            ready_flag = all(checks.values())
+            payload = {
+                "ready": ready_flag,
+                "checks": checks,
+                "apiVersion": self.api_version,
+                "version": self.model_version,
+            }
+            return JSONResponse(content=payload, status_code=200 if ready_flag else 503)
+
+        @app.get("/.well-known/jwks.json")
+        async def jwks():
+            return JSONResponse({"keys": self.jwks_keys})
+
         @app.get("/status")
         @profile
         async def status():
-            """Status endpoint with model info"""
-            # Get memory stats
+            """Status endpoint with model, api, and vocabulary info"""
             memory_stats = memory_manager.get_memory_stats()
-            
+            vocab_loaded = list(getattr(self.vocabulary_manager, "loaded_packs", {}).keys())
             return {
+                "api_version": self.api_version,
                 "model_version": self.model_version,
                 "healthy": True,
                 "device": str(self.device),
                 "gpu_available": torch.cuda.is_available(),
                 "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+                "vocabulary": {
+                    "loaded_packs": vocab_loaded,
+                },
                 "memory": {
                     "system_memory_percent": memory_stats.get("system_memory_percent", 0),
                     "gpu_memory_percent": memory_stats.get("gpu_memory_percent", 0),
@@ -458,44 +668,64 @@ class DecoderService:
                 },
                 "uptime": time.time() - self.start_time
             }
-            
+
         @app.get("/profiling")
         async def profiling_stats(credentials: HTTPAuthorizationCredentials = Depends(security)):
             """Get profiling statistics (admin only)"""
-            # Validate admin access
             try:
-                payload = jwt.decode(credentials.credentials, self.jwt_secret, algorithms=["HS256"])
+                payload = jwt.decode(credentials.credentials, self.jwt_secret, algorithms=["HS256"])  # Keep HS256 for admin tokens
                 if payload.get("role") != "admin":
                     raise HTTPException(status_code=403, detail="Admin access required")
             except Exception:
                 raise HTTPException(status_code=401, detail="Invalid token")
-                
-            # Get profiling stats
             stats = function_profiler.get_sorted_stats(limit=20)
             bottlenecks = function_profiler.identify_bottlenecks()
-            
-            return {
-                "stats": stats,
-                "bottlenecks": bottlenecks
-            }
-        
+            return {"stats": stats, "bottlenecks": bottlenecks}
+
+        @app.get("/metrics")
+        async def metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
+            """Prometheus metrics endpoint (protected)."""
+            try:
+                require_jwt(credentials)
+                try:
+                    from prometheus_client import generate_latest  # type: ignore
+                    return Response(generate_latest(), media_type="text/plain")
+                except Exception:
+                    return Response("metrics_not_available\n", media_type="text/plain", status_code=501)
+            except HTTPException:
+                raise
+            except Exception:
+                raise HTTPException(status_code=401, detail="Invalid token")
+
+        @app.get("/loaded_adapters")
+        async def get_loaded_adapters():
+            """Stub endpoint for compatibility; returns empty list if no dynamic adapters."""
+            return []
+
         @app.post("/decode")
-        async def decode(request: Request, x_target_language: str = Header(None)):
-            """Decode encoder output to target language"""
+        async def decode(request: Request, x_target_language: str = Header(None), x_adapter_override: str = Header(None)):
+            """Decode encoder output to target language with rate limiting and tracing headers"""
+            # Simple rate limiting keyed by client
+            client_id = _get_client_id(request)
+            if not rate_limiter.is_allowed(client_id):
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
             try:
                 compressed_data = await request.body()
-                
+                # Accept request IDs for tracing
+                request_id = request.headers.get("X-Request-ID")
+                _ = request_id  # reserved for future logging/tracing
+                # Adapter override is accepted but not applied in this minimal node
+                _ = x_adapter_override
+
                 result = await self.batcher.add_request({
                     'compressed_data': compressed_data,
                     'target_lang': x_target_language
                 })
-                
                 return result
-                
             except Exception as e:
                 logger.error(f"Decode error: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
-        
+
         @app.post("/admin/reload_model", dependencies=[Depends(require_jwt)])
         async def reload_model():
             """Reload model (requires authentication)"""
@@ -504,7 +734,7 @@ class DecoderService:
                 return {"status": "Model reloaded successfully"}
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
-        
+
         return app
     
     async def _initialize(self):

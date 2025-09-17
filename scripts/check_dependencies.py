@@ -18,10 +18,17 @@ def check_dependencies():
         
         print(f"🔍 Checking dependencies for Universal Translation System v{version_config['core']['version']}")
         
-        # Check installed packages
-        requirements_path = Path(__file__).parent.parent / 'requirements.txt'
-        with open(requirements_path) as f:
-            requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        # Check installed packages (modular default: base + train + serve)
+        req_files = [
+            Path(__file__).parent.parent / 'requirements' / 'base.txt',
+            Path(__file__).parent.parent / 'requirements' / 'train.txt',
+            Path(__file__).parent.parent / 'requirements' / 'serve.txt',
+        ]
+        requirements = []
+        for rf in req_files:
+            if rf.exists():
+                with open(rf) as f:
+                    requirements.extend([line.strip() for line in f if line.strip() and not line.startswith('#')])
         
         missing = []
         outdated = []

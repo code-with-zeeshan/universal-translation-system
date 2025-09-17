@@ -1,0 +1,2 @@
+# Coordinator development/test extras (beyond requirements/coordinator.txt)
+pytest>=7.4.0

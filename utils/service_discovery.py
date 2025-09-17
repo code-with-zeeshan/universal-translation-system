@@ -19,6 +19,13 @@ import time
 from typing import Dict, List, Optional, Any, Callable
 from .exceptions import NetworkError, ConfigurationError
 
+# Prefer centralized secret/config accessor
+try:
+    from .secrets_bootstrap import bootstrap_secrets, get_secret
+    bootstrap_secrets(role=os.environ.get("UTS_ROLE", "general"))
+except Exception:
+    get_secret = None
+
 logger = logging.getLogger(__name__)
 
 class ServiceDiscoveryClient:
@@ -72,7 +79,12 @@ class ServiceDiscoveryClient:
         Requires COORDINATOR_URL or SERVICE_DISCOVERY_COORDINATOR_URL.
         Optionally uses SERVICE_DISCOVERY_HEARTBEAT_INTERVAL and SERVICE_DISCOVERY_TIMEOUT.
         """
-        coordinator_url = os.environ.get("COORDINATOR_URL") or os.environ.get("SERVICE_DISCOVERY_COORDINATOR_URL")
+        # Allow using secret store for coordinator URL if provided
+        coordinator_url = (
+            (get_secret("COORDINATOR_URL") if get_secret else None)
+            or os.environ.get("COORDINATOR_URL")
+            or os.environ.get("SERVICE_DISCOVERY_COORDINATOR_URL")
+        )
         if not coordinator_url:
             raise ConfigurationError("COORDINATOR_URL must be set for service discovery")
         heartbeat = int(os.environ.get("SERVICE_DISCOVERY_HEARTBEAT_INTERVAL", "30"))

@@ -109,10 +109,33 @@ class AdapterTrainer:
         progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{total_epochs}")
         
         for batch_idx, batch in enumerate(progress_bar):
-            # Move batch to device
-            input_ids = batch['input_ids'].to(self.device)
-            attention_mask = batch['attention_mask'].to(self.device)
-            labels = batch.get('labels', input_ids).to(self.device)  # For MLM task
+            # Normalize batch schema from different datasets
+            if isinstance(batch, dict):
+                if 'input_ids' in batch and 'attention_mask' in batch:
+                    input_ids = batch['input_ids']
+                    attention_mask = batch['attention_mask']
+                    labels = batch.get('labels', input_ids)
+                elif 'source_ids' in batch and 'source_mask' in batch:
+                    # utils.ModernParallelDataset schema
+                    input_ids = batch['source_ids']
+                    attention_mask = batch['source_mask']
+                    # Use target_ids as labels if available
+                    labels = batch.get('target_ids', input_ids)
+                else:
+                    raise KeyError("Unsupported batch schema. Expected keys ['input_ids','attention_mask'] or ['source_ids','source_mask'].")
+            else:
+                # TensorDataset fallback (input_ids, attention_mask, labels)
+                if isinstance(batch, (list, tuple)) and len(batch) >= 2:
+                    input_ids = batch[0]
+                    attention_mask = batch[1]
+                    labels = batch[2] if len(batch) > 2 else batch[0]
+                else:
+                    raise TypeError("Unsupported batch type")
+
+            # Move to device
+            input_ids = input_ids.to(self.device)
+            attention_mask = attention_mask.to(self.device)
+            labels = labels.to(self.device)
             
             # Forward pass with adapter
             outputs = self.model(input_ids, attention_mask, language)

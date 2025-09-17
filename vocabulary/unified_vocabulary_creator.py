@@ -1031,3 +1031,29 @@ class UnifiedVocabularyCreator:
         # For now, returns None to indicate no embeddings
         logger.info("Embedding extraction not configured")
         return None
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Unified Vocabulary Pack Creator")
+    parser.add_argument("command", choices=["create", "create_all"], help="Operation to perform")
+    parser.add_argument("--pack", dest="pack_name", help="Pack name (for create)")
+    parser.add_argument("--langs", nargs="*", help="Languages (for create)")
+    parser.add_argument("--mode", choices=["production", "research", "hybrid"], default="production")
+    parser.add_argument("--corpus_dir", default="data/processed")
+    parser.add_argument("--output_dir", default="vocabs")
+    parser.add_argument("--groups", nargs="*", help="Groups to create for create_all")
+    args = parser.parse_args()
+
+    from enum import Enum
+    class _M(Enum):
+        PRODUCTION = "production"; RESEARCH = "research"; HYBRID = "hybrid"
+    mode_map = {"production": CreationMode.PRODUCTION, "research": CreationMode.RESEARCH, "hybrid": CreationMode.HYBRID}
+
+    creator = UnifiedVocabularyCreator(corpus_dir=args.corpus_dir, output_dir=args.output_dir, default_mode=mode_map[args.mode])
+    if args.command == "create":
+        if not args.pack_name or not args.langs:
+            raise SystemExit("--pack and --langs are required for 'create'")
+        creator.create_pack(pack_name=args.pack_name, languages=args.langs, mode=mode_map[args.mode])
+    else:
+        creator.create_all_packs(mode=mode_map[args.mode], groups_to_create=args.groups)

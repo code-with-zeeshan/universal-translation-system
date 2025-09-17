@@ -72,9 +72,9 @@ Pod::Spec.new do |s|
   s.version          = '1.0.0'
   s.summary          = 'iOS encoder client for Universal Translation System'
   s.license          = { :type => 'Apache-2.0', :file => 'LICENSE' }
-  s.homepage         = 'https://github.com/your-org/universal-translation-system'
-  s.author           = { 'Your Org' => 'dev@your-org.com' }
-  s.source           = { :git => 'https://github.com/your-org/universal-translation-system.git', :tag => s.version }
+  s.homepage         = 'https://github.com/code-with-zeeshan/universal-translation-system'
+  s.author           = { 'Code with Zeeshan' => 'dev@code-with-zeeshan.com' }
+  s.source           = { :git => 'https://github.com/code-with-zeeshan/universal-translation-system.git', :tag => s.version }
   s.platform         = :ios, '13.0'
   s.swift_version    = '5.7'
   s.source_files     = 'ios/UniversalTranslationSDK/Sources/**/*.{swift,h,mm}'
@@ -102,7 +102,7 @@ pod 'UniversalTranslationSDK', :path => '../ios/UniversalTranslationSDK'
 ## Web SDK: npm Publishing
 
 ### Package scope and name
-- Prefer a scoped name for organization packages: `@your-org/universal-translation-sdk`
+- Prefer a scoped name for organization packages: `@code-with-zeeshan/universal-translation-sdk`
 - Ensure `name`, `version`, `license`, `repository`, and `homepage` are set in `web/universal-translation-sdk/package.json`
 
 ### Build & prepare
@@ -132,7 +132,7 @@ npm publish --tag next       # for prereleases
 
 ### Consuming
 ```bash
-npm install @your-org/universal-translation-sdk
+npm install @code-with-zeeshan/universal-translation-sdk
 ```
 
 ## React Native: Linking Notes

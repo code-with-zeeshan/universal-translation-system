@@ -19,6 +19,7 @@ dist/
 # Logs and outputs
 logs/
 checkpoints/
+decoder_pool.json
 
 # Model outputs
 models/

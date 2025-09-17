@@ -1,6 +1,5 @@
 include README.md
 include LICENSE
-include requirements.txt
 recursive-include universal_decoder_node *.yaml *.yml
 exclude tests/*
 exclude docs/*

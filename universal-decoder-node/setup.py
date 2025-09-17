@@ -12,7 +12,7 @@ setup(
     description="High-performance translation decoder service for Universal Translation System",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/code-with-zeeshan/universal-decoder-node",
+    url="https://github.com/code-with-zeeshan/universal-translation-system/tree/main/universal-decoder-node",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",
@@ -27,23 +27,31 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
+        # Core runtime used by FastAPI decoder service
         "torch>=2.0.0",
-        "numpy>=1.21.0",
+        "numpy>=1.21.0,<2.0.0",
         "msgpack>=1.0.0",
         "lz4>=4.3.2",
-        "fastapi>=0.104.0",
-        "uvicorn[standard]>=0.24.0",
-        "pydantic>=2.0.0",
+        "fastapi==0.104.1",
+        "uvicorn[standard]==0.24.0.post1",
+        "pydantic==2.5.3",
         "click>=8.1.0",
         "requests>=2.31.0",
-        "pyyaml>=6.0",
+        "PyYAML>=6.0.0",
         "docker>=6.1.0",
-        "prometheus-client>=0.18.0",
-        "pyjwt>=2.8.0",
-        "python-multipart>=0.0.6",
+        "prometheus-client==0.19.0",
+        "PyJWT==2.8.0",
+        "python-multipart==0.0.6",
         "aiofiles>=23.2.0",
     ],
     extras_require={
+        # Optional performance/ops extras
+        "perf": [
+            "orjson>=3.9.10",
+            "uvloop>=0.19.0; platform_system != 'Windows'",
+            "tenacity>=8.2.3",
+            "watchdog>=2.3.0",
+        ],
         "dev": [
             "pytest>=7.4.0",
             "pytest-asyncio>=0.21.0",
