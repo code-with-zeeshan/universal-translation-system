@@ -169,6 +169,120 @@ def check_false_friends(text: str, source_lang: str, target_lang: str) -> List[T
     return warnings
 
 
+# ── Idioms / Multi-Word Expressions ────────────────────────────────────
+
+IDIOMS: Dict[str, Dict[str, str]] = {
+    "es_en": {
+        "ojo": "heads up / watch out",
+        "calentar la cabeza": "to stress out / to bother",
+        "tomar el pelo": "to pull someone's leg",
+        "estar en las nubes": "to be daydreaming",
+        "no tener pelos en la lengua": "to speak one's mind",
+        "ser pan comido": "to be a piece of cake",
+        "costar un ojo de la cara": "to cost an arm and a leg",
+        "ponerse las pilas": "to get one's act together",
+        "estar hasta las narices": "to be fed up",
+        "meter la pata": "to put one's foot in it",
+        "llover a cántaros": "to rain cats and dogs",
+        "más vale tarde que nunca": "better late than never",
+        "en boca cerrada no entran moscas": "silence is golden",
+        "cada loco con su tema": "to each their own",
+        "hacerse la vista gorda": "to turn a blind eye",
+        "poner la mano en el fuego": "to vouch for someone",
+        "tirar la toalla": "to throw in the towel",
+        "dar en el clavo": "to hit the nail on the head",
+        "no dar pie con bola": "to get everything wrong",
+        "estar como una cabra": "to be nuts / crazy",
+    },
+    "fr_en": {
+        "appeler un chat un chat": "to call a spade a spade",
+        "casser les pieds": "to be a pain / to bother",
+        "donner sa langue au chat": "to give up guessing",
+        "être dans la lune": "to be daydreaming",
+        "faire la grasse matinée": "to sleep in",
+        "mettre son grain de sel": "to butt in",
+        "ne pas être dans son assiette": "to feel off / not oneself",
+        "poser un lapin": "to stand someone up",
+        "raconter des salades": "to tell tall tales",
+        "se lever du pied gauche": "to get up on the wrong side of the bed",
+        "tirer les vers du nez": "to pry information out of someone",
+        "vendre la mèche": "to spill the beans",
+        "c'est la fin des haricots": "it's the last straw",
+        "faire d'une pierre deux coups": "to kill two birds with one stone",
+        "il pleut des cordes": "it's raining cats and dogs",
+    },
+    "de_en": {
+        "da liegt der hund begraben": "that's the crux of the matter",
+        "ich verstehe nur bahnhof": "it's all Greek to me",
+        "um den heißen brei herumreden": "to beat around the bush",
+        "alles in butter": "everything is fine / all good",
+        "die daumen drücken": "to cross one's fingers",
+        "fix und fertig": "to be exhausted / done in",
+        "auf dem schlauch stehen": "to draw a blank",
+        "in den sauren apfel beißen": "to bite the bullet",
+        "pute kuchen": "piece of cake",
+        "sich keine sorgen machen": "don't worry about it",
+        "den kopf zerbrechen": "to rack one's brain",
+        "mit dem kopf durch die wand wollen": "to be stubborn / headstrong",
+    },
+    "it_en": {
+        "in bocca al lupo": "good luck / break a leg",
+        "non avere peli sulla lingua": "to speak one's mind",
+        "prendere la palla al balzo": "to seize the opportunity",
+        "costare un occhio della testa": "to cost an arm and a leg",
+        "essere al settimo cielo": "to be on cloud nine",
+        "fare le corna": "to touch wood / jinx",
+        "piangere sul latte versato": "to cry over spilled milk",
+        "rompere le scatole": "to be a pain / annoy",
+        "tutto fa brodo": "every little bit helps",
+        "acqua in bocca": "mum's the word",
+    },
+    "pt_en": {
+        "pagar o pato": "to take the blame / get stuck",
+        "encher a paciência": "to be a nuisance",
+        "ficar a ver navios": "to be left empty-handed",
+        "matar dois coelhos com uma paulada": "to kill two birds with one stone",
+        "não ter papas na língua": "to speak one's mind",
+        "puxar a brasa à sua sardinha": "to look out for number one",
+        "tirar o cavalinho da chuva": "to forget about it / no chance",
+        "chover canivetes": "to rain cats and dogs",
+        "cair a ficha": "to finally get it",
+        "dor de cotovelo": "jealousy / sour grapes",
+    },
+}
+
+
+def check_idioms(text: str, source_lang: str, target_lang: str) -> List[Tuple[str, str, str]]:
+    """Check source text for known idioms. Returns list of (idiom, warning, meaning)."""
+    pair_key = f"{source_lang}_{target_lang}"
+    reverse_key = f"{target_lang}_{source_lang}"
+    dict_key = pair_key if pair_key in IDIOMS else reverse_key if reverse_key in IDIOMS else None
+    if not dict_key:
+        return []
+    text_lower = text.lower()
+    warnings = []
+    for idiom, meaning in IDIOMS[dict_key].items():
+        if idiom in text_lower:
+            warnings.append((idiom, f"Idiom detected: '{idiom}' → '{meaning}' in {target_lang}", meaning))
+    return warnings
+
+
+def gloss_idioms(text: str, source_lang: str, target_lang: str) -> str:
+    """Annotate known idioms with their meaning in the source text to guide the model."""
+    pair_key = f"{source_lang}_{target_lang}"
+    reverse_key = f"{target_lang}_{source_lang}"
+    dict_key = pair_key if pair_key in IDIOMS else reverse_key if reverse_key in IDIOMS else None
+    if not dict_key:
+        return text
+    text_lower = text.lower()
+    result = text
+    for idiom, meaning in IDIOMS[dict_key].items():
+        if idiom in text_lower:
+            gloss = f" (meaning: {meaning})"
+            result = result.replace(idiom.title() if idiom[0].isupper() else idiom, idiom + gloss)
+    return result
+
+
 # ── Quality Scoring ────────────────────────────────────────────────────
 
 
@@ -271,16 +385,23 @@ class TranslationQualityPipeline:
         self.grammar_postprocess = grammar_postprocess
 
     def prepare_input(self, text: str, source_lang: str, target_lang: str, domain: Optional[str] = None) -> Tuple[str, str, str]:
-        """Prepare text for translation: detect tone, check false friends.
+        """Prepare text for translation: detect tone, check false friends, gloss idioms.
 
         Returns:
             (processed_text, tone, domain)
         """
         tone = detect_tone(text)
         cleaned_text = strip_tone_tag(text)
-        text_with_hints = apply_tone_prompt(cleaned_text, tone, source_lang)
+
+        # Check and gloss idioms (annotate them in source to guide the model)
+        idiom_warnings = check_idioms(cleaned_text, source_lang, target_lang)
+        for idiom, warning, meaning in idiom_warnings:
+            logger.info(f"Idiom detected: '{idiom}' → {meaning}")
+        glossed_text = gloss_idioms(cleaned_text, source_lang, target_lang)
+
+        text_with_hints = apply_tone_prompt(glossed_text, tone, source_lang)
         if tone == "NEUTRAL":
-            text_with_hints = cleaned_text + FRIENDLY_TIE_BREAKER.get(source_lang, "")
+            text_with_hints = glossed_text + FRIENDLY_TIE_BREAKER.get(source_lang, "")
 
         if self.false_friends_enabled:
             warnings = check_false_friends(cleaned_text, source_lang, target_lang)
