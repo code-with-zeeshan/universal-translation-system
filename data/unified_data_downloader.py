@@ -218,10 +218,10 @@ class UnifiedDataDownloader:
                 return self.source_preferences.get('en_centric', ['opus-100', 'ccmatrix'])
             european = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
             if source in european and target in european:
-                return self.source_preferences.get('european', ['opus-100'])
+                return self.source_preferences.get('european', ['opus-100', 'ccmatrix'])
             asian = ['zh', 'ja', 'ko', 'th', 'vi', 'id']
             if source in asian and target in asian:
-                return self.source_preferences.get('asian', ['ccmatrix'])
+                return self.source_preferences.get('asian', ['ccmatrix', 'opus-100'])
         return ['opus-100', 'ccmatrix']
     
     def get_download_schedule(self, dataset_type: DatasetType = DatasetType.TRAINING) -> List[Dict]:
@@ -503,7 +503,6 @@ class UnifiedDataDownloader:
                 source_info['dataset_name'],
                 config_name=source_info.get('config_name', pair.pair_string),
                 streaming=True,
-                trust_remote_code=False
             )
             
             if dataset:
@@ -527,7 +526,6 @@ class UnifiedDataDownloader:
                 source_info['dataset_name'],
                 config_name=source_info.get('config_name'),
                 split=source_info.get('split', 'train'),
-                trust_remote_code=False
             )
             
             if dataset:

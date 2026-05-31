@@ -81,9 +81,9 @@ data_strategy:
   
   source_preferences:
     en_centric: ['opus-100', 'ccmatrix', 'wmt']
-    european: ['opus-100', 'wmt', 'opus_books']
-    asian: ['opus-100', 'ted_talks']
-    default: ['opus-100']
+    european: ['opus-100', 'ccmatrix', 'wmt']
+    asian: ['ccmatrix', 'opus-100']
+    default: ['opus-100', 'ccmatrix']
 
 
 # Model architecture (compact ~40MB target)
