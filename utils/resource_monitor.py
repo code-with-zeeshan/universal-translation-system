@@ -9,6 +9,7 @@ try:
     import psutil  # type: ignore
 except Exception:  # pragma: no cover
     psutil = None  # type: ignore
+import sys
 import time
 import threading
 from typing import Dict, List, Optional, Any
@@ -284,7 +285,8 @@ class ResourceMonitor:
     
     def __del__(self):
         """Cleanup when monitor is destroyed"""
-        self.stop_monitoring()
+        if sys.meta_path is not None:
+            self.stop_monitoring()
 
 # Global resource monitor instance
 resource_monitor = ResourceMonitor()
