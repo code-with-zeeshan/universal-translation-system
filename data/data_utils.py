@@ -12,6 +12,7 @@ except Exception:  # pragma: no cover
 from tqdm import tqdm
 import logging
 from tenacity import retry, stop_after_attempt, wait_exponential
+import gc
 import itertools
 from utils.exceptions import DataError
 
