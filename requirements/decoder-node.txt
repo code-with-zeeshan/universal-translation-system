@@ -1,4 +1,4 @@
 # Extras for universal-decoder-node CLI package
-click>=8.1.0
-requests>=2.31.0
-docker>=6.1.0
+click>=8.4.1
+requests>=2.34.2
+docker>=7.1.0

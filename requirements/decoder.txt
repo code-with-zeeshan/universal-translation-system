@@ -4,8 +4,8 @@
 #   -r serve.txt
 
 # Event loop optimization (non-Windows)
-uvloop>=0.19.0; platform_system != 'Windows'
+uvloop>=0.22.1; platform_system != 'Windows'
 # Faster JSON
-orjson>=3.9.10
+orjson>=3.11.9
 # Retry helpers used in node/HTTP ops
-tenacity>=8.2.3
+tenacity>=9.1.4
