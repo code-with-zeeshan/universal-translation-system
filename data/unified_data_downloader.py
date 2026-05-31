@@ -721,7 +721,7 @@ def main():
     import sys
 
     parser = argparse.ArgumentParser(description="Unified Data Downloader")
-    parser.add_argument("--config", default="configs/decoder_pool.json",
+    parser.add_argument("--config", default="config/base.yaml",
                         help="Path to config file")
     parser.add_argument("--dry-run", action="store_true",
                         help="Estimate download size without downloading")

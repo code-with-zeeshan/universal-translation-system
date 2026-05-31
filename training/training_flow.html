@@ -849,25 +849,25 @@
                 <div class="summary-item">
                     <div class="summary-label">1. Bootstrap</div>
                     <div class="summary-value">
-                        <code class="code">python training/bootstrap_from_pretrained.py --config configs/decoder_pool.json</code>
+                        <code class="code">python -m training.bootstrap_from_pretrained --config config/base.yaml</code>
                     </div>
                 </div>
                 <div class="summary-item">
                     <div class="summary-label">2. Progressive Train</div>
                     <div class="summary-value">
-                        <code class="code">python training/progressive_training.py --config configs/decoder_pool.json</code>
+                        <code class="code">python -m training.progressive_training --config config/base.yaml</code>
                     </div>
                 </div>
                 <div class="summary-item">
                     <div class="summary-label">3. Memory-Efficient</div>
                     <div class="summary-value">
-                        <code class="code">python training/memory_efficient_training.py --config configs/decoder_pool.json</code>
+                        <code class="code">python -m training.memory_efficient_training --config config/base.yaml</code>
                     </div>
                 </div>
                 <div class="summary-item">
                     <div class="summary-label">4. Train Adapters</div>
                     <div class="summary-value">
-                        <code class="code">python encoder/train_adapters.py --config configs/decoder_pool.json --lang es</code>
+                        <code class="code">python -m encoder.train_adapters --config config/base.yaml --lang es</code>
                     </div>
                 </div>
                 <div class="summary-item">

@@ -672,19 +672,19 @@
                 <div class="summary-item">
                     <div class="summary-label">1. Downloader</div>
                     <div class="summary-value">
-                        <code class="code">python data/unified_data_downloader.py --config configs/decoder_pool.json</code>
+                        <code class="code">python -m data.unified_data_downloader --config config/base.yaml</code>
                     </div>
                 </div>
                 <div class="summary-item">
                     <div class="summary-label">2. Pipeline (dry-run)</div>
                     <div class="summary-value">
-                        <code class="code">python data/unified_data_pipeline.py --dry-run --config configs/decoder_pool.json</code>
+                        <code class="code">python -m data.unified_data_pipeline --dry-run --config config/base.yaml</code>
                     </div>
                 </div>
                 <div class="summary-item">
                     <div class="summary-label">3. Full Pipeline</div>
                     <div class="summary-value">
-                        <code class="code">python data/unified_data_pipeline.py --config configs/decoder_pool.json</code>
+                        <code class="code">python -m data.unified_data_pipeline --config config/base.yaml</code>
                     </div>
                 </div>
             </div>
