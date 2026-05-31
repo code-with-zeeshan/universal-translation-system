@@ -62,6 +62,21 @@ data:
     de-fr: 40000
     ru-uk: 40000
   
+  augmentation_pairs:
+    - en-es
+    - en-fr
+    - en-de
+    - en-zh
+    - en-ru
+    - en-ja
+    - en-ar
+    - en-pt
+    - en-it
+    - es-pt
+    - de-fr
+    - zh-ja
+    - ru-uk
+
   vocabulary_strategy:
     approach: production # or "research"
     groups:

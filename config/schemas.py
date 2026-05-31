@@ -20,6 +20,7 @@ class DataConfig(BaseModel):
     total_size_gb: float = Field(8.0, description="Target total dataset size in GB")
     max_sentence_length: int = Field(64, description="Maximum sentence length")
     output_dir: str = "data/processed"
+    augmentation_pairs: List[str] = Field(default_factory=list, description="Language pairs for synthetic augmentation")
 
     class Config:
         extra = "allow"
