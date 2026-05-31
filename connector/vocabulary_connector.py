@@ -2,14 +2,9 @@
 """Connect data pipeline to vocabulary creation"""
 from pathlib import Path
 import logging
-from typing import TYPE_CHECKING
 
 from utils.exceptions import DataError
 
-if TYPE_CHECKING:
-    from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
-else:
-    VocabularyPackCreator = None
 
 class VocabularyConnector:
     """Bridge between data pipeline and vocabulary creation"""
@@ -20,6 +15,8 @@ class VocabularyConnector:
     def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed',
                                            output_dir: str = 'vocabs'):
         """Create vocabulary packs after data pipeline completes"""
+        from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+        
         self.logger.info(f"Creating vocabulary packs in {output_dir} from {processed_dir}...")
         
         # Check if monolingual corpora exist

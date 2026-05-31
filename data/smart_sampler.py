@@ -179,8 +179,8 @@ class SmartDataSampler:
         for batch in self._process_file_in_batches(input_path, batch_size=10000):
             for line in batch:
                 parts = line.strip().split('\t')
-                if len(parts) == 2:
-                    source, target = parts
+                if len(parts) >= 2:
+                    source, target = parts[0], parts[1]
                     if self.is_high_quality(source, target):
                         quality_lines.append(line_idx)
                 line_idx += 1
@@ -209,8 +209,8 @@ class SmartDataSampler:
                     current_idx = batch_start_idx + i
                     if current_idx in sampled_indices:
                         parts = line.strip().split('\t')
-                        if len(parts) == 2:
-                            source, target = parts
+                        if len(parts) >= 2:
+                            source, target = parts[0], parts[1]
                             f_out.write(f"{source}\t{target}\t{source_lang}\t{target_lang}\n")
                             written_count += 1
                 line_idx += len(batch)

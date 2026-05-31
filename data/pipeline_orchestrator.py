@@ -324,12 +324,18 @@ class UnifiedDataPipeline:
                 span.set_attribute("dry_run", True)
                 return
             
-            # Skip download if raw data already exists
+            # Merge existing domain data before any skip check
+            self._merge_domain_data()
+
+            # Skip download only if ALL expected pair files already exist
+            expected_pairs = list(self.config.data.training_distribution.keys())
             raw_dir = self.dirs['base'] / 'raw'
-            if raw_dir.exists() and any(raw_dir.iterdir()):
-                self.logger.info(f"⏭️ Raw data already exists in {raw_dir}, skipping download")
-                span.set_attribute("skipped", True)
-                return
+            if raw_dir.exists():
+                existing = [p for p in expected_pairs if (raw_dir / f"{p}.txt").exists()]
+                if len(existing) == len(expected_pairs):
+                    self.logger.info(f"⏭️ All {len(expected_pairs)} pairs exist in {raw_dir}, skipping download")
+                    span.set_attribute("skipped", True)
+                    return
             
             self.logger.info("📥 Downloading training data...")
             
@@ -343,7 +349,32 @@ class UnifiedDataPipeline:
                 dataset_types=[DatasetType.TRAINING]
             )
             span.set_attribute("training_data.pairs", stats.get('downloaded_pairs', 0))
+
+            # Merge domain-specific data into raw training files
+            self._merge_domain_data()
     
+    def _merge_domain_data(self):
+        """Merge domain-specific data (medical/legal/tech) into raw pair files."""
+        raw_dir = self.dirs['base'] / 'raw'
+        for domain in ('medical', 'legal', 'tech'):
+            domain_dir = raw_dir / domain
+            if not domain_dir.exists():
+                continue
+            for fpath in domain_dir.glob('*_*.txt'):
+                pair_str = fpath.stem.split('_')[0]
+                target = raw_dir / f"{pair_str}.txt"
+                if '-' not in pair_str:
+                    continue
+                count = 0
+                with open(fpath, 'r', encoding='utf-8') as fin, \
+                     open(target, 'a', encoding='utf-8') as fout:
+                    for line in fin:
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 2:
+                            fout.write(f"{parts[0]}\t{parts[1]}\n")
+                            count += 1
+                self.logger.info(f"Merged {count:,} {domain} samples into {target.name}")
+
     async def _sample_and_filter_data(self):
         """Sample and filter downloaded data"""
         with tracer.start_as_current_span("sample_and_filter") as span:
