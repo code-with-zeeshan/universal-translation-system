@@ -60,7 +60,7 @@ class APIKeyManager:
     def generate_api_key(self, client_name: str, permissions: List[str]) -> str:
         """Generate and store a new API key (returns the plaintext once)."""
         api_key = secrets.token_urlsafe(32)
-        key_hash = hashlib.sha3_256(api_key.encode()).hexdigest()
+        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
         now = datetime.now().isoformat()
         with self._lock:
             self.keys[key_hash] = {
@@ -77,7 +77,7 @@ class APIKeyManager:
 
     def validate_api_key(self, api_key: str) -> Optional[Dict[str, any]]:
         """Validate API key and return metadata."""
-        key_hash = hashlib.sha3_256(api_key.encode()).hexdigest()
+        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
         with self._lock:
             if key_hash in self.keys:
                 self.keys[key_hash]['last_used'] = datetime.now().isoformat()
@@ -88,7 +88,7 @@ class APIKeyManager:
 
     def revoke_api_key(self, api_key: str) -> bool:
         """Revoke an API key; returns True if revoked."""
-        key_hash = hashlib.sha3_256(api_key.encode()).hexdigest()
+        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
         with self._lock:
             if key_hash in self.keys:
                 client = self.keys[key_hash]['client_name']
@@ -103,7 +103,7 @@ class APIKeyManager:
         Rotate an existing API key: revoke old, issue new for same client/permissions.
         Returns (success, new_api_key_or_none).
         """
-        key_hash = hashlib.sha3_256(api_key.encode()).hexdigest()
+        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
         with self._lock:
             meta = self.keys.get(key_hash)
             if not meta:

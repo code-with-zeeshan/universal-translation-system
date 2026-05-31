@@ -748,7 +748,7 @@ class DecoderService:
             if self.model_path and os.path.exists(self.model_path):
                 # Use safe_load_model from security utils
                 self.model, metadata = safe_load_model(self.model_path, self.device)
-                logger.info(f"Loaded model (trusted: {metadata['trusted']})")
+                logger.info("Model loaded successfully")
             else:
                 # Create new model with parameters from config
                 logger.info("Creating new model")

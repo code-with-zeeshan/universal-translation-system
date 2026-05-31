@@ -54,7 +54,7 @@ class IntegrationSystemConfig(BaseModel):
         try:
             # Check if port is available
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('', v))
+                s.bind(('127.0.0.1', v))
             return v
         except OSError:
             raise ValueError(f"Port {v} is already in use")

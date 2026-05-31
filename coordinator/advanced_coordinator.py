@@ -373,7 +373,7 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
             )
     except HTTPException:
         raise
-    except Exception:
+    except (jwt.PyJWTError, Exception):
         logger.warning("Token validation failed", exc_info=True)
         raise HTTPException(status_code=401, detail="Invalid token")
 
