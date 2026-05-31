@@ -324,10 +324,10 @@ class UnifiedDataPipeline:
                 span.set_attribute("dry_run", True)
                 return
             
-            # Skip download if training data already exists
-            training_dir = self.dirs['base'] / 'training'
-            if training_dir.exists() and any(training_dir.iterdir()):
-                self.logger.info(f"⏭️ Training data already exists in {training_dir}, skipping download")
+            # Skip download if raw data already exists
+            raw_dir = self.dirs['base'] / 'raw'
+            if raw_dir.exists() and any(raw_dir.iterdir()):
+                self.logger.info(f"⏭️ Raw data already exists in {raw_dir}, skipping download")
                 span.set_attribute("skipped", True)
                 return
             

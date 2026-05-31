@@ -32,65 +32,39 @@ class DataProcessor:
         dataset: IterableDataset, 
         output_path: Path,
         batch_size: int = 1000,
-        max_samples: Optional[int] = None
+        max_samples: Optional[int] = None,
+        source_lang: Optional[str] = None,
+        target_lang: Optional[str] = None,
     ) -> int:
         """
-        Process streaming dataset with memory efficiency and proper cleanup
-
-        This function processes large datasets in batches to avoid memory issues,
-        with automatic garbage collection and GPU cache clearing.        
-        
-        Args:
-            dataset: Streaming dataset from HuggingFace
-            output_path: Path to save processed data
-            batch_size: Number of samples to process at once (default: 1000)
-            max_samples: Maximum number of samples to process (default: None - process all)
-            
-        Returns:
-            int: Number of samples processed
-
-        Raises:
-            DataError: If dataset processing fails
-            IOError: If output path is not writable    
+        Process streaming dataset and save as tab-separated source\\ttarget text file.
         """
         output_path = Path(output_path)
-        DirectoryManager.create_directory(output_path.parent)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         
         samples_processed = 0
         batch_data = []
         
         try:
-            # Process dataset in batches
             for sample in tqdm(dataset, desc=f"Processing {output_path.name}"):
                 batch_data.append(sample)
                 samples_processed += 1
                 
-                # Save batch when full
                 if len(batch_data) >= batch_size:
-                    self._save_batch(batch_data, output_path, samples_processed)
-
-                    # Proper cleanup - delete variables before empty_cache
-                    batch_data = []  # Clear the list
-
-                    # Force garbage collection periodically
+                    self._save_batch(batch_data, output_path, samples_processed, source_lang, target_lang)
+                    batch_data = []
                     if samples_processed % (batch_size * 10) == 0:
                         gc.collect()
-                    
-                        # Clear GPU cache if available
                         if torch.cuda.is_available():
-                            torch.cuda.empty_cache() 
+                            torch.cuda.empty_cache()
                 
-                # Stop if max_samples reached
                 if max_samples and samples_processed >= max_samples:
                     break
             
-            # Save remaining data
             if batch_data:
-                self._save_batch(batch_data, output_path, samples_processed)
-                # Final cleanup
+                self._save_batch(batch_data, output_path, samples_processed, source_lang, target_lang)
                 del batch_data
                 gc.collect()
-            
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             
@@ -102,28 +76,28 @@ class DataProcessor:
         
         return samples_processed
     
-    def _save_batch(self, batch_data: List[dict], output_path: Path, total_processed: int) -> None:
-        """Save a batch of data to disk with proper memory management"""
-        # Create dataset from batch if datasets is available; else write JSONL as fallback
-        batch_path = output_path / f"batch_{total_processed}"
-        if Dataset is not None:
-            batch_dataset = Dataset.from_list(batch_data)  # type: ignore
-            batch_dataset.save_to_disk(str(batch_path))
-            # Proper memory cleanup - delete before empty_cache
-            del batch_dataset
-        else:
-            # Fallback: write as JSONL files to keep the pipeline flowing in smoke tests
-            import json
-            batch_path = batch_path.with_suffix('.jsonl')
-            with open(batch_path, 'w', encoding='utf-8') as f:
-                for row in batch_data:
-                    f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-        # Force garbage collection
-        import gc
-        gc.collect()
+    @staticmethod
+    def _extract_text(item: dict, source_lang: Optional[str], target_lang: Optional[str]) -> tuple:
+        """Extract source/target text from a dataset sample, handling common formats."""
+        if 'translation' in item:
+            trans = item['translation']
+            if isinstance(trans, dict) and source_lang and target_lang:
+                return trans.get(source_lang, ''), trans.get(target_lang, '')
+        src = item.get('source_text') or item.get('source') or item.get('src') or ''
+        tgt = item.get('target_text') or item.get('target') or item.get('tgt') or ''
+        return str(src), str(tgt)
     
-        # Clear GPU cache if available
+    def _save_batch(self, batch_data: List[dict], output_path: Path, total_processed: int,
+                    source_lang: Optional[str] = None, target_lang: Optional[str] = None) -> None:
+        """Write batch as tab-separated source\\ttarget lines to a flat file."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        mode = 'w' if total_processed <= len(batch_data) else 'a'
+        with open(output_path, mode, encoding='utf-8') as f:
+            for item in batch_data:
+                src_text, tgt_text = self._extract_text(item, source_lang, target_lang)
+                if src_text and tgt_text:
+                    f.write(f"{src_text}\t{tgt_text}\n")
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     

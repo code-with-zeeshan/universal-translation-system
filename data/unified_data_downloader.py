@@ -300,7 +300,7 @@ class UnifiedDataDownloader:
     
     def _download_training_data(self, base_dir: str) -> Dict[str, Any]:
         """Download training datasets with smart strategy"""
-        output_dir = Path(base_dir) / 'training'
+        output_dir = Path(base_dir) / 'raw'
         DirectoryManager.create_directory(output_dir)
         
         stats = {'downloaded_pairs': 0}
@@ -403,10 +403,14 @@ class UnifiedDataDownloader:
                     dataset = raw
                 if dataset is None:
                     continue
+                # Write flat tab-separated file in the raw directory
+                flat_file = output_dir.parent / f"{pair.pair_string}.txt"
                 count = self.data_processor.process_streaming_dataset(
                     dataset,
-                    output_dir / source_info['dataset_name'].split('/')[-1],
-                    max_samples=pair.expected_size
+                    flat_file,
+                    max_samples=pair.expected_size,
+                    source_lang=pair.source,
+                    target_lang=pair.target,
                 )
                 if count > 0:
                     self.logger.info(f"✓ Downloaded {count:,} samples from {source_info['dataset_name']}")
