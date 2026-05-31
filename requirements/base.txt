@@ -55,6 +55,9 @@ python-json-logger>=2.0.7
 # == Redis ==
 redis>=5.0.0,<6.0.0
 
+# == Quality Pipeline (optional — soft-imported) ==
+language-tool-python>=2.7.0
+
 # == Other ==
 nvidia-ml-py3>=7.352.0
 

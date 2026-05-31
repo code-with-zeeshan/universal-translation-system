@@ -1,63 +1,124 @@
 """
-Translation quality pipeline: tone control, false friends, grammar, cultural hints.
+Translation quality pipeline: tone control, false friends, idioms, grammar, cultural hints.
 Integrates into the encoder-decoder translation flow for natural, meaning-first output.
+
+Designed for 20 languages: en, es, fr, de, pt, it, ja, zh, ru, ar, ko, nl, pl, tr, th, vi, hi, sv, uk, id
+
+Backed by external JSON configs in utils/quality_resources/ for easy extension.
+Optional library backends auto-detected at import time (no hard dependency):
+  - language-tool-python for grammar checking (25+ languages)
+  - transformers for formality/register detection
 """
+import json
 import logging
+import os
 import re
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# ── Tone/Register Control ──────────────────────────────────────────────
+_RESOURCES_DIR = os.path.join(os.path.dirname(__file__), "quality_resources")
+
+
+def _load_json(name: str) -> dict:
+    path = os.path.join(_RESOURCES_DIR, name)
+    if not os.path.isfile(path):
+        logger.warning(f"Quality resource not found: {path}")
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+# ── External JSON configs (extensible without code changes) ────────────
+
+TONE_PROMPTS: Dict[str, Dict[str, str]] = _load_json("tone_prompts.json")
+FRIENDLY_TIE_BREAKER: Dict[str, str] = _load_json("friendly_tie_breaker.json")
+FALSE_FRIENDS: Dict[str, Dict[str, str]] = _load_json("false_friends.json")
+IDIOMS: Dict[str, Dict[str, str]] = _load_json("idioms.json")
 
 TONE_TAGS = {"FORMAL", "CASUAL", "NEUTRAL"}
 
-TONE_PROMPTS = {
-    "FORMAL": {
-        "en": " [Formal register: use polite forms, avoid contractions, use full sentences]",
-        "es": " [Registro formal: use usted, evite contracciones, oraciones completas]",
-        "fr": " [Registre soutenu: utilisez vous, évitez les contractions, phrases complètes]",
-        "de": " [Formelles Register: verwenden Sie Sie, keine Kontraktionen, vollständige Sätze]",
-        "pt": " [Registro formal: use você, evite contrações, frases completas]",
-        "it": " [Registro formale: usi Lei, eviti contrazioni, frasi complete]",
-        "ja": " [敬体: ですます調を使用し、丁寧な表現]",
-        "zh": " [正式语体: 使用礼貌用语，完整句子]",
-        "ru": " [Официальный стиль: используйте Вы, полные предложения]",
-        "ar": " [السجل الرسمي: استخدم صيغ المهذبة والجمل الكاملة]",
-        "ko": " [격식체: 존댓말 사용, 완전한 문장]",
-        "nl": " [Formeel register: gebruik u, vermijd samentrekkingen]",
-        "pl": " [Oficjalny styl: używaj Pan/Pani, pełne zdania]",
-        "tr": " [Resmi kayıt: nazlı ifadeler kullanın, tam cümleler]",
-        "th": " [ทางการ: ใช้คำสุภาพ ประโยคสมบูรณ์]",
-        "vi": " [Trang trọng: dùng kính ngữ, câu đầy đủ]",
-        "hi": " [औपचारिक: आदरसूचक शब्दों का प्रयोग करें]",
-        "sv": " [Formellt register: använd ni, fullständiga meningar]",
-        "uk": " [Офіційний стиль: використовуйте Ви, повні речення]",
-        "id": " [Formal: gunakan kata sopan, kalimat lengkap]",
-    },
-    "CASUAL": {
-        "en": " [Casual register: use everyday language, contractions OK, conversational]",
-        "es": " [Registro casual: lenguaje cotidiano, tuteo, conversacional]",
-        "fr": " [Registre familier: langage quotidien, tutoiement]",
-        "de": " [Umgangssprache: duzen, Alltagssprache]",
-        "pt": " [Registro casual: linguagem do dia a dia, tratamento informal]",
-        "it": " [Registro informale: dai del tu, linguaggio quotidiano]",
-    },
+
+# ── Optional library backends (try-import, silent fallback) ────────────
+
+try:
+    import language_tool_python
+
+    _LANGUAGE_TOOL_POOL: Dict[str, "language_tool_python.LanguageTool"] = {}
+    _LANGUAGE_TOOL_AVAILABLE = True
+except ImportError:
+    _LANGUAGE_TOOL_AVAILABLE = False
+    _LANGUAGE_TOOL_POOL = {}
+
+try:
+    from transformers import pipeline
+
+    _FORMALITY_PIPE = pipeline(
+        "text-classification",
+        model="s-nlp/xlmr_formality_classifier",
+        top_k=None,
+    )
+    _FORMALITY_AVAILABLE = True
+except ImportError:
+    _FORMALITY_AVAILABLE = False
+    _FORMALITY_PIPE = None
+
+
+# ── Language mapping helpers ────────────────────────────────────────────
+
+# language-tool-python codes differ from ISO 639-1
+_LT_LANG_MAP = {
+    "en": "en-US", "es": "es", "fr": "fr", "de": "de-DE",
+    "pt": "pt-BR", "it": "it", "nl": "nl", "pl": "pl",
+    "sv": "sv", "ru": "ru", "uk": "uk", "ja": "ja",
+    "zh": "zh-CN", "ar": "ar", "ko": "ko", "tr": "tr",
+    "th": "th", "vi": "vi", "hi": "hi", "id": "id",
 }
 
-FRIENDLY_TIE_BREAKER = {
-    "en": " [Natural, idiomatic, meaning-first translation]",
-}
+# Languages known to be well-supported by each backend
+_FORMALITY_LANGS = {"en", "es", "fr", "de", "it", "pt", "nl", "ru"}
+_LT_MIN_CONFIDENCE = 0.5
 
 
-def detect_tone(text: str) -> str:
-    """Detect if text contains an explicit tone tag or infer from content."""
+def _get_lt_lang(lang: str) -> str:
+    """Map ISO 639-1 to language-tool-python language code."""
+    return _LT_LANG_MAP.get(lang, lang)
+
+
+# ── Tone/Register Detection ────────────────────────────────────────────
+
+
+def _library_detect_tone(text: str) -> Optional[str]:
+    """Use HF formality classifier if available. Returns None if unavailable or unsure."""
+    if not _FORMALITY_AVAILABLE or _FORMALITY_PIPE is None:
+        return None
+    try:
+        results = _FORMALITY_PIPE(text[:512], truncation=True)
+        if isinstance(results, list) and len(results) > 0:
+            scores = {r["label"]: r["score"] for r in results[0]}
+            formal_score = scores.get("formal", 0.0)
+            if formal_score > 0.7:
+                return "FORMAL"
+            if formal_score < 0.3:
+                return "CASUAL"
+        return None
+    except Exception:
+        logger.debug("Formality classifier failed, falling back to tag-based detection")
+        return None
+
+
+def detect_tone(text: str, library_boost: bool = True) -> str:
+    """Detect register from explicit tag prefix or, optionally, HF formality classifier."""
     text_stripped = text.strip().upper()
     for tag in TONE_TAGS:
         if text_stripped.startswith(f"[{tag}]"):
             return tag
     if text_stripped.startswith("[") and "]" in text_stripped[:20]:
         return "NEUTRAL"
+    if library_boost:
+        lib_tone = _library_detect_tone(text)
+        if lib_tone:
+            return lib_tone
     return "NEUTRAL"
 
 
@@ -79,12 +140,14 @@ def apply_tone_prompt(text: str, tone: str, lang: str) -> str:
     hint = prompts.get(lang, prompts.get("en", ""))
     if hint:
         return text + hint
+    logger.warning(f"No tone prompt for tone={tone} lang={lang}")
     return text
 
 
-# ── False Friends Dictionary ───────────────────────────────────────────
+# ── False Friends Detection ────────────────────────────────────────────
 
-FALSE_FRIENDS: Dict[str, Dict[str, Dict[str, str]]] = {
+
+HARDCODED_FALSE_FRIENDS: Dict[str, Dict[str, str]] = {
     "en_es": {
         "embarazada": "pregnant (not embarrassed)",
         "sensible": "sensitive (not sensible)",
@@ -101,7 +164,7 @@ FALSE_FRIENDS: Dict[str, Dict[str, Dict[str, str]]] = {
         "lectura": "reading (not lecture)",
         "molestar": "to bother (not to molest)",
         "noticia": "news (not notice)",
-        "oficina": "office (not officina)",
+        "oficina": "office (not workshop)",
         "pretender": "to try (not to pretend)",
         "realizar": "to do/carry out (not to realize)",
         "recordar": "to remember (not to record)",
@@ -137,41 +200,60 @@ FALSE_FRIENDS: Dict[str, Dict[str, Dict[str, str]]] = {
         "bekommen": "to receive (not to become)",
         "billig": "cheap (not bill)",
         "brav": "well-behaved (not brave)",
-        "Chef": "boss (not chef)",
+        "chef": "boss (not chef)",
         "eventuell": "possibly (not eventually)",
-        "Gift": "poison (not gift)",
-        "Handy": "mobile phone (not handy)",
-        "Hell": "bright (not hell)",
+        "gift": "poison (not gift)",
+        "handy": "mobile phone (not handy)",
+        "hell": "bright (not hell)",
         "herb": "bitter/tart (not herb)",
-        "Mist": "manure (not mist)",
-        "Muffe": "sleeve/pipe (not muff)",
-        "Rat": "advice (not rat)",
+        "mist": "manure (not mist)",
+        "muffe": "sleeve/pipe (not muff)",
+        "rat": "advice (not rat)",
         "sensibel": "sensitive (not sensible)",
-        "Stift": "pen (not gift)",
+        "stift": "pen (not gift)",
         "winken": "to wave (not to wink)",
     },
 }
 
 
-def check_false_friends(text: str, source_lang: str, target_lang: str) -> List[Tuple[str, str, str]]:
-    """Check source text for known false friends. Returns list of (word, warning, correct_meaning)."""
+def _get_ff_dict(source_lang: str, target_lang: str) -> Optional[Dict[str, str]]:
+    """Look up false friends dict, trying JSON then hardcoded fallback."""
     pair_key = f"{source_lang}_{target_lang}"
     reverse_key = f"{target_lang}_{source_lang}"
-    dict_key = pair_key if pair_key in FALSE_FRIENDS else reverse_key if reverse_key in FALSE_FRIENDS else None
-    if not dict_key:
+    for d in (FALSE_FRIENDS, HARDCODED_FALSE_FRIENDS):
+        if pair_key in d:
+            return d[pair_key]
+        if reverse_key in d:
+            return d[reverse_key]
+    return None
+
+
+def check_false_friends(text: str, source_lang: str, target_lang: str) -> List[Tuple[str, str, str]]:
+    """Check source text for known false friends. Returns list of (word, warning, correct_meaning).
+
+    Handles multi-word entries (space-separated false friends). Logs a warning
+    when the language pair has no coverage.
+    """
+    ff_dict = _get_ff_dict(source_lang, target_lang)
+    if ff_dict is None:
+        logger.debug(f"No false friends data for {source_lang}→{target_lang}")
         return []
-    ff_dict = FALSE_FRIENDS[dict_key]
-    words = re.findall(r'\b\w+\b', text.lower())
+    text_lower = text.lower()
     warnings = []
-    for word in words:
-        if word in ff_dict:
-            warnings.append((word, f"False friend detected: '{word}' means '{ff_dict[word]}' in {target_lang}", ff_dict[word]))
+    for ff_word, meaning in ff_dict.items():
+        if ff_word in text_lower:
+            warnings.append((
+                ff_word,
+                f"False friend detected: '{ff_word}' means '{meaning}' in {target_lang}",
+                meaning,
+            ))
     return warnings
 
 
 # ── Idioms / Multi-Word Expressions ────────────────────────────────────
 
-IDIOMS: Dict[str, Dict[str, str]] = {
+
+HARDCODED_IDIOMS: Dict[str, Dict[str, str]] = {
     "es_en": {
         "ojo": "heads up / watch out",
         "calentar la cabeza": "to stress out / to bother",
@@ -252,16 +334,30 @@ IDIOMS: Dict[str, Dict[str, str]] = {
 }
 
 
-def check_idioms(text: str, source_lang: str, target_lang: str) -> List[Tuple[str, str, str]]:
-    """Check source text for known idioms. Returns list of (idiom, warning, meaning)."""
+def _get_idiom_dict(source_lang: str, target_lang: str) -> Optional[Dict[str, str]]:
+    """Look up idiom dict, trying JSON then hardcoded fallback."""
     pair_key = f"{source_lang}_{target_lang}"
     reverse_key = f"{target_lang}_{source_lang}"
-    dict_key = pair_key if pair_key in IDIOMS else reverse_key if reverse_key in IDIOMS else None
-    if not dict_key:
+    for d in (IDIOMS, HARDCODED_IDIOMS):
+        if pair_key in d:
+            return d[pair_key]
+        if reverse_key in d:
+            return d[reverse_key]
+    return None
+
+
+def check_idioms(text: str, source_lang: str, target_lang: str) -> List[Tuple[str, str, str]]:
+    """Check source text for known idioms. Returns list of (idiom, warning, meaning).
+
+    Logs a warning when the language pair has no coverage.
+    """
+    idiom_dict = _get_idiom_dict(source_lang, target_lang)
+    if idiom_dict is None:
+        logger.debug(f"No idiom data for {source_lang}→{target_lang}")
         return []
     text_lower = text.lower()
     warnings = []
-    for idiom, meaning in IDIOMS[dict_key].items():
+    for idiom, meaning in idiom_dict.items():
         if idiom in text_lower:
             warnings.append((idiom, f"Idiom detected: '{idiom}' → '{meaning}' in {target_lang}", meaning))
     return warnings
@@ -269,14 +365,12 @@ def check_idioms(text: str, source_lang: str, target_lang: str) -> List[Tuple[st
 
 def gloss_idioms(text: str, source_lang: str, target_lang: str) -> str:
     """Annotate known idioms with their meaning in the source text to guide the model."""
-    pair_key = f"{source_lang}_{target_lang}"
-    reverse_key = f"{target_lang}_{source_lang}"
-    dict_key = pair_key if pair_key in IDIOMS else reverse_key if reverse_key in IDIOMS else None
-    if not dict_key:
+    idiom_dict = _get_idiom_dict(source_lang, target_lang)
+    if idiom_dict is None:
         return text
     text_lower = text.lower()
     result = text
-    for idiom, meaning in IDIOMS[dict_key].items():
+    for idiom, meaning in idiom_dict.items():
         if idiom in text_lower:
             gloss = f" (meaning: {meaning})"
             result = result.replace(idiom.title() if idiom[0].isupper() else idiom, idiom + gloss)
@@ -336,7 +430,8 @@ def score_translation_quality(
         scores["diversity"] = 1.0
 
     # 4. Overall quality
-    scores["overall"] = sum(v for k, v in scores.items() if k != "overall") / max(len([k for k in scores if k != "overall"]), 1)
+    score_keys = [k for k in scores if k != "overall"]
+    scores["overall"] = sum(scores[k] for k in score_keys) / max(len(score_keys), 1)
 
     return scores
 
@@ -344,11 +439,33 @@ def score_translation_quality(
 # ── Grammar Post-Processing ────────────────────────────────────────────
 
 
-def postprocess_grammar(text: str, lang: str) -> str:
-    """Apply basic language-specific grammar fixes."""
+def _library_grammar_check(text: str, lang: str) -> str:
+    """Apply language-tool-python grammar corrections if the library is installed."""
+    if not _LANGUAGE_TOOL_AVAILABLE:
+        return text
+    lt_lang = _get_lt_lang(lang)
+    if lt_lang not in _LANGUAGE_TOOL_POOL:
+        try:
+            _LANGUAGE_TOOL_POOL[lt_lang] = language_tool_python.LanguageTool(lt_lang)
+        except Exception:
+            logger.debug(f"language-tool-python not available for {lt_lang}")
+            return text
+    tool = _LANGUAGE_TOOL_POOL[lt_lang]
+    try:
+        matches = tool.check(text)
+        if matches:
+            text = language_tool_python.utils.correct(text, matches)
+    except Exception:
+        logger.debug("language-tool-python check failed, falling back to regex")
+    return text
+
+
+def postprocess_grammar(text: str, lang: str, library_check: bool = True) -> str:
+    """Apply grammar fixes. Uses language-tool-python if available, then regex fixes."""
+    if library_check and _LANGUAGE_TOOL_AVAILABLE:
+        text = _library_grammar_check(text, lang)
     if lang == "en":
         text = re.sub(r'\bi\b', 'I', text)
-        text = re.sub(r"n't ", "n't ", text)
         text = re.sub(r"' ([A-Za-z])", r"'\1", text)
     elif lang == "fr":
         text = re.sub(r'\bl\s+\'', "l'", text)
@@ -358,8 +475,13 @@ def postprocess_grammar(text: str, lang: str) -> str:
         if text and text[0].islower() and not text.startswith(("kein", "mein", "sein", "ein")):
             text = text[0].upper() + text[1:]
     elif lang in ("es", "it", "pt"):
-        text = re.sub(r'\b(\w+)lo\s+(\w+)\b', lambda m: m.group(1) + "lo " + m.group(2) if m.group(1).endswith(("r", "s")) else m.group(0), text)
-    # Remove extra spaces
+        text = re.sub(
+            r'\b(\w+)lo\s+(\w+)\b',
+            lambda m: m.group(1) + "lo " + m.group(2)
+            if m.group(1).endswith(("r", "s"))
+            else m.group(0),
+            text,
+        )
     text = re.sub(r'\s+', ' ', text).strip()
     text = re.sub(r'\s([?.!,"])', r'\1', text)
     text = re.sub(r'(["\']) ', r'\1', text)
@@ -373,31 +495,53 @@ class TranslationQualityPipeline:
     """Pipeline that wraps translation with quality enhancements.
 
     Features:
-    - Tone/register detection and control via source prefix tags
+    - Tone/register detection via prefix tags or optional HF formality classifier
     - False friends detection and logging
+    - Idiom detection + inline glossing to guide the decoder
     - Beam reranking by quality score
-    - Grammar post-processing
+    - Grammar post-processing (regex + optional language-tool-python)
     - Domain-specific adapter routing
+
+    All features degrade gracefully when a language pair has no coverage or
+    when optional libraries (transformers, language-tool-python) are not installed.
     """
 
-    def __init__(self, false_friends_enabled: bool = True, grammar_postprocess: bool = True):
+    def __init__(
+        self,
+        false_friends_enabled: bool = True,
+        idioms_enabled: bool = True,
+        grammar_postprocess: bool = True,
+        grammar_library_check: bool = True,
+        tone_library_boost: bool = True,
+    ):
         self.false_friends_enabled = false_friends_enabled
+        self.idioms_enabled = idioms_enabled
         self.grammar_postprocess = grammar_postprocess
+        self.grammar_library_check = grammar_library_check
+        self.tone_library_boost = tone_library_boost
 
-    def prepare_input(self, text: str, source_lang: str, target_lang: str, domain: Optional[str] = None) -> Tuple[str, str, str]:
+    def prepare_input(
+        self,
+        text: str,
+        source_lang: str,
+        target_lang: str,
+        domain: Optional[str] = None,
+    ) -> Tuple[str, str, str]:
         """Prepare text for translation: detect tone, check false friends, gloss idioms.
 
         Returns:
             (processed_text, tone, domain)
         """
-        tone = detect_tone(text)
+        tone = detect_tone(text, library_boost=self.tone_library_boost)
         cleaned_text = strip_tone_tag(text)
 
-        # Check and gloss idioms (annotate them in source to guide the model)
-        idiom_warnings = check_idioms(cleaned_text, source_lang, target_lang)
-        for idiom, warning, meaning in idiom_warnings:
-            logger.info(f"Idiom detected: '{idiom}' → {meaning}")
-        glossed_text = gloss_idioms(cleaned_text, source_lang, target_lang)
+        if self.idioms_enabled:
+            idiom_warnings = check_idioms(cleaned_text, source_lang, target_lang)
+            for idiom, warning, meaning in idiom_warnings:
+                logger.info(f"Idiom: '{idiom}' → {meaning}")
+            glossed_text = gloss_idioms(cleaned_text, source_lang, target_lang)
+        else:
+            glossed_text = cleaned_text
 
         text_with_hints = apply_tone_prompt(glossed_text, tone, source_lang)
         if tone == "NEUTRAL":
@@ -413,7 +557,10 @@ class TranslationQualityPipeline:
     def postprocess(self, translation: str, target_lang: str, tone: str) -> str:
         """Post-process translation: grammar + tone consistency."""
         if self.grammar_postprocess:
-            translation = postprocess_grammar(translation, target_lang)
+            translation = postprocess_grammar(
+                translation, target_lang,
+                library_check=self.grammar_library_check,
+            )
         return translation
 
     def rerank_candidates(
@@ -438,7 +585,9 @@ class TranslationQualityPipeline:
 
         scored = []
         for translation, log_probs in candidates:
-            scores = score_translation_quality(source_text, translation, source_lang, target_lang, log_probs)
+            scores = score_translation_quality(
+                source_text, translation, source_lang, target_lang, log_probs,
+            )
             scored.append((scores.get("overall", 0.5), translation))
 
         scored.sort(key=lambda x: x[0], reverse=True)
