@@ -12,7 +12,6 @@ Validates:
 Usage:
   python scripts/gpu_readiness_check.py [--try-pytorch-container]
 """
-from __future__ import annotations
 import platform
 import shutil
 import subprocess

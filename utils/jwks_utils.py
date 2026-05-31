@@ -4,8 +4,6 @@ utils/jwks_utils.py
 Centralized helpers to build JWKS from environment/config and compute diffs.
 Used by coordinator and decoder to avoid duplication and to update metrics.
 """
-from __future__ import annotations
-
 import os
 import base64
 from typing import List, Dict, Tuple

@@ -20,8 +20,6 @@ store.ensure_model("production/encoder.onnx")
 # Ensure vocabulary pack exists
 store.ensure_vocab_pack("latin")
 """
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,7 +78,7 @@ class ArtifactStore:
         local_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Downloading from HF: {self.cfg.repo_id}:{repo_path} -> {local_path}")
         downloaded_path = hf_hub_download(
-            repo_id=self.cfg.cfg.repo_id if hasattr(self.cfg, 'cfg') else self.cfg.repo_id,  # defensive
+            repo_id=self.cfg.repo_id,  # defensive
             filename=repo_path,
             token=self.cfg.token,
             revision=self.cfg.revision,

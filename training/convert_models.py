@@ -4,6 +4,7 @@ import warnings
 from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
+from utils.constants import MODELS_PRODUCTION_DIR
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -156,7 +157,6 @@ class ModelConverter:
             # Use tf2onnx for better conversion
             try:
                 import tf2onnx
-                import onnx
                 
                 onnx_model = onnx.load(onnx_path)
                 
@@ -344,5 +344,5 @@ if __name__ == "__main__":
         
         converter.onnx_to_tflite(
             "models/universal_encoder.onnx",
-            "models/universal_encoder.tflite"
+            f"{MODELS_PRODUCTION_DIR}/universal_encoder.tflite"
         )

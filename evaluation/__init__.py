@@ -1,4 +1,3 @@
-# evaluation/__init__.py
 """
 Evaluation module for the Universal Translation System.
 
@@ -6,14 +5,11 @@ Provides comprehensive evaluation tools including BLEU, COMET,
 and other metrics for translation quality assessment.
 """
 
-from .evaluate_model import (
-    TranslationEvaluator,
-    TranslationPair,
-    evaluate_translation_quality
-)
+from .evaluator import TranslationEvaluator, evaluate_translation_quality
+from .metrics import TranslationPair
 
 __all__ = [
     "TranslationEvaluator",
     "TranslationPair",
-    "evaluate_translation_quality"
+    "evaluate_translation_quality",
 ]

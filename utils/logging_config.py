@@ -11,6 +11,8 @@ try:
 except Exception:
     DirectoryManager = None  # Avoid import cycles during bootstrap
 
+from utils.constants import LOG_DIR
+
 def _get_memory_info() -> str:
     """Get memory information"""
     try:
@@ -31,7 +33,7 @@ def _log_system_info(logger: logging.Logger):
     logger.info(f"Available memory: {_get_memory_info()}")
     logger.info("=" * 60)
 
-class SensitiveDataFilter(logging.Filter):
+class LoggingSensitiveDataFilter(logging.Filter):
     """Mask common sensitive values in log messages and structured fields.
     - Scrubs message strings via regex (best-effort)
     - Scrubs record attributes added via `extra={}` (structured fields)
@@ -119,7 +121,7 @@ def get_logger(name: str, context: dict | None = None) -> StructuredLoggerAdapte
     """Return a structured logger adapter bound with optional context."""
     return StructuredLoggerAdapter(logging.getLogger(name), context or {})
 
-def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
+def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
     """Setup comprehensive logging configuration"""
     # Create log directory and standard sections
     Path(log_dir).mkdir(parents=True, exist_ok=True)
@@ -152,7 +154,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
         },
         'filters': {
             'sensitive': {
-                '()': SensitiveDataFilter
+                '()': LoggingSensitiveDataFilter
             }
         },
         'handlers': {
@@ -188,7 +190,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
                 'level': 'DEBUG',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': 'logs/training/training.log',
+                'filename': f'{LOG_DIR}/training/training.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -197,7 +199,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': 'logs/data/data.log',
+                'filename': f'{LOG_DIR}/data/data.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -206,7 +208,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': 'logs/monitoring/monitoring.log',
+                'filename': f'{LOG_DIR}/monitoring/monitoring.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -215,7 +217,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': 'logs/coordinator/coordinator.log',
+                'filename': f'{LOG_DIR}/coordinator/coordinator.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -224,7 +226,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': 'logs/decoder/decoder.log',
+                'filename': f'{LOG_DIR}/decoder/decoder.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -233,7 +235,7 @@ def setup_logging(log_dir: str = "logs", log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': 'logs/vocabulary/vocabulary.log',
+                'filename': f'{LOG_DIR}/vocabulary/vocabulary.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },

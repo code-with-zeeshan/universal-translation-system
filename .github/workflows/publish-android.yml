@@ -58,7 +58,7 @@ jobs:
           fi
 
           changed_android=false
-          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^react-native/UniversalTranslationSDK/' >/dev/null; then
+           if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^sdk/react-native/UniversalTranslationSDK/' >/dev/null; then
             changed_android=true
           fi
 
@@ -77,7 +77,7 @@ PY
 
       - name: Prepare Gradle
         if: steps.check.outputs.publish_android == 'true'
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         run: |
           if [ -f gradlew ]; then
             chmod +x gradlew
@@ -85,7 +85,7 @@ PY
 
       - name: Publish to Maven (if configured)
         if: steps.check.outputs.publish_android == 'true'
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ORG_GRADLE_PROJECT_mavenUsername: ${{ secrets.MAVEN_USERNAME }}

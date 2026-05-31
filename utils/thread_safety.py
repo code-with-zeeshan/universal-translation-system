@@ -19,6 +19,7 @@ THREAD_SAFETY_IMMUTABLE = "immutable"  # Thread-safe because immutable
 
 # Registry of thread safety documentation
 _thread_safety_registry: Dict[Type, Dict[str, str]] = {}
+_registry_lock = threading.RLock()
 
 
 def document_thread_safety(cls: Type[T], level: str, description: str = "") -> Type[T]:
@@ -33,11 +34,11 @@ def document_thread_safety(cls: Type[T], level: str, description: str = "") -> T
     Returns:
         The class (for chaining)
     """
-    if cls not in _thread_safety_registry:
-        _thread_safety_registry[cls] = {}
-        
-    _thread_safety_registry[cls]["class"] = level
-    _thread_safety_registry[cls]["description"] = description
+    with _registry_lock:
+        if cls not in _thread_safety_registry:
+            _thread_safety_registry[cls] = {}
+        _thread_safety_registry[cls]["class"] = level
+        _thread_safety_registry[cls]["description"] = description
     
     # Add thread safety information to class docstring
     if cls.__doc__:
@@ -63,10 +64,10 @@ def document_method_thread_safety(method: Callable, level: str, description: str
     cls = method.__qualname__.split('.')[0]
     method_name = method.__name__
     
-    if cls not in _thread_safety_registry:
-        _thread_safety_registry[cls] = {}
-        
-    _thread_safety_registry[cls][method_name] = level
+    with _registry_lock:
+        if cls not in _thread_safety_registry:
+            _thread_safety_registry[cls] = {}
+        _thread_safety_registry[cls][method_name] = level
     
     # Add thread safety information to method docstring
     if method.__doc__:
@@ -114,7 +115,8 @@ def get_thread_safety_info(cls: Type) -> Dict[str, str]:
     Returns:
         Dictionary of thread safety information
     """
-    return _thread_safety_registry.get(cls, {})
+    with _registry_lock:
+        return _thread_safety_registry.get(cls, {})
 
 
 def generate_thread_safety_report() -> Dict[str, Dict[str, str]]:
@@ -126,8 +128,9 @@ def generate_thread_safety_report() -> Dict[str, Dict[str, str]]:
     """
     report = {}
     
-    for cls, info in _thread_safety_registry.items():
-        class_name = cls.__name__
-        report[class_name] = info.copy()
+    with _registry_lock:
+        for cls, info in _thread_safety_registry.items():
+            class_name = cls.__name__
+            report[class_name] = info.copy()
         
     return report

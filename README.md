@@ -6,33 +6,36 @@ A flexible and scalable translation platform designed to support multiple langua
 
 > **New**: All configuration is now available through environment variables. See [Environment Variables](docs/environment-variables.md) for details.
 
-## 🌟 Key Innovation
+## Key Innovation
 
 Rather than bundling a huge model per language, the system splits the workflow for maximum efficiency and scalability:
-- **Edge Universal Encoder (~35MB)**: Converts text to language-agnostic embeddings with RoPE and SwiGLU for speed/quality on-device.
-- **On‑demand Vocabulary Packs (2–4MB)**: Download only what you need (groups like latin, cjk, cyrillic, arabic, devanagari, thai), compressed with LZ4/Zstandard and loaded dynamically.
-- **Cloud Decoder (6-layer transformer)**: Cross‑attention decoder served via Litserve for high throughput; supports dynamic adapter loading per language/domain.
-- **Smart Coordinator**: Routes to least‑loaded decoders, performs health checks, supports elastic scaling, exposes Prometheus metrics and Grafana dashboards.
-- **Multi‑SDK + WebAssembly**: Native Android/iOS/Flutter/React Native, and Web with WASM; automatic fallback to cloud when a device lacks resources.
+- **Edge Universal Encoder (~25MB)**: Compact 768-dim, 6-layer, 8-head encoder initialized from XLM-RoBERTa-base for perfect zero-loss weight transfer. RoPE + SwiGLU for speed/quality on-device.
+- **On-demand Vocabulary Packs (2–4MB)**: 32K BPE vocabulary via SentencePiece, grouped by script (latin, cjk, cyrillic, arabic, devanagari, thai), compressed with LZ4/Zstandard.
+- **Cloud Decoder (6-layer, 512-dim, 8-head)**: Cross-attention decoder initialized from mBART-large-50, served via FastAPI/uvicorn. 512-dim provides robust capacity while keeping ~20MB footprint.
+- **PEFT LoRA Training**: Backbone (XLM-RoBERTa + mBART) frozen during training; only ~5-10M LoRA adapter parameters trained per run. This reduces GPU training to **~4-6 hours on an L4** (vs 5-7 days for full fine-tune), with minimal quality loss.
+- **Smart Coordinator**: Routes to least-loaded decoders, performs health checks, supports elastic scaling, exposes Prometheus metrics and Grafana dashboards.
+- **Multi-SDK + WebAssembly**: Native Android/iOS/Flutter/React Native, and Web with WASM; automatic fallback to cloud when a device lacks resources.
 - **Result**: ~40MB app footprint with ~90% of full model quality, works on 2GB RAM devices, and scales in the cloud for quality and throughput.
 
-## 📋 Features
+## Features
 
-- ✅ 20 language support with dynamic vocabulary loading
-- ✅ Native SDKs for Android, iOS, Flutter, React Native, and Web
-- ✅ Edge encoding, cloud decoding architecture
-- ✅ ~85M parameters total (vs 600M+ for traditional models)
-- ✅ Designed for low-end devices (2GB RAM)
-- ✅ Full-system monitoring with Prometheus/Grafana
-- ✅ Environment variable configuration for all components
-- ✅ Docker and Kubernetes deployment support
-- ✅ Redis integration for distributed decoder pool management
-- ✅ Advanced memory management with automatic cleanup
-- ✅ Comprehensive profiling system for performance optimization
-- ✅ Configurable HTTPS enforcement with security headers
-- ✅ Bottleneck detection and performance analysis
+- 20 language support with dynamic vocabulary loading (32K BPE, SentencePiece)
+- Native SDKs for Android, iOS, Flutter, React Native, and Web (under `sdk/`)
+- Edge encoding, cloud decoding architecture
+- **Encoder**: XLM-RoBERTa-base (768 hidden, perfect weight transfer) + **Decoder**: mBART-large-50 (512 decoder dim)
+- **PEFT LoRA training**: Freeze backbone, train only adapters. ~5-10M trainable params vs 600M+ full fine-tune
+- Progressive training in 4 tiers (3/2/2/1 epochs) for curriculum learning
+- Designed for low-end devices (2GB RAM), ~40MB total footprint
+- Full-system monitoring with Prometheus/Grafana
+- Environment variable configuration for all components
+- Docker and Kubernetes deployment support
+- Redis integration for distributed decoder pool management
+- Advanced memory management with automatic cleanup
+- Comprehensive profiling system for performance optimization
+- Configurable HTTPS enforcement with security headers
+- Bottleneck detection and performance analysis
 
-## 🎯 Usage Modes
+## Usage Modes
 
 You can use `universal-decoder-node` in three ways:
 
@@ -47,7 +50,7 @@ You can use `universal-decoder-node` in three ways:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for registration instructions and [REDIS_INTEGRATION.md](docs/REDIS_INTEGRATION.md) for details on the distributed decoder pool.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Clone repository
@@ -59,7 +62,6 @@ cp .env.example .env
 # Edit .env with your configuration
 
 # Option 1: Run with Docker Compose (recommended)
-# Ensure secrets and env are set; prefer --env-file to pick up changes
 docker compose --env-file .env up -d
 
 # Option 2: Manual Setup
@@ -71,15 +73,48 @@ pip install -r requirements/train.txt -r requirements/serve.txt
 # Optional service-specific extras
 pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
+# Option 3: Role-based install script
+bash scripts/install.sh --serve   # --train, --coordinator, --dev, --encoder-core, --all
+
 # Run components individually
 python cloud_decoder/optimized_decoder.py
 python coordinator/advanced_coordinator.py
 
-# Option 3: Train from scratch (for research)
-python docs/train_from_scratch.py --config config/training_default.yaml
+# Training with LoRA (fast, recommended)
+
+```bash
+# 1. Bootstrap encoder/decoder from pretrained weights
+python -m training.bootstrap_from_pretrained
+
+# 2. Run progressive training (4 tiers, LoRA adapters)
+python -m training.progressive_training
+
+# 3. Upload to Hugging Face Hub
+python scripts/upload_artifacts.py --repo_id your-username/uts-models
 ```
 
-### CI: Enforce schema hash up-to-date
+LoRA is enabled by default (`use_lora: true` in `config/base.yaml`). The backbone (XLM-RoBERTa + mBART) stays frozen; only ~5M adapter params are trained. This completes in **~4-6 hours on an L4 GPU** at ~$0.48/hr.
+
+### Training Cost Guide (Lightning AI Studio)
+
+| GPU | $/hr | Total run | Quality |
+|---|---|---|---|
+| **L4 (24GB)** | $0.48 | **~$2-3** | Target quality ✓ |
+| T4 (16GB) | $0.19 | ~$1 | Slightly slower |
+| L40s (48GB) | $1.79 | ~$8 | Overkill for LoRA |
+| A100 (40GB) | $1.55 | ~$7 | Overkill for LoRA |
+
+### LoRA Rank Tuning
+
+| LoRA r | Trainable params | VRAM | Quality | Time |
+|---|---|---|---|---|
+| r=4 | ~2.5M | ~1.5GB | Good | ~3h |
+| **r=8** | **~5M** | **~2GB** | **Better** | **~4h** |
+| r=16 | ~10M | ~2.5GB | Best | ~5h |
+
+Set via `config/base.yaml`: `lora_r: 16`, `lora_alpha: 32` for best quality.
+
+**CI: Enforce schema hash up-to-date**
 
 Add a step to your CI pipeline to ensure version-config.json is regenerated when schemas change.
 
@@ -96,7 +131,7 @@ Example GitHub Actions step:
     }
 ```
 
-## 🧭 Unified Pipeline CLI
+## Unified Pipeline CLI
 
 Use a single entrypoint to run data, vocabulary, training, and more.
 
@@ -107,11 +142,10 @@ Examples (run from repo root):
 
 ```bash
 # Data pipeline (all stages)
-python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml
+python ./scripts/pipeline.py data --config ./config/base.yaml
 
 # Data pipeline (specific stages)
-# Valid stages: download_evaluation download_training sample_filter augment create_ready validate vocabulary
-python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml --stages download_training create_ready
+python ./scripts/pipeline.py data --config ./config/base.yaml --stages download_training create_ready
 
 # Vocabulary creation
 python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
@@ -120,23 +154,23 @@ python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/process
 python ./scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
 
 # Train (delegates to training.launch)
-python ./scripts/pipeline.py train --config ./config/training_generic_gpu.yaml --distributed
+python ./scripts/pipeline.py train --config ./config/base.yaml --distributed
 
 # Evaluate, Profile, Compare
-python ./scripts/pipeline.py evaluate --config ./config/training_generic_gpu.yaml --checkpoint ./models/.../best_model.pt
-python ./scripts/pipeline.py profile --config ./config/training_generic_gpu.yaml --profile-steps 25 --benchmark
+python ./scripts/pipeline.py evaluate --config ./config/base.yaml --checkpoint ./models/.../best_model.pt
+python ./scripts/pipeline.py profile --config ./config/base.yaml --profile-steps 25 --benchmark
 python ./scripts/pipeline.py compare --experiments ./runs/exp1 ./runs/exp2
 
 # Convert models
 python ./scripts/pipeline.py convert --task pytorch-to-onnx --model-path ./models/encoder/universal_encoder_initial.pt --output-path ./models/encoder/universal_encoder.onnx
 
 # Full pipeline: data -> vocab -> bootstrap -> train -> convert
-python ./scripts/pipeline.py all --config ./config/training_generic_gpu.yaml
+python ./scripts/pipeline.py all --config ./config/base.yaml
 ```
 
 Notes:
-- Data stages map to the orchestrator in `data.unified_data_pipeline.UnifiedDataPipeline`.
-- Vocabulary uses `vocabulary.unified_vocabulary_creator` with modes/groups.
+- Data stages map to the orchestrator in `data.pipeline_orchestrator.UnifiedDataPipeline`.
+- Vocabulary uses `vocabulary.vocabulary_creator` with modes/groups.
 - Training/eval/profile/compare proxy to `training.launch`.
 - Conversion wraps `training.convert_models.ModelConverter` tasks.
 
@@ -156,76 +190,63 @@ python scripts/pipeline.py train --help
 
 ```powershell
 # Run from repository root (cloned anywhere). Use absolute path via $PWD for reliability.
-# Data pipeline (all stages)
-python "$PWD\scripts\pipeline.py" data --config "$PWD\config\training_generic_gpu.yaml"
-
-# Data pipeline (specific stages)
-python "$PWD\scripts\pipeline.py" data --config "$PWD\config\training_generic_gpu.yaml" --stages download_training create_ready
-
-# Vocabulary creation
+python "$PWD\scripts\pipeline.py" data --config "$PWD\config\base.yaml"
 python "$PWD\scripts\pipeline.py" vocab --mode production --corpus-dir "$PWD\data\processed" --output-dir "$PWD\vocabs"
-
-# Bootstrap pretrained encoder/decoder
 python "$PWD\scripts\pipeline.py" bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
-
-# Train (delegates to training.launch)
-python "$PWD\scripts\pipeline.py" train --config "$PWD\config\training_generic_gpu.yaml" --distributed
-
-# Evaluate, Profile, Compare
-python "$PWD\scripts\pipeline.py" evaluate --config "$PWD\config\training_generic_gpu.yaml" --checkpoint "$PWD\models\...\best_model.pt"
-python "$PWD\scripts\pipeline.py" profile --config "$PWD\config\training_generic_gpu.yaml" --profile-steps 25 --benchmark
+python "$PWD\scripts\pipeline.py" train --config "$PWD\config\base.yaml" --distributed
+python "$PWD\scripts\pipeline.py" evaluate --config "$PWD\config\base.yaml" --checkpoint "$PWD\models\...\best_model.pt"
+python "$PWD\scripts\pipeline.py" profile --config "$PWD\config\base.yaml" --profile-steps 25 --benchmark
 python "$PWD\scripts\pipeline.py" compare --experiments "$PWD\runs\exp1" "$PWD\runs\exp2"
-
-# Convert models
 python "$PWD\scripts\pipeline.py" convert --task pytorch-to-onnx --model-path "$PWD\models\encoder\universal_encoder_initial.pt" --output-path "$PWD\models\encoder\universal_encoder.onnx"
-
-# Full pipeline: data -> vocab -> bootstrap -> train -> convert
-python "$PWD\scripts\pipeline.py" all --config "$PWD\config\training_generic_gpu.yaml"
+python "$PWD\scripts\pipeline.py" all --config "$PWD\config\base.yaml"
 ```
 
-### Linux/macOS examples
-
-```bash
-# Run from repository root
-# Data pipeline (all stages)
-python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml
-
-# Data pipeline (specific stages)
-python ./scripts/pipeline.py data --config ./config/training_generic_gpu.yaml --stages download_training create_ready
-
-# Vocabulary creation
-python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
-
-# Bootstrap pretrained encoder/decoder
-python ./scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
-
-# Train (delegates to training.launch)
-python ./scripts/pipeline.py train --config ./config/training_generic_gpu.yaml --distributed
-
-# Evaluate, Profile, Compare
-python ./scripts/pipeline.py evaluate --config ./config/training_generic_gpu.yaml --checkpoint ./models/.../best_model.pt
-python ./scripts/pipeline.py profile --config ./config/training_generic_gpu.yaml --profile-steps 25 --benchmark
-python ./scripts/pipeline.py compare --experiments ./runs/exp1 ./runs/exp2
-
-# Convert models
-python ./scripts/pipeline.py convert --task pytorch-to-onnx --model-path ./models/encoder/universal_encoder_initial.pt --output-path ./models/encoder/universal_encoder.onnx
-
-# Full pipeline: data -> vocab -> bootstrap -> train -> convert
-python ./scripts/pipeline.py all --config ./config/training_generic_gpu.yaml
-```
-
-## 📦 Model Artifacts & Paths
+## Model Artifacts & Paths
 - **Models (local):** `./models`
   - Defaults: `./models/production/encoder.pt`, `./models/production/decoder.pt`
-  - Optional registry: `./models/model_registry.json`
-- **Vocabulary (local):** `./vocabulary` (mounted to `/app/vocabs` in containers)
+  - Artifact registry: `./models/model_registry.json`
+- **Vocabulary (local):** `./vocabs` (mounted to `/app/vocabs` in containers)
   - Packs and optional `manifest.json`
+- **Checkpoints:** `./checkpoints/<experiment_name>/`
+
+All paths are overridable via `UTS_*` environment variables defined in `utils/constants.py`.
+
+### Hugging Face Hub Upload
+
+The system auto-uploads models and vocabulary packs to Hugging Face Hub when configured:
+
+```bash
+# 1. Login
+huggingface-cli login
+# or set token
+export HF_TOKEN=hf_your_token_here
+
+# 2. Upload all artifacts (models, vocabs, adapters)
+python scripts/upload_artifacts.py --repo_id your-username/uts-models
+
+# 3. Or let ModelVersion auto-upload during register_model()
+# Set in env:
+export HF_HUB_REPO_ID=your-username/uts-models
+```
+
+The `ModelVersion` class in `utils/model_versioning.py` handles:
+- Model registration with SHA-256 hashes and HMAC signing
+- Automatic HF Hub upload on `register_model()`
+- Version pinning for serving, rollback, and canary→production promotion
+- Vocabulary packs are uploaded separately via `upload_artifacts.py` under `vocabs/`
 
 See also: [docs/ONBOARDING.md](docs/ONBOARDING.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## 📱 SDK Integration
+## SDK Integration
 
 See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for full details and code examples for all platforms.
+
+All SDKs live under `sdk/`:
+- `sdk/android/UniversalTranslationSDK/`
+- `sdk/ios/UniversalTranslationSDK/`
+- `sdk/flutter/universal_translation_sdk/`
+- `sdk/react-native/UniversalTranslationSDK/`
+- `sdk/web/universal-translation-sdk/`
 
 ### Android
 ```java
@@ -261,17 +282,18 @@ const result = await translator.translate({
 });
 ```
 
-## 🏗️ Architecture
+## Architecture (v2 - Compact LoRA-based)
 
-- **Encoder**: Runs on device, converts text to language-agnostic embeddings (RoPE + SwiGLU)
-- **Decoder**: Runs on server (Litserve), converts embeddings to target language; supports hot‑loaded adapters
+- **Encoder**: 768 hidden, 6 layers, 8 heads, RoPE + SwiGLU. Initialized from XLM-RoBERTa-base (perfect 768→768 dimension match, zero-loss transfer). ~25MB.
+- **Decoder**: 512 decoder dim, 6 layers, 8 heads. Initialized from mBART-large-50 with PCA adaptation (1024→512). ~20MB.
+- **Training**: Backbone frozen via PEFT LoRA (r=4/8/16). Only LoRA adapters trained (~1-2% of params). Progressive 4-tier curriculum with reduced epochs (3/2/2/1).
 - **Coordinator**: Manages decoder pool, handles load balancing and health monitoring
-- **Vocabulary Packs**: Downloadable language-specific token mappings (2–4MB packs)
+- **Vocabulary Packs**: 32K BPE vocabulary via SentencePiece, grouped by script (6 groups, 2-4MB per pack)
 - **Model Weights**: Shared between all languages, trained on a diverse corpus
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 
-## 📚 Documentation
+## Documentation
 
 ### Quick Links
 - SDKs: [SDK Integration Guide](docs/SDK_INTEGRATION.md) | Publishing: [SDK_PUBLISHING.md](docs/SDK_PUBLISHING.md)
@@ -294,23 +316,21 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
 - [API Documentation](docs/API.md)
 - [Performance Optimization](docs/PERFORMANCE_OPTIMIZATION.md)
 - [Troubleshooting Guide](docs/TROUBLESHOOT.md)
-- [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md) — includes secret bootstrap, *_FILE usage, and rotation workflow
+- [Security Best Practices](docs/SECURITY_BEST_PRACTICES.md)
 - [System Improvements](docs/IMPROVEMENTS.md)
 - [Acknowledgments](docs/ACKNOWLEDGMENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [License](LICENSE)
 
-## 🔐 Secrets & Redis (Coordinator)
+## Secrets & Redis (Coordinator)
 
 ### Redis (for rate limiting and token revocation)
 - Set environment and connection (example):
   - `REDIS_URL=redis://localhost:6379/0`
   - Or `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`
-- Coordinator auto-initializes Redis if available.
+- Coordinator auto-initializes Redis if available via `utils.redis_manager.RedisManager`.
 - Revocation: jti values are stored in Redis set `revoked_jti`. Endpoint `POST /api/revoke` adds a jti (admin session required).
 - If Redis is unavailable, revocation falls back to allow (recommended to run Redis in production).
-
-## 🔐 Secrets Management (Docker Compose & Kubernetes)
 
 ### Secrets Bootstrap & Validation
 - Centralized bootstrap loads `*_FILE` secrets into env and validates required keys at startup.
@@ -330,12 +350,6 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
   - Set env for coordinator/decoder:
     - `JWT_PRIVATE_KEY_FILE=/run/secrets/jwt_private_key`
     - `JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public_key` (supports `||`-separated paths for rotation)
-
-Example (already wired in docker-compose.yml):
-- Coordinator uses:
-  - `COORDINATOR_SECRET_FILE`, `COORDINATOR_JWT_SECRET_FILE`, `COORDINATOR_TOKEN_FILE`, `INTERNAL_SERVICE_TOKEN_FILE`
-- Decoder uses:
-  - `DECODER_JWT_SECRET_FILE`
 
 ### Kubernetes
 - Create/update `kubernetes/secrets.yaml` with base64-encoded values.
@@ -366,42 +380,45 @@ Notes:
 - Prefer separate keys per environment.
 - For RS256, rotation is supported via multiple public keys using `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||`-separated entries.
 
-## 📊 Monitoring
+## Monitoring
 - All services expose Prometheus metrics at `/metrics`
 - Visualize with Grafana dashboards (included in `monitoring/grafana/dashboards`)
 - Set up alerts for latency, errors, and resource usage
 - See [monitoring/README.md](monitoring/README.md) for details
 
-## 🤝 Contributing
+## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and more details on how to contribute.
 
-## ⚠️ Current Status
+## Current Status
 This is a research project in active development. Core components are implemented but not production-tested.
 
 ### Component Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Encoder | ✅ Production-Ready | Core functionality complete and tested |
-| Decoder | ✅ Production-Ready | Core functionality complete and tested |
-| Vocabulary System | ✅ Production-Ready | Supports all planned languages |
-| Coordinator | ✅ Production-Ready | Load balancing and health monitoring implemented |
-| Android SDK | ✅ Production-Ready | Native implementation with JNI bindings |
-| iOS SDK | ✅ Production-Ready | Swift implementation with C++ interoperability |
-| Flutter SDK | ✅ Production-Ready | FFI bindings to native encoder |
-| React Native SDK | ✅ Production-Ready | Core functionality implemented with config support |
-| Web SDK | ✅ Production-Ready | Core functionality implemented with environment variable support |
-| Monitoring | ✅ Production-Ready | Prometheus metrics and health checks implemented |
-| Docker Support | ✅ Production-Ready | Docker Compose and Kubernetes configurations available |
-| Environment Config | ✅ Production-Ready | All components configurable via environment variables |
+| Encoder | Production-Ready | Core functionality complete and tested |
+| Decoder | Production-Ready | Core functionality complete and tested |
+| Vocabulary System | Production-Ready | Supports all planned languages |
+| Coordinator | Production-Ready | Load balancing and health monitoring implemented |
+| Android SDK | Production-Ready | Native implementation with JNI bindings |
+| iOS SDK | Production-Ready | Swift implementation with C++ interoperability |
+| Flutter SDK | Production-Ready | FFI bindings to native encoder |
+| React Native SDK | Production-Ready | Core functionality implemented with config support |
+| Web SDK | Production-Ready | Core functionality implemented with environment variable support |
+| Monitoring | Production-Ready | Prometheus metrics and health checks implemented |
+| Docker Support | Production-Ready | Docker Compose, Kubernetes, and Helm chart available |
+| Environment Config | Production-Ready | All components configurable via environment variables |
+| Production Scripts | Production-Ready | Role-based install, Redis setup, serving setup, encoder build |
+| Helm Chart | Production-Ready | `charts/uts/` with coordinator, decoder, encoder, redis |
+| Tests | Production-Ready | 285+ tests across 14 test files covering all core modules |
 
-## 📄 License
+## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 We are grateful to the amazing open-source community and the researchers who have made this project possible. See [ACKNOWLEDGMENTS.md](docs/ACKNOWLEDGMENTS.md) for detailed acknowledgments.
 
-## 📜 Changelog
+## Changelog
 See [CHANGELOG.md](CHANGELOG.md) for the latest updates.

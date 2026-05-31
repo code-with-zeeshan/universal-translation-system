@@ -2,6 +2,7 @@
 """Connects data pipeline → vocabulary creation → training"""
 from pathlib import Path
 import logging
+import random
 from typing import List, Dict
 from tqdm import tqdm
 from datetime import datetime
@@ -10,6 +11,7 @@ from data.data_utils import merge_datasets
 from utils.common_utils import DirectoryManager
 from utils.exceptions import DataError
 from config.schemas import RootConfig
+from utils.constants import DATA_SAMPLED_DIR, DATA_FINAL_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME
 
 class PipelineConnector:
     """Connects all pipeline stages"""
@@ -20,7 +22,7 @@ class PipelineConnector:
         
     def create_monolingual_corpora(self):
         """Split parallel data into monolingual files for vocabulary creation"""
-        sampled_dir = Path(self.config.data.processed_dir) / 'sampled'
+        sampled_dir = Path(self.config.data.processed_dir) / DATA_SAMPLED_DIR
         processed_dir = Path(self.config.data.processed_dir)
         processed_dir.mkdir(exist_ok=True)
 
@@ -76,8 +78,8 @@ class PipelineConnector:
     
     def create_final_training_file(self):
         """Merge all data into final training file"""
-        sampled_dir = Path(self.config.data.processed_dir) / 'sampled'
-        final_dir = Path(self.config.data.processed_dir) / 'final'
+        sampled_dir = Path(self.config.data.processed_dir) / DATA_SAMPLED_DIR
+        final_dir = Path(self.config.data.processed_dir) / DATA_FINAL_DIR
         processed_dir = Path(self.config.data.processed_dir)
         
         # Collect all files to merge
@@ -92,15 +94,29 @@ class PipelineConnector:
             files_to_merge.extend(final_dir.glob('pivot_pairs/*.txt'))
         
         # Merge all
-        output_file = processed_dir / 'train_final.txt'
+        output_file = processed_dir / TRAIN_FINAL_FILENAME
         merge_datasets(files_to_merge, output_file)
         
-        self.logger.info(f"Created final training file: {output_file}")
+        # Split into train and validation sets
+        val_file = processed_dir / VAL_FINAL_FILENAME
+        temp_file = processed_dir / 'train_temp.txt'
+        with open(output_file, 'r', encoding='utf-8') as f_in:
+            lines = f_in.readlines()
+        random.shuffle(lines)
+        split_idx = int(len(lines) * 0.9)
+        with open(temp_file, 'w', encoding='utf-8') as f_train:
+            f_train.writelines(lines[:split_idx])
+        with open(val_file, 'w', encoding='utf-8') as f_val:
+            f_val.writelines(lines[split_idx:])
+        temp_file.replace(output_file)
+        
+        self.logger.info(f"Created final training file: {output_file} ({split_idx} lines)")
+        self.logger.info(f"Created validation file: {val_file} ({len(lines) - split_idx} lines)")
 
     def get_data_version_info(self) -> Dict[str, str]:
         """Get data and pipeline version information"""
         return {
-            'data_version': self.config.version,
+            'data_version': getattr(self.config, 'version', '1.0.0'),
             'timestamp': datetime.now().isoformat(),
             'git_commit': self._get_git_commit()
         }
@@ -112,16 +128,3 @@ class PipelineConnector:
             return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode('ascii').strip()
         except Exception:
             return "unknown"
-
-# Add these methods to UnifiedDataPipeline class:
-def _create_training_ready(self):
-    """Create data ready for training"""
-    connector = PipelineConnector(self.config)
-    
-    # Create monolingual corpora for vocabulary
-    self.logger.info("Creating monolingual corpora...")
-    connector.create_monolingual_corpora()
-    
-    # Create final training file
-    self.logger.info("Creating final training file...")
-    connector.create_final_training_file()

@@ -7,8 +7,8 @@ paths = [
   "tests/.*",                               # tests often contain fake tokens
   "kubernetes/secrets\.example\.yaml",     # example secrets file
   "docs/.*",                                # docs may show example keys
-  "web/universal-translation-sdk/example/.*",
-  "web/universal-translation-sdk/demo\.html"
+  "sdk/web/universal-translation-sdk/example/.*",
+  "sdk/web/universal-translation-sdk/demo\.html"
 ]
 # Allowlist by content regex patterns
 regexes = [

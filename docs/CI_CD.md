@@ -1,13 +1,14 @@
 # CI/CD Guide for Universal Translation System
 
-This guide describes the recommended CI/CD workflows for building, testing, and deploying the Universal Translation System, including encoder/decoder containers, SDK artifacts, and cloud infrastructure.
+This guide describes the recommended CI/CD workflows for building, testing, and deploying the system.
 
 ---
 
 ## Overview
-- **Encoder Core (C++):** Built via Docker multi-stage and/or Kubernetes Job, outputs shared library for SDKs (Android, iOS, Flutter, etc.).
-- **Decoder (Cloud):** Built as a Litserve-based Docker container, deployed to Kubernetes or cloud VMs.
+- **Encoder Core (C++):** Built via `scripts/build_encoder_core.sh`, Docker multi-stage, and/or Kubernetes Job.
+- **Decoder (Cloud):** Built as a FastAPI/uvicorn Docker container, deployed to Kubernetes or cloud VMs.
 - **SDKs:** Artifacts for Android, iOS, Flutter, React Native, and Web are built and published for app integration.
+- **Version Management:** `version-config.json` + `scripts/version_manager.py` for component semver.
 
 ---
 
@@ -16,12 +17,12 @@ This guide describes the recommended CI/CD workflows for building, testing, and 
 ### Docker Build (for CI or Edge Packaging)
 ```bash
 docker build -f docker/encoder.Dockerfile -t universal-encoder-core:latest .
-# The resulting image contains /usr/lib/libuniversal_encoder_core.so and headers
 ```
 
-### Kubernetes Job (for Artifact Storage)
-- Use `kubernetes/encoder-build.yaml` and `encoder-artifacts-pvc.yaml` to build and store the encoder core in a shared volume.
-- Artifacts can be picked up by SDK build jobs or published to an artifact repository.
+### Native Build Script
+```bash
+bash scripts/build_encoder_core.sh   # Supports Linux x86_64, macOS universal, Android NDK, iOS
+```
 
 ---
 
@@ -29,29 +30,23 @@ docker build -f docker/encoder.Dockerfile -t universal-encoder-core:latest .
 
 ### Docker Build
 ```bash
-# Current Dockerfile path
 docker build -f docker/decoder.Dockerfile -t universal-decoder:latest .
 ```
-
-### Kubernetes Deployment
-- Use `kubernetes/decoder-deployment.yaml` and `decoder-service.yaml` for cloud deployment.
-- Supports GPU scheduling, scaling, and health checks.
 
 ---
 
 ## SDK CI/CD
 
 ### Android/iOS/Flutter
-- Build SDKs using platform-native tools (Gradle, Xcode, Flutter).
-- Link against the encoder core artifact (from Docker image or K8s PVC).
-- Publish to internal or public package repositories (Maven, CocoaPods, pub.dev).
-- Publishing reference: docs/SDK_PUBLISHING.md
+- Build using platform-native tools (Gradle, Xcode, Flutter).
+- Link against encoder core artifact.
+- Publish to Maven, CocoaPods, pub.dev.
+- Reference: docs/SDK_PUBLISHING.md
 
 ### React Native/Web
-- Build and test using Node.js, TypeScript, and bundlers (Webpack, Vite, etc.).
-- Publish to npm or internal registry.
-- Web SDK GitHub Actions: .github/workflows/web-npm-publish.yml
-- Android/iOS SDK GitHub Actions: .github/workflows/sdk-publish.yml
+- Build with Node.js, TypeScript, bundlers.
+- Publish to npm.
+- Workflows: `.github/workflows/web-npm-publish.yml`, `.github/workflows/sdk-publish.yml`
 
 ---
 
@@ -82,11 +77,24 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Build Decoder
-        run: docker build -f cloud_decoder/Dockerfile -t universal-decoder:latest .
+        run: docker build -f docker/decoder.Dockerfile -t universal-decoder:latest .
       - uses: actions/upload-artifact@v3
         with:
           name: decoder-image
           path: .
+
+  verify-schema-hash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Verify schema hash
+        run: |
+          pip install -r requirements/base.txt
+          python scripts/update_schema_hash.py
+          git diff --exit-code version-config.json || {
+            echo "version-config.json schemaHash drifted. Run 'python scripts/update_schema_hash.py'";
+            exit 1;
+          }
 
   build-flutter-sdk:
     runs-on: ubuntu-latest
@@ -94,24 +102,23 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build Flutter SDK
         run: |
-          cd flutter/universal_translation_sdk
+          cd sdk/flutter/universal_translation_sdk
           flutter pub get
-          flutter build aar # or build ios-framework
+          flutter build aar
       - uses: actions/upload-artifact@v3
         with:
           name: flutter-sdk
-          path: flutter/universal_translation_sdk/build/
-
-  # Add similar jobs for Android, iOS, React Native, Web
+          path: sdk/flutter/universal_translation_sdk/build/
 ```
 
 ---
 
 ## Best Practices
-- Use versioned Docker tags for production releases.
-- Store build artifacts in a central repository or artifact store.
+- Use versioned Docker tags for production releases (`v*.*.*`).
+- Verify `version-config.json` schema hash in CI.
+- Store build artifacts in a central repository.
 - Automate tests for all SDKs and server components.
-- Use Kubernetes namespaces and resource limits for isolation.
+- Use Kubernetes namespaces and resource limits.
 - Monitor deployments with health checks and Prometheus metrics.
 
 ---
@@ -120,4 +127,5 @@ jobs:
 - [DEPLOYMENT.md](./DEPLOYMENT.md)
 - [ARCHITECTURE.md](./ARCHITECTURE.md)
 - SDK READMEs in each SDK folder
-- [API.md](./API.md) for endpoints used by SDKs and coordinator
+- [API.md](./API.md)
+- [CI_BUILD_UPLOAD.md](./CI_BUILD_UPLOAD.md)

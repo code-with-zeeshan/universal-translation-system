@@ -18,31 +18,59 @@ All notable changes to the Universal Translation System will be documented in th
 - SDK_PUBLISHING.md guide (Android Maven, iOS Podspec/SPM, RN linking)
 - Web example Express server with proper WASM headers (COOP/COEP/CORS)
 - README updates for Android/iOS/Flutter/Web SDKs with coordinator usage
-- GitHub Actions workflows: sdk-publish.yml (Android/iOS) and web-npm-publish.yml (web)
-- Coordinator periodic Redis-to-disk mirroring via `COORDINATOR_MIRROR_INTERVAL` (min 5s, logs effective value)
-- Centralized logging via `utils/logging_config.setup_logging` with sectioned log handlers (logs/data, logs/training, logs/monitoring, logs/coordinator, logs/decoder, logs/vocabulary)
+- GitHub Actions workflows: sdk-publish.yml and web-npm-publish.yml
+- Coordinator periodic Redis-to-disk mirroring via `COORDINATOR_MIRROR_INTERVAL`
+- Centralized logging via `utils.logging_config.setup_logging`
 - Automatic creation of logs folder structure via `DirectoryManager.create_logs_structure()`
-- Mandatory secrets in `.env.example` with `*_FILE` support and RS256 key envs for Coordinator and Decoder
-- Updated docs: environment-variables.md and ONBOARDING.md with CRITICAL envs to set before running
+- Mandatory secrets in `.env.example` with `*_FILE` support and RS256 key envs
+- Production scripts: `scripts/install.sh`, `scripts/build_encoder_core.sh`, `scripts/setup_redis.sh`, `scripts/setup_serving.sh`
+- Helm chart at `charts/uts/` with coordinator, decoder, encoder, redis deployments
+- Kubernetes secrets template at `kubernetes/secrets.yaml`
+- Thread safety: 19 race conditions fixed across 11+ files (RLock, background thread stop, double-checked locking)
+- 285+ tests across 14 new test files covering constants, samplers, strategy, config, metrics, pipeline state, vocab config, quantizer, profiler, hardware, analytics, training utils, health, translation API
+- 60+ path constants in `utils/constants.py` with `UTS_*` env-var overrides
+- `version-config.json` + `scripts/version_manager.py` for component semver management
+- Role-based install via `scripts/install.sh` (`--train`, `--serve`, `--coordinator`, `--dev`, `--encoder-core`, `--all`)
+- Pinned Docker images (`prom/prometheus:v2.51.0`, `grafana/grafana:10.4.0`, `ubuntu:22.04`)
+- Missing packages added to requirements: `nvidia-ml-py3`, `semver`, `urllib3` (base); `seaborn` (train); `tf2onnx`, `torch-tensorrt`, `tritonclient` (export)
 
 ### Changed
-- Updated README.md with current system capabilities and Docker deployment instructions
-- Improved CONTRIBUTING.md with Docker deployment instructions and better contributor guidelines
-- Enhanced FAQ.md to reflect current system capabilities and remove outdated references
-- Completely rewrote Vocabulary_Guide.md to focus on the dynamic vocabulary system
-- Updated future_plan.md with a forward-looking roadmap and moved to docs folder
-- Added environment variable configuration section to monitoring/README.md
-- Improved .gitignore with more comprehensive patterns for various development environments
-- Moved Adding_New_languages.md to docs folder with updated instructions
-- Updated Quick Start guide in README.md with more comprehensive options
-- Coordinator now uses `RedisManager` for sync access in async paths and mirrors Redis to disk in reload/save flows
-- Coordinator, Decoder, Training, Data pipeline, and Monitoring now initialize centralized logging and write to sectioned log files
-- Main entrypoint uses centralized logging and category logger name (`system`)
+- SDKs moved from root directories to `sdk/` subdirectory; ~70 references updated across workflows, scripts, docs, configs
+- `config/config_models.py` merged into `config/schemas.py`; canonical hierarchy with `load_system_config()` for serving stack
+- `SystemConfig` renamed to `IntegrationSystemConfig` in `integration/system_config.py` to avoid name collision
+- `IntelligentTrainer` inherits from `BaseTrainer` eliminating unused abstract class
+- `TemperatureSampler` consolidated from 3 copies to canonical `data/custom_samplers.py`
+- Fake quantization merged into shared `fake_quantize_tensor()` in `training/quantization_common.py`
+- Gradient checkpointing harmonized to model built-in API
+- Oversized files split into 30 modules + 7 shims (backward-compatible re-exports):
+  - `training/intelligent_trainer.py` (1,856 lines) → `trainer.py`, `hardware_profile.py`, `training_analytics.py`, `training_strategy.py`
+  - `integration/connect_all_systems.py` (995) → `system.py`, `system_config.py`, `system_health.py`, `translation_api.py`
+  - `vocabulary/unified_vocabulary_creator.py` (1,059) → `vocabulary_creator.py`, `vocab_production.py`, `vocab_research.py`, `vocab_validation.py`, `vocab_config.py`
+  - `evaluation/evaluate_model.py` (781) → `evaluator.py`, `metrics.py`
+  - `training/quantization_pipeline.py` (844) → `encoder_quantizer.py`, `model_profiler.py`, `quality_comparator.py`, `quantization_common.py`
+  - `training/memory_efficient_training.py` (784) → `memory_trainer.py`, `memory_tracker.py`, `dynamic_batch_sizer.py`, `memory_config.py`
+  - `data/unified_data_pipeline.py` (765) → `pipeline_orchestrator.py`, `pipeline_state.py`
+- Import hygiene: 35 double imports fixed, 2 wildcard imports removed, 14 `from __future__ import annotations` removed
+- Docker/K8s fixes: coordinator healthcheck port corrected (`8002→5100`), Helm ports updated (`8080/9000→5100/8001`), `litserve→uvicorn` in decoder.Dockerfile, `configs/→config/` path typo fixed
+- Decoder Dockerfile: corrected from litserve to uvicorn command
+- Coordinator healthcheck port aligned with actual service port
+- Docker images pinned to specific versions instead of `:latest`
+- Non-root user (`adduser`) added to all Dockerfiles
+- `SensitiveDataFilter` renamed to `LoggingSensitiveDataFilter` in `utils/logging_config.py`
+- `track_translation_request` consolidated to re-export from `monitoring/metrics.py`
+- Test consolidation: merged `test_coordinator_ready.py` + `test_probes_and_routers.py` + `test_decoder_endpoints.py` → `test_health_readiness_endpoints.py`
+- `sha256_file()` + `find_schema_files()` extracted into `scripts/_shared.py`
+- Syntax error `status='error''` fixed in `monitoring/metrics_collector.py:135`
+- 10 custom modules replaced with library equivalents, eliminating 4,251 lines of custom code
+- 5 zero-usage modules deleted (cache_manager, dependency_container, batch_processor, lazy_loader, service_discovery)
+- All 5 `archived/` directories deleted (16+ files, ~5,000 lines)
+- 8 blocking GPU pipeline bugs fixed
 
 ### Security
 - Decoder enforces `DECODER_JWT_SECRET` or file at startup (fail-fast)
-- Coordinator supports `COORDINATOR_SECRET(_FILE)`, `COORDINATOR_JWT_SECRET(_FILE)`, `COORDINATOR_TOKEN(_FILE)`, and `INTERNAL_SERVICE_TOKEN(_FILE)`
-- RS256 support documented: `JWT_PRIVATE_KEY_FILE`, `JWT_PUBLIC_KEY_PATH` in Coordinator and Decoder; Kubernetes placeholders included
+- Coordinator supports `COORDINATOR_SECRET(_FILE)`, `COORDINATOR_JWT_SECRET(_FILE)`, `COORDINATOR_TOKEN(_FILE)`, `INTERNAL_SERVICE_TOKEN(_FILE)`
+- RS256 support documented: `JWT_PRIVATE_KEY_FILE`, `JWT_PUBLIC_KEY_PATH`; Kubernetes placeholders included
+- Thread safety: 19 race conditions fixed across 11+ files
 
 ## [0.1.0] - 2025-08-22
 

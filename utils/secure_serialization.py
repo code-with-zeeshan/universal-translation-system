@@ -350,8 +350,6 @@ def secure_deserialize_json_compressed(data: str, hmac_key: Optional[str] = None
     Raises:
         SecurityError: If HMAC verification fails or data is invalid
     """
-    import zlib
-    
     
     # Check size
     if len(data) > MAX_SIZE:

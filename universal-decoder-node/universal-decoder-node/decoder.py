@@ -4,17 +4,14 @@ import torch.nn as nn
 import numpy as np
 from fastapi import FastAPI, Request, Header, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 import asyncio
 from typing import List, Dict, Optional, Tuple, Any
 import time
-import msgpack
 import lz4.frame
 import logging
 import os
-import yaml
-import threading
+
 import random
 from pathlib import Path
 import jwt
@@ -26,11 +23,11 @@ from .vocabulary import VocabularyManager
 # Import utility modules
 from .utils.auth import APIKeyManager
 from .utils.rate_limiter import RateLimiter
-from .utils.security import validate_model_source, safe_load_model
+from .utils.security import safe_load_model
 from .utils.memory_manager import MemoryManager
 from .utils.profiler import profile, profile_section, function_profiler
 from .utils.https_middleware import add_https_middleware
-from .config import DecoderConfig, MemoryConfig, ProfilingConfig
+from .config import DecoderConfig
 
 logger = logging.getLogger(__name__)
 
@@ -376,7 +373,6 @@ class DecoderService:
         self.batcher = ContinuousBatcher()
         
         # Load configuration
-        from .config import DecoderConfig, ModelConfig
         self.config = config or DecoderConfig()
         
         # Configuration
@@ -544,9 +540,7 @@ class DecoderService:
                         for k in self.jwks_keys:
                             if k.get("kid") == kid and k.get("kty") == "RSA":
                                 try:
-                                    from cryptography.hazmat.primitives.asymmetric import rsa  # type: ignore
-                                    from cryptography.hazmat.primitives import serialization  # type: ignore
-                                    from cryptography.hazmat.backends import default_backend  # type: ignore
+    
                                     n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
                                     e = int.from_bytes(base64.urlsafe_b64decode(k["e"] + "=="), byteorder="big")
                                     pub_numbers = rsa.RSAPublicNumbers(e, n)
@@ -840,7 +834,6 @@ class DecoderService:
                 })
             
             # Periodically clean up memory if needed
-            import random
             if random.random() < 0.05:  # ~5% of batches
                 memory_stats = memory_manager.get_memory_stats()
                 if memory_stats.get('gpu_memory_percent', 0) > 80:

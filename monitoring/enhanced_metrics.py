@@ -362,7 +362,6 @@ async def start_async_system_metrics_collection(interval=15):
     Args:
         interval: Collection interval in seconds
     """
-    import psutil
     
     async def collect_metrics():
         while True:
@@ -377,7 +376,6 @@ async def start_async_system_metrics_collection(interval=15):
                 
                 # GPU metrics (if available)
                 try:
-                    import GPUtil
                     gpus = GPUtil.getGPUs()
                     for i, gpu in enumerate(gpus):
                         set_decoder_gpu_utilization("local", str(i), gpu.load * 100)

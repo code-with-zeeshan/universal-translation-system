@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Union, Dict
 import sys
 import os
+from utils.constants import LOG_DIR
 
 class DirectoryManager:
     """Centralized directory creation and management"""
@@ -66,7 +67,7 @@ class DirectoryManager:
         return directories
     
     @staticmethod
-    def create_logs_structure(base_dir: str = "logs") -> Dict[str, Path]:
+    def create_logs_structure(base_dir: str = LOG_DIR) -> Dict[str, Path]:
         """
         Create standard logs directory structure at repo root.
         Sections include: data, training, monitoring, coordinator, decoder, evaluation, vocabulary.

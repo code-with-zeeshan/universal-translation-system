@@ -19,8 +19,6 @@ class VocabularyConnector:
     
     def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed'):
         """Create vocabulary packs after data pipeline completes"""
-        # Lazy import to avoid circular dependency
-        from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
         self.logger.info("Creating vocabulary packs from processed data...")
         
         # Check if monolingual corpora exist

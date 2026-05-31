@@ -3,7 +3,6 @@
 Fail if any python file contains `yaml.load(` which can be unsafe.
 Exceptions: explicit safe loader forms or comments do not exempt the check.
 """
-from __future__ import annotations
 import re
 import sys
 from pathlib import Path

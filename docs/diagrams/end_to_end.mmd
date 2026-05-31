@@ -33,9 +33,9 @@ flowchart LR
         C_HC[Health Prober\nActive and Passive]
         C_MX[Metrics Exporter\nPrometheus]
         C_TR[Tracing\nOpenTelemetry]
-        C_ADM[Admin and Dashboard\nChartJS]
+        C_ADM[Admin and Dashboard]
         C_REDIS[Redis\noptional]
-        C_CFG[Configuration\nconfigs and env]
+        C_CFG[Configuration\nconfig and env]
         C_SEC[AuthN/Z\nJWT]
         C_API --> C_RT
         C_RT --> C_HC
@@ -48,7 +48,7 @@ flowchart LR
     end
 
     subgraph DecoderPool
-        DN1[Decoder Node #1\nLitserve + PyTorch]
+        DN1[Decoder Node #1\nFastAPI + PyTorch]
         DN2[Decoder Node #2]
         DNn[Decoder Node #N]
                     MLD[Model Loader\nAdapters]
@@ -74,15 +74,15 @@ flowchart LR
     end
 
     subgraph Artifacts
-        MS[(Model and Artifact Store)]
+        MS[(Model/Artifact Store\nHF Hub)]
         VR[Version Registry\nversion-config.json]
     end
 
     subgraph CICD
         BLD[Build Scripts\nscripts/*]
-        PBL[Publish/Release\nrelease.ps1/.sh]
+        PBL[Publish/Release]
         DKR[Docker Images\ndocker/*]
-        K8S[Kubernetes Manifests\nkubernetes/*]
+        K8S[Kubernetes Manifests\ncharts/uts/ + kubernetes/]
     end
 
     A1 & A2 & A3 & A4 & A5 -->|Text| E1

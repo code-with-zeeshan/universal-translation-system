@@ -1,6 +1,7 @@
 # universal-decoder-node/universal_decoder_node/vocabulary.py
 import msgpack
 import logging
+import threading
 from pathlib import Path
 from typing import Dict, Optional, List, Union
 from dataclasses import dataclass, field
@@ -26,7 +27,9 @@ class VocabularyPack:
     def id_to_token(self) -> Dict[int, str]:
         """Get cached mapping from token IDs to tokens"""
         if self._id_to_token is None:
-            self._id_to_token = {idx: tok for tok, idx in self.tokens.items()}
+            with self._lock:
+                if self._id_to_token is None:
+                    self._id_to_token = {idx: tok for tok, idx in self.tokens.items()}
         return self._id_to_token
 
 
@@ -36,6 +39,7 @@ class VocabularyManager:
     def __init__(self, vocab_dir: str = 'vocabs'):
         self.vocab_dir = Path(vocab_dir)
         self.loaded_packs = {}
+        self._lock = threading.RLock()
         self.language_to_pack = self._build_language_mapping()
         
     def _build_language_mapping(self) -> Dict[str, str]:
@@ -64,10 +68,10 @@ class VocabularyManager:
         pack_name = target_pack or source_pack or 'latin'
         
         # Load if not cached
-        if pack_name not in self.loaded_packs:
-            self.loaded_packs[pack_name] = self._load_pack(pack_name)
-            
-        return self.loaded_packs[pack_name]
+        with self._lock:
+            if pack_name not in self.loaded_packs:
+                self.loaded_packs[pack_name] = self._load_pack(pack_name)
+            return self.loaded_packs[pack_name]
     
     def _load_pack(self, pack_name: str) -> VocabularyPack:
         """Load vocabulary pack from disk with graceful fallbacks"""

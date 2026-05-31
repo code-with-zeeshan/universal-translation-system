@@ -1,82 +1,59 @@
-# 📋 FAQ: Universal Translation System
+# FAQ: Universal Translation System
 
-## 🔥 **Core Differentiation Questions**
+## Core Differentiation Questions
 
-### **Q1: Why not just use M2M-100 or NLLB-200 quantized?**
+### Q1: Why not just use M2M-100 or NLLB-200 quantized?
+Our system uses an innovative edge-cloud split architecture with a universal encoder (35MB base + 2-4MB vocabulary packs) and cloud decoder infrastructure. This results in a 40MB app with 90% quality of full models. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**A:** Our system uses an innovative edge-cloud split architecture with a universal encoder (35MB base + 2-4MB vocabulary packs) and cloud decoder infrastructure. This results in a 40MB app with 90% quality of full models. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+### Q2: What makes your vocabulary pack system unique?
+Vocabulary packs are small (2-4MB each), dynamically loaded, and language-specific. Users download only the languages they need. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
 
-### **Q2: What makes your vocabulary pack system unique?**
+### Q3: How do you maintain quality with such a small model?
+Through smart quantization, optimized vocabulary packs, and edge-cloud split architecture. Heavy lifting is done on the cloud decoder. See [docs/VISION.md](docs/VISION.md).
 
-**A:** Our vocabulary packs are small (2-4MB each), dynamically loaded, and language-specific. This allows users to download only the languages they need. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
+## Technical Architecture Questions
 
-### **Q3: How do you maintain quality with such a small model?**
+### Q4: Why split encoder and decoder?
+Minimizes client app size while maximizing translation quality. Encoder runs on device, decoder in the cloud. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**A:** Through smart quantization, optimized vocabulary packs, and our edge-cloud split architecture. The heavy lifting is done on the cloud decoder while keeping the client-side encoder lightweight. See [docs/VISION.md](docs/VISION.md) for details.
+### Q5: How is privacy preserved?
+Only embeddings are sent to the cloud; original text never leaves the device. Embeddings are compressed and cannot be reversed.
 
----
+### Q6: What about offline translation?
+We're working on a fully offline mode for limited connectivity scenarios.
 
-## 💡 **Technical Architecture Questions**
+## Business/User Questions
 
-### **Q4: Why split encoder and decoder?**
+### Q7: Who is this system designed for?
+Developers, privacy-conscious users, and organizations needing scalable translation. SDKs support Android, iOS, Flutter, React Native, and Web (under `sdk/`). See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md).
 
-**A:** This split architecture minimizes client app size while maximizing translation quality. The encoder runs on the device, while the decoder runs in the cloud. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+### Q8: How does configuration work?
+All components configurable via environment variables. Paths overridable via `UTS_*` env vars. See [docs/environment-variables.md](docs/environment-variables.md).
 
-### **Q5: How is privacy preserved if you're using cloud?**
+### Q9: What languages are supported?
+20 languages (en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, vi, pl, uk, nl, id, sv) with plans to expand.
 
-**A:** Only embeddings are sent to the cloud; the original text never leaves the device. These embeddings are compressed and cannot be reversed to obtain the original text.
+## Developer Questions
 
-### **Q6: What about offline translation?**
+### Q10: How hard is it to integrate?
+SDKs designed for easy integration with minimal code. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for examples.
 
-**A:** While our primary architecture is edge-cloud, we're working on a fully offline mode for scenarios where internet connectivity is limited or unavailable.
+### Q11: Can I use my own vocabulary/terminology?
+Yes, create custom vocabulary packs. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
 
----
+### Q12: How does deployment work?
+Docker Compose, standalone Docker, Helm chart, and Kubernetes manifests. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Role-based install via `scripts/install.sh`.
 
-## 🚀 **Business/User Questions**
+## Future/Roadmap Questions
 
-### **Q7: Who is this system designed for?**
+### Q13: What's the roadmap?
+See [docs/future_plan.md](docs/future_plan.md) for details on offline capabilities, more languages, and enhanced monitoring.
 
-**A:** Developers, privacy-conscious users, and organizations needing scalable, monitored translation. Our SDKs support Android, iOS, Flutter, React Native, and Web. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md).
+### Q14: How do you handle model updates?
+Through environment variable configuration system and `version-config.json` for component semver management.
 
-### **Q8: How does the configuration work?**
-
-**A:** All components are configurable via environment variables, making deployment and customization easy. See [docs/environment-variables.md](docs/environment-variables.md).
-
-### **Q9: What languages are supported?**
-
-**A:** We currently support 20 languages with plans to expand. The coordinator dashboard shows all available languages and their status.
-
----
-
-## 🔧 **Developer/Technical Integration Questions**
-
-### **Q10: How hard is it to integrate into existing apps?**
-
-**A:** Our SDKs are designed for easy integration with minimal code. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for platform-specific examples.
-
-### **Q11: Can I use my own vocabulary/terminology?**
-
-**A:** Yes, you can create custom vocabulary packs for domain-specific terminology. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
-
-### **Q12: How does deployment work?**
-
-**A:** We provide Docker and Kubernetes configurations for easy deployment. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
----
-
-## 🎯 **Future/Roadmap Questions**
-
-### **Q13: What's the roadmap?**
-
-**A:** We're focusing on improving offline capabilities, adding more languages, and enhancing the monitoring dashboard. See our [Future Roadmap](docs/future_plan.md) for details.
-
-### **Q14: How do you handle model updates?**
-
-**A:** Updates are managed through our environment variable configuration system, allowing for seamless updates without code changes.
-
-### **Q15: What makes this system unique?**
-
-**A:** Our edge-cloud split architecture, dynamic vocabulary system, and environment variable configuration make this system highly flexible, efficient, and privacy-focused.
+### Q15: What makes this system unique?
+Edge-cloud split architecture, dynamic vocabulary system, environment variable configuration, centralized path management, thread-safe design, and production-ready deployment scripts.
 
 ---
 

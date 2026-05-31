@@ -3,7 +3,6 @@
 This document explains how Redis is integrated into the Universal Translation System for improved scalability and reliability.
 
 ## Table of Contents
-
 1. [Overview](#overview)
 2. [Benefits](#benefits)
 3. [Configuration](#configuration)
@@ -13,37 +12,35 @@ This document explains how Redis is integrated into the Universal Translation Sy
 
 ## Overview
 
-The Universal Translation System now uses Redis as a centralized storage solution for:
-
-- Decoder pool management
-- Rate limiting
+Redis serves as a centralized storage solution for:
+- Decoder pool management (via `utils.redis_manager.RedisManager`)
+- Rate limiting across coordinator instances
+- Token revocation (jti blacklist)
 - Caching frequently used data
-
-This integration enables better scalability across multiple regions and provides a more robust system for distributed deployments.
 
 ## Benefits
 
-- **Distributed Decoder Pool**: Decoders running in any region can register with the central Redis instance
-- **Consistent Rate Limiting**: Rate limits are enforced consistently across all coordinator instances
-- **Improved Reliability**: Automatic fallback to file-based storage if Redis is unavailable, plus periodic Redis-to-disk mirroring
-- **Horizontal Scaling**: Multiple coordinator instances can share the same decoder pool
-- **Real-time Updates**: Changes to the decoder pool are immediately visible to all components
+- **Distributed Decoder Pool**: Decoders across regions register centrally
+- **Consistent Rate Limiting**: Enforced across all coordinator instances
+- **Improved Reliability**: Automatic fallback to file-based storage + periodic Redis-to-disk mirroring
+- **Horizontal Scaling**: Multiple coordinator instances share the same pool
+- **Real-time Updates**: Changes immediately visible to all components
 
 ## Configuration
 
 ### Environment Variables
-
-The following environment variables can be used to configure Redis and mirroring:
-
 - `REDIS_URL`: Redis connection URL (e.g., `redis://localhost:6379/0`)
 - `REDIS_PORT`: Redis port (default: `6379`)
-- `REDIS_PASSWORD`: Redis password (if authentication is enabled)
+- `REDIS_PASSWORD`: Redis password
 - `COORDINATOR_MIRROR_INTERVAL`: Seconds between periodic Redis-to-disk mirrors (default: 60, minimum: 5)
 
+### Setup Script
+```bash
+bash scripts/setup_redis.sh    # Install/start/stop/status with Docker fallback
+```
+
 ### Docker Compose
-
-The `docker-compose.yml` file includes a Redis service:
-
+The `docker-compose.yml` includes a Redis service:
 ```yaml
 redis:
   image: redis:7-alpine
@@ -58,128 +55,46 @@ redis:
     interval: 30s
     timeout: 10s
     retries: 3
-  restart: unless-stopped
 ```
 
 ### Kubernetes
-
-For Kubernetes deployments, use the following configuration:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redis
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: redis
-  template:
-    metadata:
-      labels:
-        app: redis
-    spec:
-      containers:
-      - name: redis
-        image: redis:7-alpine
-        ports:
-        - containerPort: 6379
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
-        volumeMounts:
-        - name: redis-data
-          mountPath: /data
-        command: ["redis-server", "--appendonly", "yes", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
-      volumes:
-      - name: redis-data
-        persistentVolumeClaim:
-          claimName: redis-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: redis
-spec:
-  selector:
-    app: redis
-  ports:
-  - port: 6379
-    targetPort: 6379
-  type: ClusterIP
-```
+For K8s, Redis is configured via the Helm chart at `charts/uts/` or the `kubernetes/` manifests. The Helm chart includes Redis with PVC-backed persistence.
 
 ## Components Using Redis
 
 ### Coordinator
-
-The coordinator service uses Redis to:
-
-1. Store and retrieve the decoder pool configuration
-2. Track decoder health status
-3. Store A/B test configurations
-
-If Redis is unavailable, it falls back to using the local file system. In addition, the coordinator:
-
-- Periodically mirrors Redis data to `configs/decoder_pool.json` via `DecoderPool.mirror_redis_to_disk()`
-- Validates and logs the mirror interval at startup (`COORDINATOR_MIRROR_INTERVAL`, min 5s)
+- Store/retrieve decoder pool configuration
+- Track decoder health status
+- Periodic disk mirroring via `DecoderPool.mirror_redis_to_disk()`
 
 ### Rate Limiter
+- Track API usage across multiple coordinator instances
+- Falls back to in-memory storage if Redis unavailable
 
-The rate limiter uses Redis to:
-
-1. Track API usage across multiple coordinator instances
-2. Enforce consistent rate limits
-3. Collect usage statistics
-
-If Redis is unavailable, it falls back to in-memory storage (note: this will not be consistent across multiple instances).
-
-### Register Decoder Node Tool
-
-The `register_decoder_node.py` tool can register decoders with:
-
-1. The coordinator API directly (preferred)
-2. Redis (if coordinator API is unavailable)
-3. Local file system (as a last resort)
+### RedisManager
+- Singleton in `utils/redis_manager.py` with double-checked locking
+- Health checks with `redis_manager_healthy` Prometheus metric
 
 ## Fallback Mechanisms
 
-The system implements graceful fallbacks at multiple levels:
-
-1. **Coordinator Fallback**: If Redis is unavailable, the coordinator falls back to file-based storage
-2. **Rate Limiter Fallback**: If Redis is unavailable, the rate limiter falls back to in-memory storage
-3. **Registration Fallback**: The registration tool tries multiple methods in order of preference
-
-This ensures that the system remains operational even if Redis is temporarily unavailable.
+1. **Coordinator**: Falls back to file-based storage (`configs/decoder_pool.json`)
+2. **Rate Limiter**: Falls back to in-memory storage
+3. **Disk Mirroring**: `COORDINATOR_MIRROR_INTERVAL` controls periodic mirroring
 
 ## Troubleshooting
 
 ### Redis Connection Issues
-
-If you experience Redis connection issues:
-
-1. Verify that Redis is running: `redis-cli ping`
-2. Check the Redis URL: `echo $REDIS_URL`
-3. Verify network connectivity: `telnet <redis-host> 6379`
-4. Check Redis logs: `docker logs translation_redis`
+```bash
+redis-cli ping
+echo $REDIS_URL
+telnet <redis-host> 6379
+docker logs translation_redis
+```
 
 ### Data Consistency Issues
-
-If you notice inconsistencies in the decoder pool:
-
-1. Check Redis data: `redis-cli get decoder_pool:nodes`
-2. Compare with file data: `type configs/decoder_pool.json` (Windows) or `cat configs/decoder_pool.json` (Unix)
-3. Restart the coordinator to force a reload: `docker restart coordinator`
-
-### Performance Issues
-
-If Redis is causing performance bottlenecks:
-
-1. Monitor Redis performance: `redis-cli info`
-2. Consider increasing Redis memory: Update `--maxmemory` in `docker-compose.yml`
-3. For high-traffic deployments, consider Redis Cluster or Redis Sentinel
+```bash
+# Check Redis data
+redis-cli get decoder_pool:nodes
+# Compare with file
+cat configs/decoder_pool.json
+```

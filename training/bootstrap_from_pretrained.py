@@ -15,11 +15,6 @@ from utils.exceptions import TrainingError
 # --- ADDED: Import Path for directory creation ---
 from pathlib import Path
 
-try:
-    from safetensors.torch import save_file
-except ImportError:
-    save_file = None
-
 logger = logging.getLogger(__name__)
 
 class PretrainedModelBootstrapper:
@@ -60,7 +55,7 @@ class PretrainedModelBootstrapper:
     def create_encoder_from_pretrained(self, 
                                     model_name: str = 'xlm-roberta-base',
                                     output_path: str = 'models/encoder/universal_encoder_initial.pt',
-                                    target_hidden_dim: int = 1024) -> nn.Module:
+                                    target_hidden_dim: int = 768) -> nn.Module:
         """Create encoder using modern AutoModel patterns with dimension adaptation"""
         
         logger.info(f"🔄 Loading {model_name} with AutoModel...")
@@ -115,11 +110,12 @@ class PretrainedModelBootstrapper:
         from encoder.universal_encoder import UniversalEncoder
         
         our_encoder = UniversalEncoder(
-            max_vocab_size=min(50000, vocab_size),
-            hidden_dim=target_hidden_dim,  # Use target dimension
+            max_vocab_size=min(32000, vocab_size),
+            hidden_dim=target_hidden_dim,
             num_layers=6,
-            num_heads=16 if target_hidden_dim >= 768 else 8,  # Adjust heads based on dim
+            num_heads=8,
             dropout=0.1,
+            max_positions=64,
             device=self.device
         )
         
@@ -184,11 +180,7 @@ class PretrainedModelBootstrapper:
         output_dir = Path(output_path).parent
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if save_file:
-            save_file(checkpoint, output_path)
-        else:
-            logger.warning("safetensors not found, falling back to torch.save.")
-            torch.save(checkpoint, output_path)
+        torch.save(checkpoint, output_path)
         logger.info(f"💾 Saved encoder to {output_path}")
         
         return our_encoder
@@ -343,11 +335,12 @@ class PretrainedModelBootstrapper:
         from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
         
         our_decoder = OptimizedUniversalDecoder(
-            encoder_dim=1024,
+            encoder_dim=768,
             decoder_dim=512,
             num_layers=6,
             num_heads=8,
-            vocab_size=min(50000, tokenizer.vocab_size),
+            vocab_size=min(32000, tokenizer.vocab_size),
+            max_positions=64,
             device=self.device
         )
         

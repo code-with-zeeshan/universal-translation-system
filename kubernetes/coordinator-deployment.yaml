@@ -43,7 +43,7 @@ spec:
         - name: JWT_PUBLIC_KEY_PATH
           value: "/var/run/secrets/uts/jwt-public-key"
         - name: DECODER_POOL
-          value: "decoder-service:8000"
+          value: "decoder-service:8001"
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true

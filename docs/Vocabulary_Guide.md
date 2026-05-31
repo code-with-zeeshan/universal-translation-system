@@ -1,85 +1,95 @@
 # Vocabulary Pack Guide
 
-## 📋 Overview
+## Overview
 
-The Universal Translation System uses a dynamic vocabulary system that allows for efficient language support. Vocabulary packs are small (2-4MB each), language-specific, and can be downloaded on-demand, reducing the overall app size while maintaining translation quality.
+The Universal Translation System uses a dynamic vocabulary system for efficient language support. Vocabulary packs are small (2-4MB each), language-specific, and can be downloaded on-demand, reducing overall app size while maintaining translation quality.
 
-## 🔧 Vocabulary System Architecture
+## Vocabulary System Architecture
 
 ### Core Components
 
 1. **Universal Encoder Base (35MB)**
-   - Language-agnostic encoder that works with any vocabulary pack
+   - Language-agnostic encoder working with any vocabulary pack
    - Optimized for mobile and web deployment
 
 2. **Vocabulary Packs (2-4MB each)**
-   - Latin Pack (~3MB): Covers English, Spanish, French, German, Italian, Portuguese, etc.
-   - CJK Pack (~4MB): Covers Chinese, Japanese, Korean
-   - Other language-specific packs
+   - Latin Pack (~3MB): English, Spanish, French, German, Italian, Portuguese, etc.
+   - CJK Pack (~4MB): Chinese, Japanese, Korean
+   - Arabic Pack: Arabic
+   - Devanagari Pack: Hindi
+   - Cyrillic Pack: Russian, Ukrainian
+   - Thai Pack: Thai
 
 3. **Dynamic Loading System**
-   - Packs are loaded only when needed
+   - Packs loaded only when needed
    - Memory-efficient with LRU caching
+   - Versioned via semver in filename (`latin_v1.2.msgpack`)
 
-## 🚀 Using Vocabulary Packs
+### Implementation Modules
+
+The vocabulary system is split into modular components under `vocabulary/`:
+- `vocabulary/vocabulary_creator.py` -- `UnifiedVocabularyCreator` (main entry point)
+- `vocabulary/vocab_production.py` -- SentencePiece-based production vocabulary creation
+- `vocabulary/vocab_research.py` -- Frequency-based research/alternative creation
+- `vocabulary/vocab_validation.py` -- Pack validation utilities
+- `vocabulary/vocab_config.py` -- `CreationMode`, `UnifiedVocabConfig`, `VocabStats`
+- `vocabulary/unified_vocab_manager.py` -- Runtime vocabulary management
+
+## Using Vocabulary Packs
 
 ### In SDKs
-
 ```javascript
-// Web/React Native SDK example
+// Web/React Native SDK
 const translator = new TranslationClient();
-
-// The vocabulary pack will be automatically downloaded if not already available
 const result = await translator.translate({
   text: "Hello",
   sourceLang: "en",
-  targetLang: "zh" // Will download CJK pack if not already available
+  targetLang: "zh" // Downloads CJK pack if not cached
 });
 ```
 
 ```swift
-// iOS SDK example
+// iOS SDK
 let translator = TranslationClient()
 let result = try await translator.translate(text: "Hello", from: "en", to: "zh")
 ```
 
 ### From Data Pipeline
-- After data is processed into `data/processed`, the pipeline can trigger vocabulary creation via `VocabularyConnector`.
-- See `connector/vocabulary_connector.py` and `vocabulary/unified_vocabulary_creator.py` for details.
-- Runtime uses UnifiedVocabularyManager with config:
-  - `vocabulary.vocab_dir`: base directory for packs (default `./vocabulary`)
+- After data is processed, the pipeline triggers vocabulary creation.
+- See `connector/vocabulary_connector.py` and `vocabulary/vocabulary_creator.py`.
+- Runtime configuration:
+  - `vocabulary.vocab_dir`: base directory for packs (default `./vocabs`, overridable via `UTS_VOCABS_DIR`)
   - `vocabulary.language_to_pack_mapping`: e.g., `en,es,fr,de -> latin`; `zh,ja,ko -> cjk`
 
 ### Creating Custom Vocabulary Packs
+```bash
+# Via pipeline CLI
+python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
 
-For domain-specific terminology or specialized use cases, you can create custom vocabulary packs:
+# Programmatic
+python -c "
+from vocabulary.vocabulary_creator import UnifiedVocabularyCreator, CreationMode
+creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabs')
+creator.create_pack(pack_name='medical', languages=['en','es','fr'], mode=CreationMode.PRODUCTION)
+"
+```
 
-1. Use `vocabulary/unified_vocabulary_creator.py` for creating new packs
-2. Configure language settings in your environment variables
-3. Register the pack with the coordinator for cloud decoding
+## Vocabulary Pack Features
 
-## 📊 Vocabulary Pack Features
-
-- **Efficient Storage**: Small file size (2-4MB per language group)
+- **Efficient Storage**: Small file size (2-4MB per pack)
 - **Dynamic Loading**: Download only what you need
 - **Memory Efficiency**: LRU caching for optimal memory usage
 - **Bloom Filters**: Fast token lookup
-- **Compression**: Optimized for size and performance
+- **Compression**: MsgPack-encoded, optimized for size and performance
+- **Versioning**: Semantic versioning in filename (`_v{major}.{minor}.msgpack`)
 
-## 💡 Best Practices
+## Best Practices
 
-1. **Preload Common Languages**: For better user experience, preload the most common language packs
-2. **Monitor Usage**: Use the coordinator dashboard to track vocabulary pack usage
-3. **Version Control**: Keep track of vocabulary pack versions for consistency
-4. **Custom Domains**: Consider creating domain-specific vocabulary packs for specialized terminology
-
-## 🤝 Contributing
-
-- Add support for new languages
-- Improve compression techniques
-- Enhance tokenization for specific languages
-- Document your changes and update configurations as needed
+1. **Preload Common Languages**: Preload most common language packs for better UX
+2. **Monitor Usage**: Use coordinator dashboard to track pack usage
+3. **Version Control**: Track vocabulary pack versions for consistency
+4. **Custom Domains**: Create domain-specific packs for specialized terminology
 
 ---
 
-For more details, see [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) and the environment variables documentation [docs/environment-variables.md](../docs/environment-variables.md).
+For more details, see [ARCHITECTURE.md](ARCHITECTURE.md) and [environment-variables.md](environment-variables.md).

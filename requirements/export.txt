@@ -7,6 +7,7 @@ onnx-tf>=1.10.0
 onnxruntime>=1.16.0,<1.17.0
 # Optional backends
 tensorflow>=2.13.0
+tf2onnx>=1.13.0
 tflite-runtime>=2.13.0
-# torch-tensorrt>=1.3.0  # Uncomment if you have a TensorRT environment
-triton>=2.1.0
+torch-tensorrt>=1.3.0
+tritonclient>=2.36.0

@@ -9,6 +9,7 @@ from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
 import json
 from pathlib import Path
+from utils.constants import TRAINING_REPORT_FILENAME
 from utils.exceptions import TrainingError
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -525,7 +526,7 @@ def get_optimal_batch_size(model: torch.nn.Module,
     return optimal_batch_size
 
 def create_training_report(training_history: Dict[str, List[float]], 
-                          output_path: str = "training_report.json"):
+                          output_path: str = TRAINING_REPORT_FILENAME):
     """Create comprehensive training report"""
     report = {
         'final_metrics': {

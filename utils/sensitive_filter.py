@@ -3,7 +3,6 @@ utils/sensitive_filter.py
 A minimal sensitive data filter that masks common PII patterns.
 This is intentionally lightweight and safe; can be extended later.
 """
-from __future__ import annotations
 import re
 from typing import Pattern
 

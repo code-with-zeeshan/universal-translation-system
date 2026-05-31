@@ -22,7 +22,17 @@
             "port": {"type": "integer", "minimum": 1}
           },
           "required": ["type", "port"]
-        }
+        },
+        "secret": {
+          "type": "object",
+          "properties": {
+            "jwtSecret": {"type": "string"},
+            "secret": {"type": "string"},
+            "token": {"type": "string"},
+            "internalServiceToken": {"type": "string"}
+          }
+        },
+        "resources": {"type": "object"}
       },
       "required": ["image", "replicaCount", "service"]
     },
@@ -46,9 +56,53 @@
             "port": {"type": "integer", "minimum": 1}
           },
           "required": ["type", "port"]
-        }
+        },
+        "secret": {
+          "type": "object",
+          "properties": {
+            "jwtSecret": {"type": "string"}
+          }
+        },
+        "resources": {"type": "object"}
       },
       "required": ["image", "replicaCount", "service"]
+    },
+    "encoder": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"},
+            "pullPolicy": {"type": "string"}
+          },
+          "required": ["repository", "tag"]
+        },
+        "resources": {"type": "object"}
+      }
+    },
+    "redis": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"}
+          },
+          "required": ["repository", "tag"]
+        },
+        "secret": {
+          "type": "object",
+          "properties": {
+            "password": {"type": "string"}
+          }
+        },
+        "resources": {"type": "object"}
+      }
     }
   },
   "required": ["coordinator", "decoder"]

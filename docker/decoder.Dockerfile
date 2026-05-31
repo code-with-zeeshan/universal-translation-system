@@ -67,5 +67,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 USER appuser
 
-# Production runner: Litserve (fast, aligned with repo design)
-CMD ["bash", "-lc", "litserve serve optimized_decoder:app --host 0.0.0.0 --port ${API_PORT:-8001}"]
+# Production runner: uvicorn
+CMD ["bash", "-lc", "uvicorn cloud_decoder.optimized_decoder:app --host 0.0.0.0 --port ${API_PORT:-8001}"]

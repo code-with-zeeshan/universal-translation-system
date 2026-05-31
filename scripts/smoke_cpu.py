@@ -60,7 +60,6 @@ def tiny_encoder_forward():
 def pipeline_dry_run():
     print("[3/4] Running unified data pipeline in dry-run mode...")
     import asyncio
-    from config.schemas import load_config
     from data.unified_data_pipeline import UnifiedDataPipeline
     cfg = load_config(str(REPO / "config" / "base.yaml"))
     pipe = UnifiedDataPipeline(cfg, dry_run=True)

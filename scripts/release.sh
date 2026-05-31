@@ -19,9 +19,9 @@ echo "🧪 Running tests..."
 pytest tests/
 
 # Build Android (if gradlew exists)
-if [ -d "android/UniversalTranslationSDK" ] && [ -f "android/UniversalTranslationSDK/gradlew" ]; then
+if [ -d "sdk/android/UniversalTranslationSDK" ] && [ -f "sdk/android/UniversalTranslationSDK/gradlew" ]; then
   echo "📱 Building Android SDK..."
-  pushd android/UniversalTranslationSDK >/dev/null
+  pushd sdk/android/UniversalTranslationSDK >/dev/null
   ./gradlew clean build
   popd >/dev/null
 else
@@ -30,9 +30,9 @@ fi
 
 # Validate iOS (if swift available)
 if command -v swift >/dev/null 2>&1; then
-  if [ -d "ios/UniversalTranslationSDK" ]; then
+  if [ -d "sdk/ios/UniversalTranslationSDK" ]; then
     echo "📱 Validating iOS SDK..."
-    pushd ios/UniversalTranslationSDK >/dev/null
+    pushd sdk/ios/UniversalTranslationSDK >/dev/null
     swift build
     popd >/dev/null
   fi

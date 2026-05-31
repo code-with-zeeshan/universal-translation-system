@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
+from utils.constants import DATA_RAW_DIR, DATA_PROCESSED_DIR, DATA_ESSENTIAL_DIR, DATA_SAMPLED_DIR, DATA_FINAL_DIR, DATA_CACHE_DIR, MODELS_PRODUCTION_DIR, MODELS_ENCODER_DIR, MODELS_DECODER_DIR, CHECKPOINT_DIR, LOG_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -94,18 +95,18 @@ class SystemIntegrator:
         project_root = Path(__file__).parent.parent
         
         required_dirs = [
-            'data/raw',
-            'data/processed',
-            'data/essential',
-            'data/sampled',
-            'data/final',
-            'data/cache',
-            'models/production',
-            'models/encoder',
-            'models/decoder',
+            DATA_RAW_DIR,
+            DATA_PROCESSED_DIR,
+            DATA_ESSENTIAL_DIR,
+            DATA_SAMPLED_DIR,
+            DATA_FINAL_DIR,
+            DATA_CACHE_DIR,
+            MODELS_PRODUCTION_DIR,
+            MODELS_ENCODER_DIR,
+            MODELS_DECODER_DIR,
             'vocabs',
-            'checkpoints',
-            'logs',
+            CHECKPOINT_DIR,
+            LOG_DIR,
             'config',
         ]
         

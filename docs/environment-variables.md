@@ -6,19 +6,27 @@ This document lists the key environment variables used across services and SDKs.
 - **MODEL_VERSION**: Model version string (default: 1.0.0)
 - **LOG_LEVEL**: Set logging level (DEBUG, INFO, WARNING, ERROR). Default: INFO.
 
+## Path Constants (overridable)
+All paths in `utils/constants.py` are overridable via `UTS_*` environment variables. Key examples:
+- **UTS_MODELS_DIR**: Model directory (default: `models/`)
+- **UTS_VOCABS_DIR**: Vocabulary directory (default: `vocabs/`)
+- **UTS_CHECKPOINTS_DIR**: Checkpoints directory (default: `checkpoints/`)
+- **UTS_LOGS_DIR**: Logs directory (default: `logs/`)
+- **UTS_CONFIG_DIR**: Configuration directory (default: `config/`)
+
 ## Decoder Node (cloud_decoder)
 - **API_HOST**: Bind host (default: 0.0.0.0)
 - **API_PORT**: Port (default: 8001)
 - **API_WORKERS**: Workers (default: 1)
 - **API_TITLE**: Title (default: Cloud Decoder API)
 - **DECODER_JWT_SECRET**: JWT secret for admin endpoints (CRITICAL)
-- **DECODER_JWT_SECRET_FILE**: Alternative to DECODER_JWT_SECRET; path to file containing the secret (recommended in Docker/K8s) (CRITICAL)
+- **DECODER_JWT_SECRET_FILE**: Alternative; path to file containing the secret (recommended in Docker/K8s) (CRITICAL)
 - **DECODER_CONFIG_PATH**: Path to YAML config (default: config/decoder_config.yaml)
 - **HF_HUB_REPO_ID**: HF repo for adapters/models (default: your-hf-org/universal-translation-system)
 - **CUDA_VISIBLE_DEVICES**: GPU selection (e.g., 0)
 - **OMP_NUM_THREADS**: Inference CPU threads
-- **PREFETCH_VOCAB_GROUPS**: Comma‑separated vocab packs to prefetch (optional)
-- **PREFETCH_ADAPTERS**: Comma‑separated adapters to prefetch (optional)
+- **PREFETCH_VOCAB_GROUPS**: Comma-separated vocab packs to prefetch (optional)
+- **PREFETCH_ADAPTERS**: Comma-separated adapters to prefetch (optional)
 
 RS256 (optional):
 - **JWT_PRIVATE_KEY_FILE**: Path to RS256 private key (PEM)
@@ -26,16 +34,16 @@ RS256 (optional):
 
 ## Coordinator
 - **API_HOST**: Bind host (default: 0.0.0.0)
-- **API_PORT**: Port (default: 8002 under Compose)
+- **API_PORT**: Port (default: 8002 under Compose, 5100 under Helm)
 - **API_WORKERS**: Workers (default: 1)
 - **API_TITLE**: Title (default: Universal Translation Coordinator)
 - (CRITICAL) **COORDINATOR_SECRET** or **COORDINATOR_SECRET_FILE**: Cookie/session secret
 - (CRITICAL) **COORDINATOR_JWT_SECRET** or **COORDINATOR_JWT_SECRET_FILE**: JWT secret for admin APIs
 - (CRITICAL) **COORDINATOR_TOKEN** or **COORDINATOR_TOKEN_FILE**: Admin login token (dashboard)
-- (CRITICAL) **INTERNAL_SERVICE_TOKEN** or **INTERNAL_SERVICE_TOKEN_FILE**: Token for internal calls to decoder (e.g., compose_adapter)
+- (CRITICAL) **INTERNAL_SERVICE_TOKEN** or **INTERNAL_SERVICE_TOKEN_FILE**: Token for internal calls to decoder
 - **POOL_CONFIG_PATH**: File path for decoder pool (default: configs/decoder_pool.json)
 - **REDIS_URL**: Redis connection URL (optional, enables Redis features)
-- **COORDINATOR_MIRROR_INTERVAL**: Seconds between Redis→disk mirrors of decoder pool (default: 60; minimum enforced: 5; effective value logged at startup)
+- **COORDINATOR_MIRROR_INTERVAL**: Seconds between Redis->disk mirrors (default: 60; minimum: 5)
 - **ETCD_HOST**: etcd host (optional)
 - **ETCD_PORT**: etcd port (optional)
 - **USE_ETCD**: enable etcd service discovery (true/false)
@@ -43,7 +51,7 @@ RS256 (optional):
 
 RS256 (optional):
 - **JWT_PRIVATE_KEY_FILE**: Path to RS256 private key (PEM)
-- **JWT_PUBLIC_KEY_PATH**: Path(s) to RS256 public key(s). Supports `||`-separated list for rotation.
+- **JWT_PUBLIC_KEY_PATH**: Path(s) to RS256 public key(s). Supports `||`-separated list.
 
 ## Docker Compose Ports
 - **ENCODER_PORT**: 8000 by default
@@ -73,10 +81,10 @@ RS256 (optional):
 - **ENABLE_VOCABULARY_METRICS**: true/false
 
 ## Secret Bootstrap & Validation
-- The system supports `*_FILE` environment variables for sensitive values, which are loaded at startup (e.g., `DECODER_JWT_SECRET_FILE`, `COORDINATOR_SECRET_FILE`).
-- A central bootstrap resolves file-based secrets and maps env names to the internal credential manager when available.
-- At runtime, secrets are validated: minimum length (>= 32), and common placeholders are rejected.
-- Coordinator can operate with either HS256 (`COORDINATOR_JWT_SECRET`) or RS256 (provide `JWT_PRIVATE_KEY_FILE` and `JWT_PUBLIC_KEY_PATH`), enabling key rotation with multiple public keys.
+- The system supports `*_FILE` environment variables for sensitive values, loaded at startup.
+- A central bootstrap resolves file-based secrets and maps env names.
+- At runtime, secrets are validated: minimum length (>= 32), common placeholders rejected.
+- Coordinator supports HS256 (`COORDINATOR_JWT_SECRET`) or RS256 (`JWT_PRIVATE_KEY_FILE` + `JWT_PUBLIC_KEY_PATH`).
 
 ## Security Tips
 1. Replace all defaults in production; store secrets in a vault/Secrets.
@@ -85,6 +93,6 @@ RS256 (optional):
 4. Rotate JWT secrets or RS256 keypairs periodically (see `tools/rotate_secrets.py`).
 
 ## Troubleshooting
-- Verify envs are set inside containers: `docker compose exec <svc> env | sort`
+- Verify envs inside containers: `docker compose exec <svc> env | sort`
 - In K8s, check `kubectl describe deploy <name>` and ConfigMaps/Secrets mounting.
 - See TROUBLESHOOT.md for more.

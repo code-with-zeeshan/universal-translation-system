@@ -27,7 +27,7 @@ spec:
               app: decoder
       ports:
         - protocol: TCP
-          port: 8000
+          port: 8001
     - to:
         - namespaceSelector: {}
       ports:

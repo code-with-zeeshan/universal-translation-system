@@ -19,7 +19,7 @@ spec:
               app: ingress  # adjust label if different in your cluster
       ports:
         - protocol: TCP
-          port: 8000
+          port: 8001
   egress:
     - to:
         - podSelector:

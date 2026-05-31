@@ -1,81 +1,93 @@
-# data/custom_samplers.py
 import torch
-from torch.utils.data import Sampler
+from torch.utils.data import Sampler, Dataset
 from collections import defaultdict
+import random
 import numpy as np
-from typing import List, Dict, Iterator
+from typing import List, Dict, Iterator, Optional, Union
 import logging
 
 logger = logging.getLogger(__name__)
 
-class TemperatureSampler(Sampler[int]):
+
+class TemperatureSampler(Sampler[Union[int, List[int]]]):
     """
     Samples elements from multiple language groups with temperature scaling.
+    Supports both index-per-item and batch outputs.
 
     Args:
-        data_source: The dataset to sample from. Must have a 'get_lang_pair' method
-                     or a way to access language pair info for each index.
-        batch_size: The size of batches to generate.
-        temperature: The temperature for sampling. T > 1.0 flattens the distribution,
-                     T < 1.0 sharpens it. T = 1.0 is standard proportional sampling.
+        data_source: Dataset with language pair info (via get_lang_pair_indices() or __getitem__ metadata).
+        batch_size: Batch size for training.
+        temperature: T > 1.0 flattens distribution, T < 1.0 sharpens, T = 1.0 is proportional.
+        output_batches: If True, yields lists of indices (batches). If False, yields single indices.
+        drop_last: Whether to drop incomplete last batch.
     """
-    def __init__(self, data_source, batch_size: int, temperature: float = 1.0):
+    def __init__(self, data_source: Dataset, batch_size: int, temperature: float = 1.0,
+                 output_batches: bool = True, drop_last: bool = False):
         super().__init__(data_source)
         self.data_source = data_source
         self.batch_size = batch_size
         self.temperature = temperature
-        
-        # Get language pair counts from the dataset
+        self.output_batches = output_batches
+        self.drop_last = drop_last
+
         self.lang_pair_indices = self._get_lang_pair_indices()
         self.lang_pairs = list(self.lang_pair_indices.keys())
-        
-        # Calculate base probabilities
+
         base_probs = torch.tensor([len(indices) for indices in self.lang_pair_indices.values()], dtype=torch.float)
-        
-        # Apply temperature scaling
+
         if self.temperature != 1.0:
-            # Use log-space for numerical stability
             scaled_logits = torch.log(base_probs) / self.temperature
             self.sampling_weights = torch.softmax(scaled_logits, dim=0)
         else:
             self.sampling_weights = base_probs / base_probs.sum()
 
         self.num_samples = len(self.data_source)
-        
-        logger.info(f"TemperatureSampler initialized with T={self.temperature}")
-        logger.info(f"Sampling weights: {dict(zip(self.lang_pairs, self.sampling_weights.tolist()))}")
+        if self.drop_last and self.num_samples % self.batch_size != 0:
+            self.num_batches = self.num_samples // self.batch_size
+        else:
+            self.num_batches = (self.num_samples + self.batch_size - 1) // self.batch_size
 
     def _get_lang_pair_indices(self) -> Dict[str, List[int]]:
-        """Group indices by language pair."""
+        """Get language pair indices from dataset."""
+        if hasattr(self.data_source, 'get_lang_pair_indices'):
+            return self.data_source.get_lang_pair_indices()
+
         indices = defaultdict(list)
         for i in range(len(self.data_source)):
-            # This requires your dataset's __getitem__ to return metadata
-            # which your ModernParallelDataset already does!
-            metadata = self.data_source[i]['metadata']
-            pair = f"{metadata['source_lang']}-{metadata['target_lang']}"
+            item = self.data_source[i]
+            if isinstance(item, dict) and 'metadata' in item:
+                meta = item['metadata']
+                pair = f"{meta['source_lang']}-{meta['target_lang']}"
+            else:
+                pair = "default"
             indices[pair].append(i)
         return indices
 
-    def __iter__(self) -> Iterator[int]:
-        """
-        Yields a batch of indices at a time.
-        """
-        # Determine the number of samples to draw from each language pair for the whole epoch
+    def __iter__(self) -> Iterator[Union[int, List[int]]]:
+        if self.output_batches:
+            return self._iter_batches()
+        return self._iter_individual()
+
+    def _iter_individual(self) -> Iterator[int]:
         num_samples_per_pair = torch.multinomial(self.sampling_weights, self.num_samples, replacement=True)
-        
-        # Create the full list of indices for the epoch
         epoch_indices = []
         for i, pair in enumerate(self.lang_pairs):
             count = num_samples_per_pair[i].item()
             indices = self.lang_pair_indices[pair]
-            # Sample with replacement if necessary
-            sampled_indices = np.random.choice(indices, size=count, replace=len(indices) < count)
-            epoch_indices.extend(sampled_indices)
-
-        # Shuffle the combined list of indices
+            sampled = np.random.choice(indices, size=count, replace=len(indices) < count)
+            epoch_indices.extend(sampled.tolist())
         np.random.shuffle(epoch_indices)
-        
         return iter(epoch_indices)
 
+    def _iter_batches(self) -> Iterator[List[int]]:
+        for _ in range(self.num_batches):
+            batch_indices = []
+            for _ in range(self.batch_size):
+                chosen_pair = self.lang_pairs[torch.multinomial(self.sampling_weights, 1).item()]
+                batch_indices.append(random.choice(self.lang_pair_indices[chosen_pair]))
+            yield batch_indices
+
     def __len__(self) -> int:
+        if self.output_batches:
+            return self.num_batches
         return self.num_samples

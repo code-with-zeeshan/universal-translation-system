@@ -73,7 +73,6 @@ class DataProcessor:
 
                     # Force garbage collection periodically
                     if samples_processed % (batch_size * 10) == 0:
-                        import gc
                         gc.collect()
                     
                         # Clear GPU cache if available
@@ -89,8 +88,6 @@ class DataProcessor:
                 self._save_batch(batch_data, output_path, samples_processed)
                 # Final cleanup
                 del batch_data
-
-                import gc
                 gc.collect()
             
                 if torch.cuda.is_available():

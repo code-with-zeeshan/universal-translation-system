@@ -338,7 +338,6 @@ class TrainingDashboard:
     def _has_matplotlib(self) -> bool:
         """Check if matplotlib is available"""
         try:
-            import matplotlib.pyplot as plt
             return True
         except ImportError:
             return False

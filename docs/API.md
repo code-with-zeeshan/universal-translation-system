@@ -2,21 +2,21 @@
 
 ## Overview
 Two public surfaces exist:
-- Decoder Node API (GPU node serving translations)
-- Coordinator API (routes requests to least‑loaded healthy decoder nodes)
+- Decoder Node API (FastAPI/uvicorn serving translations)
+- Coordinator API (routes requests to least-loaded healthy decoder nodes)
 
-Use binary `/decode` for highest performance. A JSON `/translate` endpoint is optional and not enabled in the current codebase.
+Use binary `/decode` for highest performance.
 
 ---
 
 ## Base URLs
-- Decoder Node: http(s)://<decoder-host>:<port>
-- Coordinator: http(s)://<coordinator-host>:<port>
+- Decoder Node: http(s)://<decoder-host>:<port> (default 8001)
+- Coordinator: http(s)://<coordinator-host>:<port> (default 8002 Compose, 5100 Helm)
 
 ---
 
 ## Decoder Node API
-FastAPI app in `cloud_decoder/optimized_decoder.py`.
+FastAPI app in `cloud_decoder/optimized_decoder.py`, served via uvicorn.
 
 ### POST /decode
 - Purpose: Decode locally encoded embeddings (binary) to a translation.
@@ -25,7 +25,7 @@ FastAPI app in `cloud_decoder/optimized_decoder.py`.
   - `X-Target-Language: <code>` (required)
   - `X-Domain: <domain>` (optional, e.g., medical, legal)
   - `X-Client-ID: <id>` (optional; used for rate limiting)
-- Body: Binary payload produced by the edge encoder, typically LZ4 + MsgPack compressed.
+- Body: Binary payload produced by the edge encoder, LZ4 + MsgPack compressed.
 - Response: `application/json`
 ```json
 {
@@ -33,53 +33,24 @@ FastAPI app in `cloud_decoder/optimized_decoder.py`.
   "target_language": "es"
 }
 ```
-- Notes:
-  - The decoder decompresses and runs generation on GPU.
-  - Some deployments may expose this as the root path `/`.
 
-Binary Payload Format:
-- Encoded as `lz4`-compressed `msgpack`.
-- Typical msgpack fields:
-  - `tokens`: int[] (token IDs or subword indices)
-  - `embeddings`: float32[] or omitted if server-only decode
-  - `metadata`: { `source_language`: string, `text_hash`: string, ... }
-- Size: usually a few KB per request.
-
-Examples:
-- curl (binary file):
-```bash
-curl -X POST \
-  -H "Content-Type: application/octet-stream" \
-  -H "X-Target-Language: es" \
-  --data-binary @compressed_embeddings.bin \
-  https://decoder.example.com/decode
-```
-- JavaScript fetch (with Uint8Array):
-```ts
-const res = await fetch('https://decoder.example.com/decode', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/octet-stream', 'X-Target-Language': 'es' },
-  body: encodedUint8Array,
-});
-const data = await res.json();
-```
+Binary Payload Format (see `docs/schemas/binary_payload_schema.md`):
+- LZ4-compressed MsgPack with fields: `tokens`, `embeddings`, `metadata`
 
 ### GET /health
 - Returns basic health info.
-- Response:
 ```json
 { "status": "healthy", "device": "cuda", "adapters": ["es", "fr"], "vocab_packs": ["latin"] }
 ```
 
 ### GET /status
 - Returns extended status and metrics summary.
-- Response (example):
 ```json
 {
   "model_version": "1.0.0",
   "healthy": true,
-  "metrics": { /* Prometheus summary snapshot */ },
-  "vocabulary": { /* vocabulary stats */ }
+  "metrics": { },
+  "vocabulary": { }
 }
 ```
 
@@ -89,34 +60,21 @@ const data = await res.json();
 
 ### Rate Limiting
 - Identification header: `X-Client-ID` (decoder) or `X-API-Key` (coordinator)
-- Typical error when exceeded: `429 Too Many Requests`
-- Suggested response headers (if enabled in deployment):
-  - `X-RateLimit-Limit-Minute`: integer
-  - `X-RateLimit-Remaining-Minute`: integer
-  - `Retry-After`: seconds
+- Typical error: `429 Too Many Requests`
 
 ### GET /loaded_adapters
-- Lists adapters currently hot‑loaded in GPU memory (LRU cache).
-- Response (example):
+- Lists adapters currently hot-loaded in GPU memory (LRU cache).
 ```json
 ["es", "de_medical"]
 ```
 
 ### POST /compose_adapter (internal)
-- Purpose: Compose a zero‑shot adapter on the fly (protected for coordinator use).
+- Purpose: Compose a zero-shot adapter on the fly (protected for coordinator use).
 - Auth: `X-Internal-Auth: <INTERNAL_SERVICE_TOKEN>`
-- Body:
-```json
-{ "source_adapter": "en", "target_adapter": "es", "strategy": "average" }
-```
-- Response:
-```json
-{ "status": "success", "composed_adapter_name": "es" }
-```
+- Body: `{ "source_adapter": "en", "target_adapter": "es", "strategy": "average" }`
 
 ### POST /admin/reload_model (admin)
 - Auth: `Authorization: Bearer <JWT>` (signed with `DECODER_JWT_SECRET`)
-- Response:
 ```json
 { "status": "Model reloaded" }
 ```
@@ -131,7 +89,7 @@ const data = await res.json();
 FastAPI app in `coordinator/advanced_coordinator.py`.
 
 ### POST /api/decode
-- Purpose: Proxy binary decode requests to the least‑loaded healthy decoder.
+- Purpose: Proxy binary decode requests to the least-loaded healthy decoder.
 - Auth: `X-API-Key: <key>` (validated by APIKeyManager)
 - Headers:
   - `Content-Type: application/octet-stream`
@@ -140,38 +98,9 @@ FastAPI app in `coordinator/advanced_coordinator.py`.
   - `X-Domain: <domain>` (optional)
 - Body: Same binary payload as sent to decoder `/decode`.
 - Response: Forwards decoder JSON response.
-- Behavior:
-  - If the language pair is unsupported directly, the coordinator may perform zero‑shot pivot via adapter composition and then proxy to the selected node.
-
-Examples:
-- curl:
-```bash
-curl -X POST \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/octet-stream" \
-  -H "X-Source-Language: en" \
-  -H "X-Target-Language: es" \
-  --data-binary @compressed_embeddings.bin \
-  https://coord.example.com/api/decode
-```
-- JavaScript fetch:
-```ts
-const res = await fetch('https://coord.example.com/api/decode', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/octet-stream',
-    'X-API-Key': process.env.API_KEY!,
-    'X-Source-Language': 'en',
-    'X-Target-Language': 'es',
-  },
-  body: encodedUint8Array,
-});
-const data = await res.json();
-```
 
 ### GET /api/status
 - Returns current pool status.
-- Response (example):
 ```json
 {
   "model_version": "1.0.0",
@@ -193,58 +122,32 @@ const data = await res.json();
 ```
 
 ### Service Discovery and Node Management (v1)
-- POST `/api/v1/register`
-  - Body: DecoderNodeSchema
-  - Response: `{ "success": true, "node_id": "..." }`
-- DELETE `/api/v1/unregister/{node_id}`
-  - Response: `{ "success": true }`
-- GET `/api/v1/node/{node_id}`
-  - Response: DecoderNodeSchema
-- PUT `/api/v1/node/{node_id}/status`
-  - Form fields: `healthy: bool`, `load: int`
-  - Response: `{ "success": true }`
-
-DecoderNodeSchema:
-```json
-{
-  "node_id": "string",
-  "endpoint": "https://decoder.example.com",
-  "region": "us-east",
-  "gpu_type": "T4|A100|...",
-  "capacity": 64,
-  "healthy": true,
-  "load": 0,
-  "uptime": 0
-}
-```
+- POST `/api/v1/register` -- Register decoder node
+- DELETE `/api/v1/unregister/{node_id}` -- Unregister decoder
+- GET `/api/v1/node/{node_id}` -- Get decoder info
+- PUT `/api/v1/node/{node_id}/status` -- Update decoder status
 
 ### Admin
-- POST `/admin/add_decoder` (auth required) — JSON body: DecoderNodeSchema
-- POST `/admin/remove_decoder` (auth required) — Form field: `node_id`
-- Login: `POST /login` with form field `token` (compared to env `COORDINATOR_TOKEN`); sets a session cookie.
-- Logout: `POST /logout`
+- POST `/admin/add_decoder` (auth required)
+- POST `/admin/remove_decoder` (auth required)
+- Login: `POST /login` with `COORDINATOR_TOKEN`
 - Dashboard: `GET /` (HTML)
 
-### Error Handling & Upstream Behaviors
-- When proxying to a decoder, the coordinator may return:
-  - `502 Bad Gateway` if the decoder returns an error or is unreachable
-  - `503 Service Unavailable` if no healthy decoders are available
-  - `504 Gateway Timeout` if upstream exceeds timeout (deployment dependent)
-- Error payload (typical):
-```json
-{ "error": "string", "details": "optional string", "code": 502 }
-```
+### Error Handling
+- `502 Bad Gateway` -- decoder error or unreachable
+- `503 Service Unavailable` -- no healthy decoders
+- `504 Gateway Timeout` -- upstream timeout
 
 ### Metrics
-- GET `/metrics` — Prometheus metrics for the coordinator.
+- GET `/metrics` -- Prometheus metrics for the coordinator.
 
 ---
 
 ## Authentication Summary
-- Decoder admin endpoints: `Authorization: Bearer <JWT>` signed with `DECODER_JWT_SECRET`.
-- Decoder internal endpoint `/compose_adapter`: `X-Internal-Auth: <INTERNAL_SERVICE_TOKEN>`.
-- Coordinator `/api/decode`: `X-API-Key: <key>`.
-- Coordinator admin UI: `POST /login` with `COORDINATOR_TOKEN` sets session cookie.
+- Decoder admin endpoints: `Authorization: Bearer <JWT>` (DECODER_JWT_SECRET)
+- Decoder internal `/compose_adapter`: `X-Internal-Auth: <INTERNAL_SERVICE_TOKEN>`
+- Coordinator `/api/decode`: `X-API-Key: <key>`
+- Coordinator admin UI: `POST /login` with `COORDINATOR_TOKEN`
 
 ---
 
@@ -263,17 +166,17 @@ DecoderNodeSchema:
 ---
 
 ## Language Codes
-Common ISO codes used by headers and payloads (non‑exhaustive): `en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, vi, pl, uk, nl, id, sv`.
+Common ISO codes: `en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, vi, pl, uk, nl, id, sv`.
 
 ---
 
 ## Notes
-- For web/SDK clients using binary mode, point to coordinator `/api/decode` for automatic load balancing.
-- If you deploy a decoder directly to clients, use its `/decode` endpoint.
-- OpenAPI docs are available on each service for introspection at runtime.
-- Binary schema reference: see `docs/schemas/binary_payload_schema.md`.
+- For web/SDK clients using binary mode, point to coordinator `/api/decode`.
+- If deploying a decoder directly, use its `/decode` endpoint.
+- OpenAPI docs are available on each service at runtime.
+- Binary schema reference: `docs/schemas/binary_payload_schema.md`.
 
 ## Related Documentation
-- See `docs/ONBOARDING.md` (Model Artifacts & Paths) for local paths and mounts.
-- See `docs/DEPLOYMENT.md` (Volumes and artifacts) for container mounts and defaults.
-- See `docs/Vocabulary_Guide.md` for vocabulary runtime configuration.
+- `docs/ONBOARDING.md` (local paths and mounts)
+- `docs/DEPLOYMENT.md` (container mounts and defaults)
+- `docs/Vocabulary_Guide.md` (vocabulary runtime configuration)

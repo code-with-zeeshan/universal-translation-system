@@ -2,6 +2,8 @@
 """
 Resource monitoring utilities for the Universal Translation System
 """
+# NOTE: This module overlaps with resource_tracker.py. Both provide resource monitoring.
+# TODO: Merge resource_monitor.py and resource_tracker.py into a single module.
 # Optional dependency: psutil
 try:
     import psutil  # type: ignore
@@ -25,29 +27,31 @@ class ResourceMonitor:
         self.max_history = max_history
         self.metrics_history = defaultdict(lambda: deque(maxlen=max_history))
         self.active_monitors = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self._monitoring = False
         self._monitor_thread = None
         
     def start_monitoring(self, interval: float = 1.0):
         """Start continuous resource monitoring"""
-        if self._monitoring:
-            return
-        
-        self._monitoring = True
-        self._monitor_thread = threading.Thread(
-            target=self._monitor_loop,
-            args=(interval,),
-            daemon=True
-        )
-        self._monitor_thread.start()
-        logger.info(f"Started resource monitoring with {interval}s interval")
+        with self.lock:
+            if self._monitoring:
+                return
+            
+            self._monitoring = True
+            self._monitor_thread = threading.Thread(
+                target=self._monitor_loop,
+                args=(interval,),
+                daemon=True
+            )
+            self._monitor_thread.start()
+            logger.info(f"Started resource monitoring with {interval}s interval")
     
     def stop_monitoring(self):
         """Stop continuous resource monitoring"""
-        self._monitoring = False
-        if self._monitor_thread:
-            self._monitor_thread.join(timeout=5.0)
+        with self.lock:
+            self._monitoring = False
+            if self._monitor_thread:
+                self._monitor_thread.join(timeout=5.0)
         logger.info("Stopped resource monitoring")
     
     def _monitor_loop(self, interval: float):
@@ -296,10 +300,12 @@ class ResourceAlert:
             'gpu_memory_percent': 90.0
         }
         self.alert_callbacks = []
+        self._lock = threading.RLock()
     
     def add_alert_callback(self, callback):
         """Add callback function for alerts"""
-        self.alert_callbacks.append(callback)
+        with self._lock:
+            self.alert_callbacks.append(callback)
     
     def check_alerts(self):
         """Check for alert conditions"""
@@ -338,7 +344,9 @@ class ResourceAlert:
         
         # Trigger callbacks
         for alert in alerts:
-            for callback in self.alert_callbacks:
+            with self._lock:
+                callbacks = list(self.alert_callbacks)
+            for callback in callbacks:
                 try:
                     callback(alert)
                 except Exception as e:

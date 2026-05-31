@@ -1,78 +1,47 @@
 # Redis Implementation Summary
 
-This document summarizes the changes made to implement Redis integration in the Universal Translation System.
+This document summarizes the Redis integration in the Universal Translation System.
 
 ## 1. DecoderPool Class Updates
 
-The `DecoderPool` class in `coordinator/advanced_coordinator.py` has been updated to:
+`coordinator/advanced_coordinator.py`:
+- Accepts Redis URL parameter or uses `REDIS_URL` from environment
+- Connects via `utils.redis_manager.RedisManager` (singleton, double-checked locking)
+- Load/save decoder pool config from Redis
+- Fall back to file-based storage (`configs/decoder_pool.json`) if Redis unavailable
+- Periodic disk mirroring via `mirror_redis_to_disk()`
 
-- Accept a Redis URL parameter or use `REDIS_URL` from environment
-- Connect to Redis via `utils.redis_manager.RedisManager` if available
-- Load and save decoder pool configuration to Redis (sync API via RedisManager)
-- Fall back to file-based storage if Redis is unavailable
-- Provide better logging for troubleshooting
-- Periodically mirror Redis data to disk for robust fallback
-
-Key methods added/updated:
-- `reload_sync()`: Sync reload that reads from RedisManager if available and mirrors to disk
-- `_load_from_redis()`: Asynchronously load configuration using RedisManager; mirrors to disk
-- `_save()`: Save to Redis (via RedisManager) and always mirror to disk
-- `mirror_redis_to_disk()`: Mirror latest Redis state to `configs/decoder_pool.json` without mutating memory
+Key methods:
+- `reload_sync()`: Reads from RedisManager, mirrors to disk
+- `_load_from_redis()`: Async load via RedisManager, mirrors to disk
+- `_save()`: Save to Redis, always mirrors to disk
+- `mirror_redis_to_disk()`: Mirror Redis state to file without mutating memory
 
 ## 2. Background Tasks
+Coordinator background task:
+- Handles requested reloads via watchdog
+- Performs health checks periodically
+- Mirrors Redis state to disk at configured interval (`COORDINATOR_MIRROR_INTERVAL`, default 60s, min 5s)
 
-- The coordinator's background task now:
-  - Handles requested reloads via watchdog
-  - Performs health checks periodically
-  - Mirrors Redis state to disk at a configurable interval
+## 3. Rate Limiter Updates
+`utils/rate_limiter.py` supports Redis-backed distributed rate limiting with in-memory fallback.
 
-Environment variable:
-- `COORDINATOR_MIRROR_INTERVAL` (seconds, default 60, minimum 5) controls periodic mirroring
-- The effective interval is validated and logged at startup
+## 4. Docker Compose Updates
+- Redis service with healthcheck and persistence
+- Coordinator connected to Redis via `REDIS_URL`
 
-## 3. Register Decoder Node Tool Updates
+## 5. Requirements
+- Base: `requirements/base.txt` includes `redis>=5`
 
-The `tools/register_decoder_node.py` tool continues to support:
+## 6. Setup Script
+- `scripts/setup_redis.sh` provides install/start/stop/status with Docker fallback
 
-- Coordinator API registration (preferred)
-- Redis-backed registration when API is unavailable
-- File-based fallback registration
-
-Additional logging ensures clarity about which path was taken.
-
-## 4. Rate Limiter Updates
-
-The `RateLimiter` class in `utils/rate_limiter.py` supports:
-
-- Redis-backed distributed rate limiting (preferred)
-- In-memory fallback with consistent interfaces
-
-## 5. Docker Compose Updates
-
-The `docker-compose.yml` file includes a Redis service and required health checks.
-
-## 6. Requirements Updates
-
-Use the modular requirements files to ensure Redis and related dependencies are installed:
-- Base: `-r requirements/base.txt` (includes `redis>=5`) 
-- Serving/tracing: `-r requirements/serve.txt`
-- Coordinator-specific: `-r requirements/coordinator.txt` if you enable etcd discovery
-
-## 7. Documentation
-
-- `REDIS_INTEGRATION.md`: Comprehensive guide to the Redis integration
-- `IMPROVEMENTS.md`: Notes on coordinator + Redis mirroring improvements
-- `ONBOARDING.md` and `Adding_New_languages.md`: Coordinator-Redis notes
-
-## 8. Testing Considerations
-
+## 7. Testing Considerations
 - Test with and without Redis available
 - Validate mirroring by comparing Redis keys and `configs/decoder_pool.json`
 - Test multiple coordinator instances sharing the same Redis
 
-## 9. Future Improvements
-
-- Add Redis Sentinel support for high availability
-- Implement Redis Cluster for horizontal scaling
-- Add Redis pub/sub for real-time decoder pool updates
-- Add integration tests to validate mirroring cadence and correctness
+## 8. Future Improvements
+- Redis Sentinel for high availability
+- Redis Cluster for horizontal scaling
+- Redis pub/sub for real-time decoder pool updates

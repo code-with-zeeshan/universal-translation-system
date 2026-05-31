@@ -43,8 +43,6 @@ async def test_decoder_service():
 
 def test_compression():
     """Test embedding compression/decompression"""
-    from universal_decoder_node.decoder import DecoderService
-    
     service = DecoderService()
     
     # Create test data

@@ -5,8 +5,8 @@ on:
     branches: [ main ]
     paths:
       - 'universal-decoder-node/**'
-      - 'web/universal-translation-sdk/**'
-      - 'react-native/UniversalTranslationSDK/**'
+      - 'sdk/web/universal-translation-sdk/**'
+      - 'sdk/react-native/UniversalTranslationSDK/**'
 
 jobs:
   check-version-consistency-before-publish:

@@ -157,11 +157,11 @@ def check_dependencies():
             print("⚠️ Docker not installed. Containerized deployment will not be available.")
             print("   Install Docker for easier deployment and testing.")
         
-        if not nodejs_available and (Path(__file__).parent.parent / 'web').exists():
+        if not nodejs_available and (Path(__file__).parent.parent / 'sdk' / 'web').exists():
             print("⚠️ Node.js not installed. Web and React Native SDK development will not be possible.")
             print("   Install Node.js for Web and React Native SDK development.")
         
-        if not flutter_available and (Path(__file__).parent.parent / 'flutter').exists():
+        if not flutter_available and (Path(__file__).parent.parent / 'sdk' / 'flutter').exists():
             print("⚠️ Flutter not installed. Flutter SDK development will not be possible.")
             print("   Install Flutter for Flutter SDK development.")
         

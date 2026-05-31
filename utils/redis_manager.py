@@ -33,6 +33,7 @@ class RedisManager:
     """
     
     _instance = None
+    _singleton_lock = threading.RLock()
     _pools: Dict[str, ConnectionPool] = {}
     _clients: Dict[str, redis.Redis] = {}
     _health_check_thread = None
@@ -42,7 +43,9 @@ class RedisManager:
     def get_instance(cls) -> 'RedisManager':
         """Get singleton instance of RedisManager"""
         if cls._instance is None:
-            cls._instance = RedisManager()
+            with cls._singleton_lock:
+                if cls._instance is None:
+                    cls._instance = RedisManager()
         return cls._instance
     
     def __init__(self):
@@ -54,6 +57,7 @@ class RedisManager:
         self.health_check_interval = int(os.environ.get("REDIS_HEALTH_CHECK_INTERVAL", "30"))
         self.use_msgpack = os.environ.get("REDIS_USE_MSGPACK", "true").lower() == "true"
         
+        self._clients_lock = threading.RLock()
         # Start health check thread if enabled
         if os.environ.get("REDIS_HEALTH_CHECK_ENABLED", "true").lower() == "true":
             self._start_health_check()
@@ -75,8 +79,9 @@ class RedisManager:
             return None
         
         # Return existing client if available
-        if url in self._clients:
-            return self._clients[url]
+        with self._clients_lock:
+            if url in self._clients:
+                return self._clients[url]
         
         # Create new connection pool and client
         try:
@@ -91,7 +96,8 @@ class RedisManager:
             client = redis.Redis(connection_pool=self._pools[url])
             # Test connection
             client.ping()
-            self._clients[url] = client
+            with self._clients_lock:
+                self._clients[url] = client
             logger.info(f"Redis connection established to {url}")
             return client
         except redis.RedisError as e:
@@ -115,13 +121,16 @@ class RedisManager:
     def _health_check_loop(self):
         """Background thread that periodically checks Redis health"""
         while not self._stop_health_check.is_set():
-            for url, client in list(self._clients.items()):
+            with self._clients_lock:
+                items = list(self._clients.items())
+            for url, client in items:
                 try:
                     client.ping()
                 except redis.RedisError as e:
                     logger.warning(f"Redis health check failed for {url}: {e}")
                     # Remove client from cache to force reconnection
-                    self._clients.pop(url, None)
+                    with self._clients_lock:
+                        self._clients.pop(url, None)
             
             # Sleep until next check
             self._stop_health_check.wait(self.health_check_interval)

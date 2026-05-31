@@ -174,7 +174,7 @@ def register(name: str, endpoint: str, region: str, gpu_type: str,
         with open(output, 'w') as f:
             json.dump(registration, f, indent=2)
         click.echo(f"💾 Registration saved to {output}")
-        click.echo("📋 Add this to configs/decoder_pool.json in your PR")
+        click.echo("📋 Add this to config/decoder_pool.json in your PR")
     else:
         # Register with coordinator
         try:

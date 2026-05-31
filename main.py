@@ -21,9 +21,10 @@ from utils.logging_config import setup_logging
 from utils.final_integration import SystemIntegrator
 from integration.connect_all_systems import integrate_full_pipeline
 from config.schemas import load_config
+from utils.constants import LOG_DIR, MODELS_PRODUCTION_DIR, ENCODER_MODEL_FILENAME, BENCHMARK_RESULTS_FILENAME, CONFIG_DIR, BASE_CONFIG_FILENAME
 
 # Setup centralized logging early
-setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("system")
 
 # Add project root to path
@@ -150,7 +151,7 @@ class UniversalTranslationSystem:
         Args:
             config_path: Optional path to configuration file
         """
-        self.config_path = config_path or "config/base.yaml"
+        self.config_path = config_path or f"{CONFIG_DIR}/{BASE_CONFIG_FILENAME}"
         self.hardware = HardwareConfig()
         self.gpu_count, self.gpu_names = self.hardware.detect_gpus()
         
@@ -210,22 +211,20 @@ class UniversalTranslationSystem:
     def _check_pytorch(self) -> bool:
         """Check PyTorch installation"""
         try:
-            import torch
+            _ = torch.tensor(0)
             return True
-        except ImportError:
+        except Exception:
             return False
     
     def _check_cuda(self) -> bool:
         """Check CUDA availability (optional)"""
         try:
-            import torch
-            # CUDA is optional, so we just log the status
             if torch.cuda.is_available():
                 logger.info(f"CUDA available: {torch.version.cuda}")
             else:
                 logger.info("CUDA not available (CPU mode)")
-            return True  # Not a failure condition
-        except:
+            return True
+        except Exception:
             return True
     
     def _check_dependencies(self) -> bool:
@@ -310,7 +309,7 @@ class UniversalTranslationSystem:
             return False
         
         # Check if already initialized
-        if not force and Path("models/production/encoder.pt").exists():
+        if not force and Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}").exists():
             logger.info("System already initialized. Use --force to reinitialize.")
             return True
         
@@ -472,7 +471,7 @@ class UniversalTranslationSystem:
         
         try:
             # Create a log file for the command output
-            log_dir = Path("logs")
+            log_dir = Path(LOG_DIR)
             log_dir.mkdir(exist_ok=True)
             
             timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -596,7 +595,7 @@ class UniversalTranslationSystem:
                 from encoder.universal_encoder import UniversalEncoder
                 
                 # Load model
-                model_path = Path("models/production/encoder.pt")
+                model_path = Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}")
                 if not model_path.exists():
                     logger.error(f"Model not found: {model_path}")
                     logger.info("Please train a model first: python main.py --mode train")
@@ -646,12 +645,11 @@ class UniversalTranslationSystem:
         logger.info("⚡ Running benchmarks...")
         
         try:
-            import time
             import numpy as np
             from encoder.universal_encoder import UniversalEncoder
             
             # Load model
-            model_path = Path("models/production/encoder.pt")
+            model_path = Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}")
             if not model_path.exists():
                 logger.error("No model found for benchmarking")
                 return 1
@@ -696,9 +694,9 @@ class UniversalTranslationSystem:
             
             # Save results
             import json
-            with open("benchmark_results.json", 'w') as f:
+            with open(BENCHMARK_RESULTS_FILENAME, 'w') as f:
                 json.dump(stats, f, indent=2)
-            logger.info(f"\nResults saved to benchmark_results.json")
+            logger.info(f"\nResults saved to {BENCHMARK_RESULTS_FILENAME}")
             
             return 0
             
@@ -727,7 +725,7 @@ class UniversalTranslationSystem:
             converter = ModelConverter()
             
             # Load model
-            model_path = Path("models/production/encoder.pt")
+            model_path = Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}")
             if not model_path.exists():
                 logger.error("No model found to export")
                 return 1
@@ -806,7 +804,7 @@ Examples:
     parser.add_argument(
         '--config',
         type=str,
-        default='config/base.yaml',
+        default=f"{CONFIG_DIR}/{BASE_CONFIG_FILENAME}",
         help='Configuration file'
     )
     

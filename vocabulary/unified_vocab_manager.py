@@ -3,19 +3,15 @@
 Unified vocabulary manager for the Universal Translation System.
 This module provides a unified interface for vocabulary management.
 """
-import mmap
 import msgpack
 # Optional compression dependency
 try:
     import zstandard as zstd  # type: ignore
 except Exception:  # pragma: no cover
     zstd = None  # type: ignore
-from functools import lru_cache
-from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Any, Union, Set
+from typing import Dict, Optional, List, Tuple, Any
 import threading
 import asyncio
-import aiofiles
 import logging
 from utils.logging_config import setup_logging
 from enum import Enum
@@ -26,16 +22,11 @@ import json
 from utils.exceptions import VocabularyError
 from utils.security import validate_path_component
 from utils.base_classes import BaseVocabularyManager, TokenizerMixin
-from utils.thread_safety import THREAD_SAFETY_INTERNAL, thread_safe, document_thread_safety as _document_thread_safety
-from utils.constants import (
-    VOCAB_SIZE, VOCAB_MIN_FREQUENCY, VOCAB_SPECIAL_TOKENS,
-    VOCAB_PAD_ID, VOCAB_UNK_ID, VOCAB_BOS_ID, VOCAB_EOS_ID,
-    SUPPORTED_VOCAB_FORMAT
-)
+from utils.constants import LOG_DIR, SUPPORTED_VOCAB_FORMAT
 from config.schemas import RootConfig
 
 # Centralized logging for vocabulary manager
-setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("vocabulary")
 
 class VocabularyMode(Enum):
@@ -199,7 +190,7 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
             self.cache_size = cache_size
         
         # Thread safety
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         
         # LRU cache for loaded packs
         self._vocabulary_cache = {}

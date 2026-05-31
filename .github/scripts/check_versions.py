@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json, re, sys
 from pathlib import Path
 
@@ -20,7 +21,7 @@ if pyproject.exists():
         errors.append(f"decoder pyproject: {m.group(1)} != {config['components']['python-package']['version']}")
 
 # Web SDK
-web_pkg = root / 'web' / 'universal-translation-sdk' / 'package.json'
+web_pkg = root / 'sdk' / 'web' / 'universal-translation-sdk' / 'package.json'
 if web_pkg.exists():
     v = json.loads(web_pkg.read_text(encoding='utf-8')).get('version')
     c = config['components'].get('web-sdk',{}).get('version')
@@ -28,7 +29,7 @@ if web_pkg.exists():
         errors.append(f"web package.json: {v} != {c}")
 
 # RN SDK
-rn_pkg = root / 'react-native' / 'UniversalTranslationSDK' / 'package.json'
+rn_pkg = root / 'sdk' / 'react-native' / 'UniversalTranslationSDK' / 'package.json'
 if rn_pkg.exists():
     v = json.loads(rn_pkg.read_text(encoding='utf-8')).get('version')
     c = config['components'].get('react-native-sdk',{}).get('version')

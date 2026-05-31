@@ -1,52 +1,58 @@
-flowchart TB
+graph TB
     subgraph Cluster
-        subgraph NS
-            subgraph Ingress
-                IG[HTTPS Ingress]
-            end
+        subgraph Ingress
+            IG[HTTPS Ingress]
+        end
 
-            subgraph SVCs
-                SCoord[Service coordinator]
-                SDec[Service decoder]
-                SMon[Service prometheus]
-            end
+        subgraph SVCs
+            SCoord[coordinator svc]
+            SDec[decoder svc]
+            SEnc[encoder svc]
+            SMon[prometheus svc]
+        end
 
-            subgraph Deployments
-                subgraph Coord
-                    CPod1[Pod coord-abc]
-                    CPod2[Pod coord-def]
-                end
-                subgraph DecPool
-                    DPod1[Pod dec-001 - GPU]
-                    DPod2[Pod dec-002 - GPU]
-                    DPodN[Pod dec-N - GPU]
-                end
-                subgraph Mon
-                    PPod[Pod prometheus]
-                    GPod[Pod grafana]
-                    OTel[Pod otel-collector]
-                end
+        subgraph Deployments
+            subgraph Coord
+                C1[coordinator pod]
+                C2[coordinator pod]
+            end
+            subgraph DecPool
+                D1[decoder pod GPU]
+                D2[decoder pod GPU]
+                DN[decoder pod N GPU]
+            end
+            subgraph Enc
+                EC[encoder core pod]
+            end
+            subgraph Mon
+                PR[prometheus pod]
+                GR[grafana pod]
+                OC[otel collector pod]
             end
         end
     end
 
     IG --> SCoord
-    SCoord --> CPod1
-    SCoord --> CPod2
+    IG --> SEnc
+    SCoord --> C1
+    SCoord --> C2
 
-    CPod1 --> SDec
-    CPod2 --> SDec
+    C1 --> SDec
+    C2 --> SDec
 
-    SDec --> DPod1
-    SDec --> DPod2
-    SDec --> DPodN
+    SDec --> D1
+    SDec --> D2
+    SDec --> DN
 
-    CPod1 --> SMon
-    CPod2 --> SMon
-    DPod1 --> SMon
-    DPod2 --> SMon
-    DPodN --> SMon
+    SEnc --> EC
 
-    SMon --> PPod
-    PPod --> GPod
-    PPod --> OTel
+    C1 --> SMon
+    C2 --> SMon
+    D1 --> SMon
+    D2 --> SMon
+    DN --> SMon
+    EC --> SMon
+
+    SMon --> PR
+    PR --> GR
+    PR --> OC

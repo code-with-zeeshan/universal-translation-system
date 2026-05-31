@@ -132,7 +132,7 @@ class VocabularyMetricsCollector:
             vocabulary_pack_info.labels(
                 pack_name='error',
                 version='error',
-                status='error''
+                status='error'
             ).set(0)
     
     def _get_available_packs(self) -> dict:
@@ -225,20 +225,7 @@ def collect_vocabulary_metrics():
         vocab_collector.collect_vocabulary_metrics()
 
 
-# Export function for use in other modules
-def track_translation_request(source_lang: str, target_lang: str, status: str, latency: float = None):
-    """Track a translation request with metrics."""
-    translation_requests.labels(
-        source_lang=source_lang,
-        target_lang=target_lang,
-        status=status
-    ).inc()
-    
-    if latency is not None and status == 'success':
-        translation_latency.labels(
-            source_lang=source_lang,
-            target_lang=target_lang
-        ).observe(latency)
+from monitoring.metrics import track_translation_request  # noqa: F401
 
 
 # Example usage in your decoder or encoder

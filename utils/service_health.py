@@ -1,11 +1,11 @@
-from __future__ import annotations
 import os
 import json
 from pathlib import Path
 from typing import Any, Dict, List
+from utils.constants import VERSION_CONFIG_FILENAME
 
 
-def load_version_info(path: str = 'version-config.json') -> Dict[str, Any]:
+def load_version_info(path: str = VERSION_CONFIG_FILENAME) -> Dict[str, Any]:
     """Safely load version info from version-config.json.
     Returns a dict with possible keys: version, apiVersion, schemaHash.
     """

@@ -12,7 +12,7 @@ __author__ = "Universal Translation Team"
 # Make key components easily importable
 from encoder.universal_encoder import UniversalEncoder
 from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
-from integration.connect_all_systems import UniversalTranslationSystem
+from integration.system import UniversalTranslationSystem
 
 __all__ = [
     "UniversalEncoder",

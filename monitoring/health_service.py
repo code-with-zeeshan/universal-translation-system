@@ -1,6 +1,7 @@
 # monitoring/health_service.py
 
 import asyncio
+import threading
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
@@ -35,7 +36,20 @@ app = FastAPI(
 )
 
 # This will hold the reference to the main system's health monitor
+_health_monitor_lock = threading.RLock()
 system_health_monitor: Optional["SystemHealthMonitor"] = None
+
+
+def _set_health_monitor(monitor: Optional["SystemHealthMonitor"]) -> None:
+    global system_health_monitor
+    with _health_monitor_lock:
+        system_health_monitor = monitor
+
+
+def _get_health_monitor() -> Optional["SystemHealthMonitor"]:
+    global system_health_monitor
+    with _health_monitor_lock:
+        return system_health_monitor
 
 # --- API Endpoints ---
 
@@ -45,12 +59,14 @@ async def get_system_health():
     Provides a comprehensive health check of the entire system,
     including all components and resource usage.
     """
-    if not system_health_monitor:
+    monitor = _get_health_monitor()
+    if not monitor:
         raise HTTPException(status_code=503, detail="System not yet initialized")
     
     # Use the existing SystemHealthMonitor to get the status
-    health_status = await system_health_monitor.check_health()
+    health_status = await monitor.check_health()
     return health_status
+
 
 @app.get("/health/liveness", tags=["Health"])
 async def get_liveness():
@@ -66,10 +82,11 @@ async def get_readiness():
     A readiness probe to check if the service is ready to accept traffic.
     Kubernetes uses this to know whether to send traffic to the container.
     """
-    if not system_health_monitor:
+    monitor = _get_health_monitor()
+    if not monitor:
         raise HTTPException(status_code=503, detail="System not yet initialized")
     
-    health_status = await system_health_monitor.check_health()
+    health_status = await monitor.check_health()
     if health_status.get("status") != "healthy":
         raise HTTPException(status_code=503, detail=f"System is not ready: {health_status}")
         
@@ -82,9 +99,8 @@ def start_health_service(system: "UniversalTranslationSystem", host: str = "0.0.
     Starts the FastAPI health check service.
     This function is designed to be run in a separate thread.
     """
-    global system_health_monitor
     # Store the reference to the system's health monitor
-    system_health_monitor = system.health_monitor
+    _set_health_monitor(system.health_monitor)
     
     logging.info(f"Starting FastAPI health service on http://{host}:{port}")
     

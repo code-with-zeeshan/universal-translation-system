@@ -8,7 +8,12 @@ coordinator:
   replicaCount: 1
   service:
     type: ClusterIP
-    port: 8080
+    port: 5100
+  secret:
+    jwtSecret: ""
+    secret: ""
+    token: ""
+    internalServiceToken: ""
   resources: {}
 
 decoder:
@@ -19,5 +24,24 @@ decoder:
   replicaCount: 1
   service:
     type: ClusterIP
-    port: 9000
+    port: 8001
+  secret:
+    jwtSecret: ""
+  resources: {}
+
+encoder:
+  enabled: false
+  image:
+    repository: ghcr.io/code-with-zeeshan/universal-translation-system/encoder
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  resources: {}
+
+redis:
+  enabled: false
+  image:
+    repository: redis
+    tag: "7-alpine"
+  secret:
+    password: ""
   resources: {}

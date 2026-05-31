@@ -17,13 +17,13 @@ spec:
       containers:
       - name: decoder
         image: universal-decoder:latest
-        command: ["litserve", "serve", "optimized_decoder:app", "--host", "0.0.0.0", "--port", "8000"]
+        command: ["uvicorn", "cloud_decoder.optimized_decoder:app", "--host", "0.0.0.0", "--port", "8001"]
         ports:
-        - containerPort: 8000
+        - containerPort: 8001
         livenessProbe:
           httpGet:
             path: /health
-            port: 8000
+            port: 8001
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
@@ -31,7 +31,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /ready
-            port: 8000
+            port: 8001
           initialDelaySeconds: 15
           periodSeconds: 5
           timeoutSeconds: 5

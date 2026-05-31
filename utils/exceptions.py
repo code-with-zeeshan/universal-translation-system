@@ -59,10 +59,6 @@ class AuthorizationError(UniversalTranslationError):
     """Raised when there are authorization issues"""
     pass
 
-class ResourceError(UniversalTranslationError):
-    """Raised when there are issues with resource management"""
-    pass
-
 class MemoryError(ResourceError):
     """Raised when there are memory-related issues"""
     pass

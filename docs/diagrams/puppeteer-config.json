@@ -1,0 +1,5 @@
+{
+  "executablePath": "/nix/store/lpdrfl6n16q5zdf8acp4bni7yczzcx3h-idx-builtins/bin/chromium",
+  "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-gpu"],
+  "viewport": null
+}

@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional, Dict
 import os
+import logging
 from opentelemetry import trace
 
 # --- MODIFIED ---
@@ -12,6 +13,7 @@ from opentelemetry import trace
 from .custom_layers import RotaryEmbedding, CustomTransformerEncoderLayer
 
 tracer = trace.get_tracer(__name__)
+logger = logging.getLogger(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 
 class UniversalEncoder(nn.Module):

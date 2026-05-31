@@ -15,7 +15,6 @@ Parsing rules:
 - list accepts either a JSON array (e.g. ["<pad>","<unk>"]) or a comma-separated list
 """
 
-from __future__ import annotations
 import os
 import json
 from typing import Any, List
@@ -142,6 +141,40 @@ DEFAULT_CONFIG_PATH = _as_str("DEFAULT_CONFIG_PATH", "config/default_config.json
 DEFAULT_MODEL_PATH = _as_str("DEFAULT_MODEL_PATH", "models/default_model")
 DEFAULT_VOCAB_PATH = _as_str("DEFAULT_VOCAB_PATH", "vocabulary/default_vocab")
 DEFAULT_LOG_PATH = _as_str("DEFAULT_LOG_PATH", "logs/system.log")
+
+# Directory paths (most commonly hardcoded across the codebase)
+LOG_DIR = _as_str("LOG_DIR", "logs")
+DATA_RAW_DIR = _as_str("DATA_RAW_DIR", "data/raw")
+DATA_PROCESSED_DIR = _as_str("DATA_PROCESSED_DIR", "data/processed")
+DATA_SAMPLED_DIR = _as_str("DATA_SAMPLED_DIR", "data/sampled")
+DATA_FINAL_DIR = _as_str("DATA_FINAL_DIR", "data/final")
+DATA_CACHE_DIR = _as_str("DATA_CACHE_DIR", "data/cache")
+DATA_ESSENTIAL_DIR = _as_str("DATA_ESSENTIAL_DIR", "data/essential")
+MODELS_DIR = _as_str("MODELS_DIR", "models")
+MODELS_PRODUCTION_DIR = _as_str("MODELS_PRODUCTION_DIR", "models/production")
+MODELS_ENCODER_DIR = _as_str("MODELS_ENCODER_DIR", "models/encoder")
+MODELS_DECODER_DIR = _as_str("MODELS_DECODER_DIR", "models/decoder")
+MODELS_ADAPTERS_DIR = _as_str("MODELS_ADAPTERS_DIR", "models/adapters")
+CHECKPOINT_DIR = _as_str("CHECKPOINT_DIR", "checkpoints")
+VOCAB_DIR = _as_str("VOCAB_DIR", "vocabs")
+CONFIG_DIR = _as_str("CONFIG_DIR", "config")
+CONFIGS_DIR = _as_str("CONFIGS_DIR", "configs")
+
+# Common filenames
+ENCODER_MODEL_FILENAME = _as_str("ENCODER_MODEL_FILENAME", "encoder.pt")
+DECODER_MODEL_FILENAME = _as_str("DECODER_MODEL_FILENAME", "decoder.pt")
+BEST_MODEL_FILENAME = _as_str("BEST_MODEL_FILENAME", "best_model.pt")
+TRAIN_FINAL_FILENAME = _as_str("TRAIN_FINAL_FILENAME", "train_final.txt")
+VAL_FINAL_FILENAME = _as_str("VAL_FINAL_FILENAME", "val_final.txt")
+TEST_FINAL_FILENAME = _as_str("TEST_FINAL_FILENAME", "test_final.txt")
+BASE_CONFIG_FILENAME = _as_str("BASE_CONFIG_FILENAME", "base.yaml")
+VERSION_CONFIG_FILENAME = _as_str("VERSION_CONFIG_FILENAME", "version-config.json")
+BENCHMARK_RESULTS_FILENAME = _as_str("BENCHMARK_RESULTS_FILENAME", "benchmark_results.json")
+TRAINING_REPORT_FILENAME = _as_str("TRAINING_REPORT_FILENAME", "training_report.json")
+EVALUATION_REPORT_FILENAME = _as_str("EVALUATION_REPORT_FILENAME", "evaluation_report.json")
+EMERGENCY_CHECKPOINT_FILENAME = _as_str("EMERGENCY_CHECKPOINT_FILENAME", "emergency_checkpoint.pt")
+QUANTIZATION_REPORT_FILENAME = _as_str("QUANTIZATION_REPORT_FILENAME", "quantization_report.json")
+PROFILING_REPORT_FILENAME = _as_str("PROFILING_REPORT_FILENAME", "profiling_report.json")
 
 # HTTP status codes (fixed, not expected to override)
 HTTP_OK = 200

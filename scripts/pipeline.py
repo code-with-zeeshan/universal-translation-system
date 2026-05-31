@@ -51,6 +51,7 @@ from training import launch as training_launch
 # Bootstrap & Conversion
 from training.bootstrap_from_pretrained import PretrainedModelBootstrapper
 from training.convert_models import ModelConverter
+from utils.constants import LOG_DIR
 
 logger = logging.getLogger("pipeline")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -144,7 +145,7 @@ def run_training(
     batch_size: Optional[int] = None,
     learning_rate: Optional[float] = None,
     num_epochs: Optional[int] = None,
-    log_dir: str = 'logs',
+    log_dir: str = LOG_DIR,
     log_level: str = 'info',
 ) -> None:
     """Delegate to training.launch.launch_training with a constructed namespace."""
@@ -309,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--batch-size', type=int)
     sp.add_argument('--learning-rate', type=float)
     sp.add_argument('--num-epochs', type=int)
-    sp.add_argument('--log-dir', type=str, default='logs')
+    sp.add_argument('--log-dir', type=str, default=LOG_DIR)
     sp.add_argument('--log-level', type=str, default='info', choices=['debug','info','warning','error'])
 
     # evaluate

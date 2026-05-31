@@ -6,7 +6,6 @@ Usage:
   python scripts/runtime_api_version_check.py --coordinator http://localhost:9000 --decoder http://localhost:8000
 Exits non-zero on mismatch.
 """
-from __future__ import annotations
 import argparse
 import sys
 import json

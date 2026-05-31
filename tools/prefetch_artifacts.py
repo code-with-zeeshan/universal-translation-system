@@ -11,7 +11,6 @@ Env needed:
 - HF_TOKEN if repo is private
 Optional overrides: HF_HUB_REVISION, MODELS_DIR, VOCABS_DIR, ADAPTERS_DIR
 """
-from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path

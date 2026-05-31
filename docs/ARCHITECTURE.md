@@ -2,7 +2,7 @@
 
 ## Table of Contents
 - [Overview](#overview)
-- [End‑to‑End Architecture Diagram](#end-to-end-architecture-diagram)
+- [End-to-End Architecture Diagram](#end-to-end-architecture-diagram)
 - [Components (In Depth)](#components-in-depth)
 - [Data Flow (Detailed)](#data-flow-detailed)
 - [Deployment & Scaling](#deployment--scaling)
@@ -12,24 +12,21 @@
 - [Failure Handling & Reliability](#failure-handling--reliability)
 - [Repository Mapping](#repository-mapping)
 - [Sequence Diagrams](#sequence-diagrams)
-- [Component-Level Diagram (Modules & Interfaces)](#component-level-diagram-modules--interfaces)
+- [Component-Level Diagram](#component-level-diagram-modules--interfaces)
 - [Deployment Diagram (Kubernetes Topology)](#deployment-diagram-kubernetes-topology)
 - [Related Documentation](#related-documentation)
 - [Notes](#notes)
 
 ## Overview
 
-The Universal Translation System is an edge–cloud platform designed to keep client apps small while delivering high‑quality, scalable translations. Text is encoded on device into compact embeddings and decoded in the cloud by GPU‑powered decoder nodes. A coordinator handles routing, health checks, load balancing, security, and observability. Supporting systems include vocabulary management, artifact/model storage, CI/CD, monitoring, and Kubernetes orchestration.
+The Universal Translation System is an edge-cloud platform designed to keep client apps small while delivering high-quality, scalable translations. Text is encoded on device into compact embeddings and decoded in the cloud by GPU-powered decoder nodes. A coordinator handles routing, health checks, load balancing, security, and observability. Supporting systems include vocabulary management, artifact/model storage, CI/CD, monitoring, and Kubernetes orchestration.
 
 ---
 
-## End‑to‑End Architecture Diagram
+## End-to-End Architecture Diagram
 
 ```mermaid
 flowchart LR
-    %% ===========================
-    %% Clients / SDKs (Edge)
-    %% ===========================
     subgraph SDKs
         A1[Android]
         A2[iOS]
@@ -48,9 +45,6 @@ flowchart LR
         E1 --> E4
     end
 
-    %% ===========================
-    %% Network & Security
-    %% ===========================
     subgraph Network
         TLS[TLS/HTTPS]
         Auth[JWT / API Keys]
@@ -61,18 +55,15 @@ flowchart LR
         RL --- CB
     end
 
-    %% ===========================
-    %% Cloud Control Plane
-    %% ===========================
     subgraph Coordinator
         C_API[HTTP API - decode health metrics]
         C_RT[Router - Least Loaded and Health]
         C_HC[Health Prober\nActive and Passive]
         C_MX[Metrics Exporter\nPrometheus]
         C_TR[Tracing\nOpenTelemetry]
-        C_ADM[Admin and Dashboard\nChartJS]
+        C_ADM[Admin and Dashboard]
         C_REDIS[Redis\noptional]
-        C_CFG[Configuration\nconfigs and env]
+        C_CFG[Configuration\nconfig and env]
         C_SEC[AuthN/Z\nJWT]
 
         C_API --> C_RT
@@ -85,19 +76,14 @@ flowchart LR
         C_CFG -. reads .-> C_API
     end
 
-    %% ===========================
-    %% Decoder Data Plane
-    %% ===========================
     subgraph DecoderPool
-        DN1[Decoder Node #1\nLitserve + PyTorch]
+        DN1[Decoder Node #1\nFastAPI + PyTorch]
         DN2[Decoder Node #2]
         DNn[Decoder Node #N]
-
-            MLD[Model Loader\nAdapters]
-            VLM[Runtime Vocab Access]
-            MXS[Metrics Exporter]
-            HCS[Health Endpoint]
-
+        MLD[Model Loader\nAdapters]
+        VLM[Runtime Vocab Access]
+        MXS[Metrics Exporter]
+        HCS[Health Endpoint]
         DN1 --- MLD
         DN1 --- VLM
         DN1 --- MXS
@@ -106,9 +92,6 @@ flowchart LR
         DNn --- MXS
     end
 
-    %% ===========================
-    %% Observability & Stores
-    %% ===========================
     subgraph ObservabilityGroup
         PM[Prometheus]
         GF[Grafana]
@@ -126,14 +109,11 @@ flowchart LR
 
     subgraph CICD
         BLD[Build Scripts\nscripts/*]
-        PBL[Publish/Release\nrelease.ps1/.sh]
+        PBL[Publish/Release]
         DKR[Docker Images\ndocker/*]
-        K8S[Kubernetes Manifests\nkubernetes/*]
+        K8S[Kubernetes Manifests\ncharts/uts/ + kubernetes/]
     end
 
-    %% ===========================
-    %% Flows
-    %% ===========================
     A1 & A2 & A3 & A4 & A5 -->|Text| E1
     E1 -->|Embeddings| E4
     E4 -->|HTTPS + JWT| TLS
@@ -143,16 +123,13 @@ flowchart LR
     DN1 -->|Translation| C_API
     C_API -->|Result| A1 & A2 & A3 & A4 & A5
 
-    %% Observability flows
     C_MX --> PM
     MXS --> PM
     C_TR --> OTEL
 
-    %% Model & version flows
     MLD -. downloads .-> MS
     VR -. governs .-> C_CFG
 
-    %% CI/CD & Deploy
     BLD --> DKR --> K8S
     K8S --> Coordinator
     K8S --> DecoderPool
@@ -163,126 +140,140 @@ flowchart LR
 ## Components (In Depth)
 
 ### 1) SDKs and Edge Encoder
-- **Platforms:** Android, iOS, Flutter, React Native, Web (WASM optional).
+- **Platforms:** Android, iOS, Flutter, React Native, Web (WASM optional); all under `sdk/`.
 - **Encoder Core:** C++ implementation for native platforms with FFI bindings; TypeScript + WASM for the web.
-- **Encoder Architecture:** UniversalEncoder (PyTorch) with RotaryEmbedding (RoPE) and SwiGLU‑based custom transformer layers; hidden size 1024 by default; exposes adapter hooks.
-- **Adapters:** LanguageAdapter (1024→64→1024 with GELU + LayerNorm). AdapterUniversalEncoder manages loading/saving adapters, edge quantization, and composition.
+- **Encoder Architecture:** UniversalEncoder (PyTorch) with RotaryEmbedding (RoPE) and SwiGLU-based custom transformer layers; hidden size 1024 by default; exposes adapter hooks.
+- **Adapters:** LanguageAdapter (1024->64->1024 with GELU + LayerNorm). AdapterUniversalEncoder manages loading/saving adapters, edge quantization, and composition.
 - **Vocabulary System:**
-  - Packs of 2–4MB per language (Latin ~3MB, CJK ~4MB, etc.).
+  - Packs of 2-4MB per language (Latin ~3MB, CJK ~4MB, etc.).
   - Dynamic download on demand; cached locally with versioning; LRU for memory efficiency.
-  - UnifiedVocabularyManager maps `language_to_pack_mapping` under `vocabulary.vocab_dir`.
+  - UnifiedVocabularyManager maps `language_to_pack_mapping` in config.
 - **Output Payload:** Embeddings serialized via MsgPack and compressed with LZ4 to minimize bandwidth.
-- **Fallbacks:** SDKs can fall back to cloud‑only encoding if local edge encoding is unavailable.
+- **Fallbacks:** SDKs can fall back to cloud-only encoding if local edge encoding is unavailable.
 
 ### 2) Coordinator (Control Plane)
-- **Routing:** Least‑loaded healthy node selection with active and passive health probes.
-- **Security:** JWT auth for protected endpoints and admin operations; optional HTTPS offload in front of the coordinator.
+- **Location:** `coordinator/advanced_coordinator.py`
+- **Routing:** Least-loaded healthy node selection with active and passive health probes.
+- **Security:** JWT auth for protected endpoints and admin operations; optional HTTPS offload.
 - **Reliability:** Rate limiter and circuit breaker patterns to protect downstream decoders.
 - **Observability:** Exposes Prometheus metrics; integrates with OpenTelemetry for tracing.
-- **Dashboard:** Real‑time charts (Chart.js) for node health, throughput, and error rates.
-- **Redis (optional):** Shared state for distributed coordination or rate limiting.
+- **Dashboard:** Real-time charts for node health, throughput, and error rates.
+- **Redis (optional):** Shared state via `utils.redis_manager.RedisManager` for distributed coordination.
 
 ### 3) Decoder Nodes (Data Plane)
-- **Serving:** Litserve (faster than FastAPI for high‑throughput ML inference) hosting PyTorch models.
-- **Runtime Model:** AdapterUniversalEncoder is instantiated server‑side; language adapters are hot‑loaded (LRU) and can be composed on demand via internal endpoints.
-- **Model Architecture:** 6‑layer transformer with cross‑attention; supports dynamic adapter loading per language/domain.
-- **Vocabulary:** Runtime access to vocabulary packs; uses `vocabulary/` path in containers (`/app/vocabs`).
-- **GPU Acceleration:** Targets GPUs like T4, 3090, V100, A100; memory‑optimized for multi‑concurrency.
-- **Health & Metrics:** Each node publishes `/health` and `/metrics` endpoints; autoscaling driven via metrics in K8s.
+- **Location:** `cloud_decoder/optimized_decoder.py`
+- **Serving:** FastAPI served via uvicorn, hosting PyTorch models.
+- **Runtime Model:** AdapterUniversalEncoder instantiated server-side; language adapters are hot-loaded (LRU).
+- **Model Architecture:** 6-layer transformer with cross-attention; supports dynamic adapter loading.
+- **Vocabulary:** Runtime access to vocabulary packs from `vocabs/` (mounted at `/app/vocabs` in containers).
+- **GPU Acceleration:** Targets GPUs like T4, 3090, V100, A100; memory-optimized for multi-concurrency.
+- **Health & Metrics:** Each node publishes `/health` and `/metrics` endpoints.
 
 ### 4) Artifacts & Models
-- **Locations:** `models/` for local dev; production models fetched by nodes from a model/artifact store.
-- **Versioning:** `version-config.json` and scripts coordinate version pins and rollouts.
-- **Publishing:** `scripts/upload_artifacts.py` and CI pipelines push artifacts to remote storage.
+- **Locations:** `models/` for local dev; production models fetched from Hugging Face Hub.
+- **Versioning:** `version-config.json` manages component semver; `scripts/version_manager.py` handles version bumps.
+- **Publishing:** `scripts/build_and_upload_pipeline.py` and CI workflows push artifacts to HF Hub.
 
 ### 5) Observability
-- **Metrics:** Prometheus scrapes coordinator and decoder nodes; dashboards live in `monitoring/grafana/dashboards`.
-- **Tracing:** Optional OpenTelemetry integration for end‑to‑end latency analysis.
-- **System Metrics:** GPU/CPU/Memory via `GPUtil`, `psutil`; overall health tracked and alerting configured.
+- **Metrics:** Prometheus scrapes coordinator and decoder nodes; dashboards in `monitoring/grafana/dashboards`.
+- **Tracing:** Optional OpenTelemetry integration for end-to-end latency analysis.
+- **System Metrics:** GPU/CPU/Memory via `GPUtil`, `psutil`; alerting configured in `monitoring/prometheus/rules/`.
 
 ### 6) CI/CD & Infrastructure
-- **Build:** `scripts/build_models.py`, `scripts/pipeline.py`, and platform‑specific build scripts.
-- **Docker:** Dockerfiles under `docker/`; multi‑stage builds for slim images.
-- **Kubernetes:** Manifests in `kubernetes/` define services, deployments, probes, and autoscaling policy.
-- **Release:** `scripts/release.ps1/.sh` and CI workflows publish SDKs and backend services.
+- **Build:** `scripts/pipeline.py`, `scripts/build_encoder_core.sh`, and platform-specific build scripts.
+- **Docker:** Dockerfiles under `docker/`; multi-stage builds for slim, non-root images.
+- **Kubernetes:** Manifests in `kubernetes/` + Helm chart at `charts/uts/`.
+- **Release:** `scripts/version_manager.py` and CI workflows publish SDKs and backend services.
 
 ---
 
 ## Data Flow (Detailed)
 
-1. The client loads the necessary vocabulary pack(s) if not cached (managed by SDK). 
-2. Text is encoded on device via the universal encoder to language‑agnostic embeddings. 
-3. Embeddings are serialized (MsgPack) and compressed (LZ4) into a compact payload. 
-4. The client calls the coordinator `/decode` over HTTPS with JWT/API key if required. 
-5. Coordinator authenticates, rate‑limits, and applies circuit breaker checks. 
-6. The router selects the least‑loaded healthy decoder node based on recent metrics and probes. 
-7. The selected decoder runs the model to produce the translation. 
-8. The decoder returns the translation to the coordinator, which relays it back to the client. 
+1. The client loads the necessary vocabulary pack(s) if not cached (managed by SDK).
+2. Text is encoded on device via the universal encoder to language-agnostic embeddings.
+3. Embeddings are serialized (MsgPack) and compressed (LZ4) into a compact payload.
+4. The client calls the coordinator `/decode` over HTTPS with JWT/API key if required.
+5. Coordinator authenticates, rate-limits, and applies circuit breaker checks.
+6. The router selects the least-loaded healthy decoder node based on recent metrics and probes.
+7. The selected decoder runs the model to produce the translation.
+8. The decoder returns the translation to the coordinator, which relays it back to the client.
 9. Metrics and traces for the request are exported to Prometheus/OpenTelemetry.
 
 ---
 
 ## Deployment & Scaling
 
-- **Horizontal Scaling:** Increase the number of decoder nodes; coordinator remains stateless and horizontally scalable. 
-- **Autoscaling:** Driven by CPU/GPU utilization, in‑flight requests, and latency metrics. 
-- **Node Pools:** Separate GPU pools by model size or language groups for efficient placement. 
-- **Kubernetes:** Health probes (`/health`) and readiness gates; per‑service `Service` and `Deployment` manifests. 
-- **Canary Releases:** Version pinning via `version-config.json` and label‑based routing in K8s.
+- **Horizontal Scaling:** Increase the number of decoder nodes; coordinator remains stateless.
+- **Autoscaling:** Driven by CPU/GPU utilization, in-flight requests, and latency metrics.
+- **Node Pools:** Separate GPU pools by model size or language groups.
+- **Kubernetes:** Health probes (`/health`) and readiness gates; Helm chart for all services.
+- **Canary Releases:** Version pinning via `version-config.json` and label-based routing in K8s.
+- **Role-based Install:** `scripts/install.sh` supports `--train`, `--serve`, `--coordinator`, `--dev`, `--encoder-core`, `--all`.
 
 ---
 
 ## Security
 
-- **Auth:** JWT for protected endpoints and admin dashboard; token validation at the coordinator. 
-- **Transport:** HTTPS termination at ingress or load balancer; secure headers enforced. 
-- **Policies:** Rate limiting, circuit breaker, and request size limits to protect the data plane. 
-- **Secrets:** Use environment variables and/or K8s Secrets; never commit secrets to the repo.
+- **Auth:** JWT for protected endpoints and admin dashboard; token validation at the coordinator.
+- **Transport:** HTTPS termination at ingress or load balancer; secure headers enforced.
+- **Policies:** Rate limiting, circuit breaker, and request size limits.
+- **Secrets:** Use environment variables and/or K8s Secrets with `*_FILE` support for Docker.
+- **Rotation:** `tools/rotate_secrets.py` supports HS256 and RS256 key rotation.
 
 ---
 
 ## Configuration & Versioning
 
-- **Config Sources:** `config/`, environment variables, and CLI flags. 
-- **Validation:** `scripts/validate_config.py` validates schema and consistency. 
-- **Version Control:** `version-config.json` governs artifact and model versions across environments. 
-- **Wizard:** `scripts/config_wizard.py` provides an interactive setup experience.
+- **Config Sources:** `config/`, environment variables, CLI flags.
+- **Canonical Schema:** `config/schemas.py` (merged from `config_models.py`) with `load_config()` and `load_system_config()`.
+- **Validation:** `scripts/validate_config.py` validates schema and consistency.
+- **Version Control:** `version-config.json` governs artifact and model versions across environments.
+- **Path Constants:** `utils/constants.py` with 60+ constants, all overridable via `UTS_*` env vars.
 
 ---
 
 ## Ports & Endpoints
 
-- **Decoder Node (default):** Port `8001` — `/decode`, `/health`, `/metrics`. 
-- **Coordinator (default):** Port `8002` — `/api/decode`, `/api/status`, `/metrics` (+ admin endpoints). 
-- **Observability:** Prometheus scrapes `/metrics`; Grafana reads from Prometheus; OTEL collector ingests traces.
+- **Decoder Node (default):** Port `8001` -- `/decode`, `/health`, `/metrics`.
+- **Coordinator (default):** Port `8002` (Compose) / `5100` (Helm) -- `/api/decode`, `/api/status`, `/metrics`, admin endpoints.
+- **Encoder Core:** Port `8000`.
+- **Observability:** Prometheus scrapes `/metrics`; Grafana reads from Prometheus.
+- **Redis:** Port `6379`.
 
 ---
 
 ## Failure Handling & Reliability
 
-- **Retries:** Client‑side retries with backoff for transient network failures. 
-- **Circuit Breaker:** Temporarily halts routing to failing nodes; gradual recovery after cooldown. 
-- **Timeouts:** Sensible timeouts on client and server; streaming or chunked responses optional. 
-- **Graceful Draining:** On shutdown or upgrade, nodes stop accepting new requests but finish in‑flight work. 
-- **Fallbacks:** SDKs may fall back to cloud‑only encoding when local edge encoding is unavailable.
+- **Retries:** Client-side retries with backoff for transient network failures.
+- **Circuit Breaker:** Temporarily halts routing to failing nodes; gradual recovery after cooldown.
+- **Timeouts:** Sensible timeouts on client and server.
+- **Graceful Draining:** On shutdown or upgrade, nodes stop accepting new requests but finish in-flight work.
+- **Fallbacks:** SDKs may fall back to cloud-only encoding when local edge encoding is unavailable.
+- **Disk Mirroring:** Coordinator mirrors Redis state to disk periodically (`COORDINATOR_MIRROR_INTERVAL`).
 
 ---
 
 ## Repository Mapping
 
-- `encoder/` — Python encoder logic and training helpers. 
-- `encoder_core/` — C++ encoder core for native platforms (FFI‑compatible). 
-- `cloud_decoder/` — Decoder service using Litserve (GPU‑ready). 
-- `universal-decoder-node/` — Standalone decoder node package (CLI + utils). 
-- `coordinator/` — Coordinator with routing, health checks, metrics, and dashboard. 
-- `monitoring/` — Prometheus, Grafana dashboards, and metrics utilities. 
-- `vocabulary/` — Vocabulary creation and management utilities; packs and evolution tools. 
-- `web/universal-translation-sdk/` — Web SDK with TypeScript and WASM build. 
-- `react-native/UniversalTranslationSDK/` — React Native SDK with native bridges. 
-- `flutter/universal_translation_sdk/` — Flutter SDK with FFI for native performance. 
-- `kubernetes/` — Deployment manifests for coordinator and decoder nodes. 
-- `docker/` — Dockerfiles for building images for the encoder/decoder services. 
-- `scripts/` — Build, release, validation, and automation scripts.
+- `encoder/` -- Python encoder logic and training helpers.
+- `encoder_core/` -- C++ encoder core for native platforms (FFI-compatible).
+- `cloud_decoder/` -- Decoder service using FastAPI/uvicorn (GPU-ready).
+- `universal-decoder-node/` -- Standalone decoder node package (CLI + utils).
+- `coordinator/` -- Coordinator with routing, health checks, metrics, and dashboard.
+- `monitoring/` -- Prometheus, Grafana dashboards, and metrics utilities.
+- `vocabulary/` -- Vocabulary creation and management; split into `vocabulary_creator.py`, `vocab_production.py`, `vocab_research.py`, `vocab_validation.py`, `vocab_config.py`.
+- `data/` -- Data pipeline; split into `pipeline_orchestrator.py`, `pipeline_state.py`, `custom_samplers.py`.
+- `training/` -- Training system; split into `trainer.py`, `hardware_profile.py`, `training_strategy.py`, `training_analytics.py`, `memory_trainer.py`, `memory_tracker.py`, `dynamic_batch_sizer.py`, `memory_config.py`, `encoder_quantizer.py`, `model_profiler.py`, `quality_comparator.py`, `quantization_common.py`.
+- `integration/` -- System integration; split into `system.py`, `system_config.py`, `system_health.py`, `translation_api.py`.
+- `evaluation/` -- Evaluation; split into `evaluator.py`, `metrics.py`.
+- `sdk/` -- All SDKs: `android/`, `ios/`, `flutter/`, `react-native/`, `web/`.
+- `kubernetes/` -- Deployment manifests for coordinator and decoder nodes.
+- `charts/uts/` -- Helm chart for all services (coordinator, decoder, encoder, redis).
+- `docker/` -- Dockerfiles for encoder, decoder, coordinator, cloud services.
+- `scripts/` -- Build, install, release, validation, and automation scripts.
+- `config/` -- YAML configs and `schemas.py` (canonical config hierarchy).
+- `utils/` -- Shared utilities: `constants.py`, `thread_safety.py`, `redis_manager.py`, `logging_config.py`, etc.
+- `tests/` -- 285+ tests across 14 test files.
 
 ---
 
@@ -299,14 +290,16 @@ flowchart LR
 ## Notes
 
 - All services expose `/metrics` for Prometheus scraping.
-- Embedding payloads are compact and designed for low‑bandwidth, high‑latency networks.
+- Embedding payloads are compact and designed for low-bandwidth, high-latency networks.
 - WASM builds enable true edge encoding in modern browsers with fallback to cloud when unavailable.
+- All file paths are configurable via `UTS_*` env vars in `utils/constants.py`.
+- Backward-compatible import shims exist for all split modules.
 
 ---
 
 ## Sequence Diagrams
 
-### A) Request Lifecycle (SDK → Coordinator → Decoder → SDK)
+### A) Request Lifecycle (SDK -> Coordinator -> Decoder -> SDK)
 
 ```mermaid
 sequenceDiagram
@@ -476,6 +469,7 @@ flowchart TB
             subgraph SVCs
                 SCoord[Service coordinator]
                 SDec[Service decoder]
+                SEnc[Service encoder]
                 SMon[Service prometheus]
             end
 

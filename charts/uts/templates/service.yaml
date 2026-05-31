@@ -37,3 +37,25 @@ spec:
   selector:
     app.kubernetes.io/name: {{ include "uts.name" . }}-decoder
     app.kubernetes.io/instance: {{ .Release.Name }}
+---
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "uts.fullname" . }}-redis
+  labels:
+    app.kubernetes.io/name: {{ include "uts.name" . }}-redis
+    helm.sh/chart: {{ include "uts.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+      name: redis
+  selector:
+    app.kubernetes.io/name: {{ include "uts.name" . }}-redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

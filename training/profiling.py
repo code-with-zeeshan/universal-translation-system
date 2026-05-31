@@ -11,6 +11,7 @@ import pandas as pd
 import logging
 import time
 from pathlib import Path
+from utils.constants import PROFILING_REPORT_FILENAME
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
 
@@ -202,7 +203,7 @@ class ProfileGuidedTrainer:
     
     def _save_profiling_report(self, results: Dict, trace_path: str):
         """Save detailed profiling report"""
-        report_path = Path(trace_path) / "profiling_report.json"
+        report_path = Path(trace_path) / PROFILING_REPORT_FILENAME
         report_path.parent.mkdir(exist_ok=True, parents=True)
         
         # Prepare serializable report

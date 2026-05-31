@@ -9,6 +9,7 @@ from typing import Optional, Dict, Any, List
 import logging
 
 from encoder.language_adapters import AdapterUniversalEncoder
+from utils.constants import MODELS_ADAPTERS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -85,13 +86,13 @@ class AdapterTrainer:
             # Save best adapter
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                save_path = f'models/adapters/best_{language}_adapter.pt'
+                save_path = f"{MODELS_ADAPTERS_DIR}/best_{language}_adapter.pt"
                 Path(save_path).parent.mkdir(parents=True, exist_ok=True)
                 self.model.save_language_adapter(language, save_path)
                 logger.info(f"  💾 Saved best adapter to {save_path}")
         
         # Save final adapter
-        final_path = f'models/adapters/final_{language}_adapter.pt'
+        final_path = f"{MODELS_ADAPTERS_DIR}/final_{language}_adapter.pt"
         self.model.save_language_adapter(language, final_path)
         
         return {

@@ -9,23 +9,26 @@
 ## 1. Data Preparation
 1. Run the unified data pipeline:
    ```bash
-   python -m data.unified_data_pipeline
+   python -m data.pipeline_orchestrator
+   ```
+   - Or using the unified pipeline CLI:
+   ```bash
+   python scripts/pipeline.py data --config config/base.yaml
    ```
    - Processed files are expected under `data/processed/` (e.g., `train_final.txt`, `val_final.txt`, `test_final.txt`).
-   - The dataset initializes UnifiedVocabularyManager using your loaded configuration; ensure `vocabulary.vocab_dir` and `vocabulary.language_to_pack_mapping` are correctly set in your config.
-2. Create or evolve vocabulary packs if needed:
-   ```bash
-   # Create a unified vocabulary
-   python vocabulary/unified_vocabulary_creator.py
+   - The dataset initializes `UnifiedVocabularyManager` using your config.
 
-   # Or evolve/update an existing vocabulary
-   python vocabulary/evolve_vocabulary.py
+2. Create or update vocabulary packs:
+   ```bash
+   # Using the pipeline CLI
+   python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
    ```
-   - Configure vocabulary dir in your config: `vocabulary.vocab_dir`.
+   - Configure vocabulary dir: `vocabulary.vocab_dir` in config.
+   - See [Vocabulary_Guide.md](Vocabulary_Guide.md) for details.
 
 ## 2. Configuration
-- Base and hardware-aware configs live in `config/`.
-  - Common options: `config/base.yaml`, `config/training_generic_gpu.yaml`, `config/training_generic_multi_gpu.yaml`.
+- Base config: `config/base.yaml`
+- All config models defined in `config/schemas.py` (canonical hierarchy, merged from `config_models.py`).
 - Key fields used by the launcher:
   - **data.processed_dir**: path containing `train_final.txt`, `val_final.txt`, `test_final.txt`
   - **data.cache_dir**: optional dataset cache
@@ -35,30 +38,23 @@
   - **monitoring**: `use_wandb` etc.
 
 ## 3. Training (Intelligent Trainer)
-Use the consolidated launcher with subcommands.
+Use the consolidated launcher with subcommands. The `IntelligentTrainer` class lives in `training/trainer.py`.
 
 - Basic single-GPU/CPU training:
   ```bash
   python -m training.launch train --config config/base.yaml
   ```
 
-- Dynamic config (no YAML):
+- Hardware-aware presets (configured via `training/hardware_profile.py`):
   ```bash
-  python -m training.launch train --config dynamic --dynamic
-  ```
-
-- Hardware-aware presets:
-  ```bash
-  # Examples
-  python -m training.launch train --config config/archived_gpu_configs/training_generic_gpu.yaml
-  python -m training.launch train --config config/archived_gpu_configs/training_t4.yaml
-  python -m training.launch train --config config/archived_gpu_configs/training_a100.yaml
+  # Examples (all use config/base.yaml with hardware-specific overrides)
+  python -m training.launch train --config config/base.yaml
   ```
 
 - Override common hyperparameters from CLI:
   ```bash
   python -m training.launch train \
-    --config config/training_generic_gpu.yaml \
+    --config config/base.yaml \
     --batch-size 64 \
     --learning-rate 6e-4 \
     --num-epochs 10 \
@@ -75,7 +71,7 @@ Use the consolidated launcher with subcommands.
 - Distributed training (DDP) on multiple GPUs:
   ```bash
   python -m training.launch train \
-    --config config/training_generic_multi_gpu.yaml \
+    --config config/base.yaml \
     --distributed \
     --experiment-name exp_multi
   ```
@@ -84,11 +80,11 @@ Use the consolidated launcher with subcommands.
   ```bash
   python -m training.launch evaluate --config config/base.yaml --checkpoint checkpoints/exp_generic_gpu/best_model.pt
   ```
-  - Uses PyTorch distributed with `nccl` backend by default when CUDA is available.
 
 Notes:
-- The launcher automatically sets common optimizations (TF32 for CUDA if available, cuDNN benchmark, etc.).
+- The launcher automatically sets TF32 for CUDA if available, cuDNN benchmark, etc.
 - Checkpoints are saved under `training.checkpoint_dir/<experiment_name>/`.
+- Memory optimization via `training/memory_trainer.py` (MemoryOptimizedTrainer) is activated automatically when memory mode is enabled.
 
 ## 4. Evaluation
 Evaluate any trained checkpoint:
@@ -101,6 +97,7 @@ python -m training.launch evaluate \
   --output-dir results
 ```
 - Results are saved to `<output-dir>/evaluation_results.json`.
+- See `evaluation/evaluator.py` and `evaluation/metrics.py` for details.
 
 ## 5. Profiling and Benchmarking
 Profile a short training run and (optionally) benchmark common modes:
@@ -111,49 +108,41 @@ python -m training.launch profile \
   --benchmark \
   --output-dir profiling
 ```
-- Generates traces and benchmark summaries for configs like mixed precision, large batch, compiled model, etc.
+- See `training/training_analytics.py` and `training/model_profiler.py`.
 
 ## 6. Progressive Training (Tiers)
-- The progressive orchestrator groups languages into tiers and trains in stages.
 - Entry point: `training/progressive_training.py` (programmatic orchestrator).
-  - It will derive tier-specific configs, optionally resume from previous tier checkpoints, and record tier metrics.
-- Typical usage pattern (Python API):
-  ```python
-  from training.progressive_training import ProgressiveTrainingOrchestrator
+```python
+from training.progressive_training import ProgressiveTrainingOrchestrator
 
-  orchestrator = ProgressiveTrainingOrchestrator(
-      base_config_path='config/base.yaml',
-      checkpoint_base_dir='checkpoints/progressive'
-  )
-  # Then call orchestrator methods to run tiers sequentially
-  # (See the file for details; it prepares tier configs and spawns training runs.)
-  ```
+orchestrator = ProgressiveTrainingOrchestrator(
+    base_config_path='config/base.yaml',
+    checkpoint_base_dir='checkpoints/progressive'
+)
+```
 
 ## 7. Bootstrapping From Pretrained (Optional)
-Create initial encoder/decoder weights from pretrained models to warm-start training:
 ```bash
 python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_encoder_from_pretrained('xlm-roberta-base', 'models/encoder/universal_encoder_initial.pt', 1024)"
 python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_decoder_from_mbart('facebook/mbart-large-50', 'models/decoder/universal_decoder_initial.pt')"
 ```
-- Produces:
-  - `models/encoder/universal_encoder_initial.pt`
-  - `models/decoder/universal_decoder_initial.pt`
-- The training launcher automatically loads these if present (see `training/launch.py:initialize_models`).
+- Produces: `models/encoder/universal_encoder_initial.pt`, `models/decoder/universal_decoder_initial.pt`
+- The training launcher automatically loads these if present.
 
 ## 8. Quantization and Export (Post-Training)
 Produce deployment-friendly variants (INT8, FP16, mixed) and optional ONNX/CoreML/TFLite conversions.
 
-- Quantize encoder (A/B tested):
+- Quantize encoder:
 ```bash
-python -c "from training.quantization_pipeline import EncoderQuantizer; q=EncoderQuantizer(); q.create_deployment_versions('checkpoints/exp_generic_gpu/best_model.pt', test_data_path='data/processed/test_final.txt')"
+python -c "from training.encoder_quantizer import EncoderQuantizer; q=EncoderQuantizer(); q.create_deployment_versions('checkpoints/exp_generic_gpu/best_model.pt', test_data_path='data/processed/test_final.txt')"
 ```
-- Outputs additional model files (e.g., `_int8.pt`, `_fp16.pt`, `_mixed.pt`, `_static_int8.pt` when calibration provided) plus a comparison report.
+- See `training/encoder_quantizer.py`, `training/quality_comparator.py`, `training/quantization_common.py`.
 
 - Convert encoder to ONNX:
 ```bash
 python -c "import torch; from training.convert_models import ModelConverter as C; dummy=torch.randint(0,50000,(1,128)); C.pytorch_to_onnx('checkpoints/exp_generic_gpu/best_model.pt','models/export/encoder.onnx', dummy)"
 ```
-- Convert ONNX to CoreML or TFLite (optional):
+- Convert to CoreML or TFLite:
 ```bash
 python -c "from training.convert_models import ModelConverter as C; C.onnx_to_coreml('models/export/encoder.onnx','models/export/encoder.mlpackage')"
 python -c "from training.convert_models import ModelConverter as C; C.onnx_to_tflite('models/export/encoder.onnx','models/export/encoder.tflite')"
@@ -161,14 +150,17 @@ python -c "from training.convert_models import ModelConverter as C; C.onnx_to_tf
 
 ## 9. Monitoring & Logs
 - Logs directory: set via `--log-dir` (default `logs/`).
-- GPU monitoring: `nvidia-smi` (Linux), Task Manager (Windows).
-- Optional Weights & Biases: enable in config (`monitoring.use_wandb: true`).
+- GPU monitoring: `nvidia-smi` (Linux).
+- Optional Weights & Biases: enable in config (`monitoring.use_wandb: true`, default `false`).
+- Metrics via `monitoring/metrics.py` and `monitoring/metrics_collector.py`.
 
 ## 10. Troubleshooting
-- **Missing data files**: Ensure `data/processed/train_final.txt` and `val_final.txt` exist. Re-run `python -m data.unified_data_pipeline`.
-- **Out of memory**: lower `training.batch_size`; enable/keep mixed precision; reduce sequence lengths; try multi-GPU with `--distributed`.
-- **Slow training**: enable `torch.compile` via config; ensure latest CUDA drivers; increase DataLoader workers; verify GPU utilization.
-- **Checkpoint load failures**: confirm path and integrity; use `training.training_validator.TrainingValidator.validate_checkpoint` to inspect.
+- **Missing data files**: Ensure `data/processed/train_final.txt` and `val_final.txt` exist.
+- **Out of memory**: lower `training.batch_size`; enable mixed precision; reduce sequence lengths; try `--distributed`.
+- **Slow training**: enable `torch.compile` via config; ensure latest CUDA drivers; increase DataLoader workers.
+- **Checkpoint load failures**: confirm path and integrity; use `training.training_validator.TrainingValidator.validate_checkpoint`.
 
 ---
-- The old scripts `training/train_universal_system.py` and `training/distributed_train.py` are superseded by the unified launcher `python -m training.launch` with `train`, `evaluate`, and `profile` subcommands.
+
+- The old scripts `training/train_universal_system.py` and `training/distributed_train.py` are superseded by `python -m training.launch`.
+- Backward-compatible shims exist for the split modules: `training.intelligent_trainer` re-exports from `training.trainer`, etc.

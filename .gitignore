@@ -31,6 +31,9 @@ models/fallback/
 *.pt
 *.bin
 
+# Compiled vocabulary packs (build artifacts)
+vocabs/
+
 # Test cache
 .pytest_cache/
 .coverage
@@ -72,9 +75,9 @@ Pods/
 .gradle/
 local.properties
 # RN example
-react-native/UniversalTranslationSDK/example/node_modules/
-react-native/UniversalTranslationSDK/example/android/
-react-native/UniversalTranslationSDK/example/ios/
+sdk/react-native/UniversalTranslationSDK/example/node_modules/
+sdk/react-native/UniversalTranslationSDK/example/android/
+sdk/react-native/UniversalTranslationSDK/example/ios/
 
 # Monitoring
 grafana-data/

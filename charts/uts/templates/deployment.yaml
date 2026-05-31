@@ -21,10 +21,37 @@ spec:
     spec:
       containers:
         - name: coordinator
-          image: "{{ include \"uts.image\" .Values.coordinator.image }}"
+          image: "{{ include "uts.image" .Values.coordinator.image }}"
           imagePullPolicy: {{ .Values.coordinator.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.coordinator.service.port }}
+          env:
+            - name: COORDINATOR_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uts.fullname" . }}-coordinator
+                  key: coordinator-jwt-secret
+            - name: COORDINATOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uts.fullname" . }}-coordinator
+                  key: coordinator-secret
+            - name: COORDINATOR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uts.fullname" . }}-coordinator
+                  key: coordinator-token
+            - name: INTERNAL_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uts.fullname" . }}-coordinator
+                  key: internal-service-token
+            - name: COORDINATOR_HOST
+              value: "0.0.0.0"
+            - name: COORDINATOR_PORT
+              value: {{ .Values.coordinator.service.port | quote }}
+          resources:
+            {{- toYaml .Values.coordinator.resources | nindent 12 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -49,7 +76,100 @@ spec:
     spec:
       containers:
         - name: decoder
-          image: "{{ include \"uts.image\" .Values.decoder.image }}"
+          image: "{{ include "uts.image" .Values.decoder.image }}"
           imagePullPolicy: {{ .Values.decoder.image.pullPolicy }}
           ports:
             - containerPort: {{ .Values.decoder.service.port }}
+          env:
+            - name: DECODER_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uts.fullname" . }}-decoder
+                  key: decoder-jwt-secret
+            - name: API_PORT
+              value: {{ .Values.decoder.service.port | quote }}
+          resources:
+            {{- toYaml .Values.decoder.resources | nindent 12 }}
+---
+{{- if .Values.encoder.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "uts.fullname" . }}-encoder
+  labels:
+    app.kubernetes.io/name: {{ include "uts.name" . }}-encoder
+    helm.sh/chart: {{ include "uts.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "uts.name" . }}-encoder
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "uts.name" . }}-encoder
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: encoder
+          image: "{{ include "uts.image" .Values.encoder.image }}"
+          imagePullPolicy: {{ .Values.encoder.image.pullPolicy }}
+          command: ["sleep", "infinity"]
+          volumeMounts:
+            - name: encoder-artifacts
+              mountPath: /usr/lib
+          resources:
+            {{- toYaml .Values.encoder.resources | nindent 12 }}
+      volumes:
+        - name: encoder-artifacts
+          emptyDir: {}
+{{- end }}
+---
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "uts.fullname" . }}-redis
+  labels:
+    app.kubernetes.io/name: {{ include "uts.name" . }}-redis
+    helm.sh/chart: {{ include "uts.chart" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "uts.name" . }}-redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "uts.name" . }}-redis
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: redis
+          image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+          ports:
+            - containerPort: 6379
+          env:
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uts.fullname" . }}-redis
+                  key: redis-password
+          args:
+            - "--requirepass"
+            - "$(REDISCLI_AUTH)"
+            - "--appendonly"
+            - "yes"
+            - "--maxmemory"
+            - "2gb"
+            - "--maxmemory-policy"
+            - "allkeys-lru"
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+{{- end }}

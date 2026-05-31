@@ -4,6 +4,7 @@ import logging
 from torch.utils.data import DataLoader
 from encoder.train_adapters import AdapterTrainer
 from utils.dataset_classes import ModernParallelDataset # Assuming this is your dataset class
+from utils.constants import DATA_PROCESSED_DIR
 from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
 
 # Use FULL mode for training (needs all features)
@@ -33,7 +34,7 @@ def train_for_domain(
 
     # 3. Create a DataLoader using only the domain-specific data
     # This points to the parallel data file for the domain
-    domain_data_path = f"data/processed/{language}_{domain}_parallel.txt"
+    domain_data_path = f"{DATA_PROCESSED_DIR}/{language}_{domain}_parallel.txt"
     
     domain_dataset = ModernParallelDataset(
         data_path=domain_data_path,

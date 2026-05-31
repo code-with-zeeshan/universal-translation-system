@@ -30,7 +30,6 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         
         # Initialize VocabularyManager
         from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
-        from config.schemas import load_config as load_pydantic_config
         
         # Ensure we have a valid config for the vocab manager
         self.config = config or load_pydantic_config()

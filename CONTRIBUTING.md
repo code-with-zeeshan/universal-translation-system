@@ -17,7 +17,7 @@ Thank you for your interest in contributing!
 3. Make your changes
 4. Add tests if applicable
 5. Ensure all tests pass (`pytest tests/`)
-6. Commit with clear message
+6. Commit with clear message (see `.github/CONVENTIONAL_COMMITS.md`)
 7. Push to your fork
 8. Open a Pull Request
 
@@ -42,16 +42,16 @@ pytest tests/test_encoder.py
 pytest --cov=. tests/
 
 # Web SDK
-cd web/universal-translation-sdk && npm install && npm test
+cd sdk/web/universal-translation-sdk && npm install && npm test
 
 # React Native SDK
-cd react-native/UniversalTranslationSDK && npm install && npm test
+cd sdk/react-native/UniversalTranslationSDK && npm install && npm test
 
 # Android SDK (unit tests)
-cd android/UniversalTranslationSDK && ./gradlew test
+cd sdk/android/UniversalTranslationSDK && ./gradlew test
 
 # iOS SDK (SwiftPM tests)
-cd ios/UniversalTranslationSDK && swift test
+cd sdk/ios/UniversalTranslationSDK && swift test
 ```
 
 ### Publishing (SDKs)
@@ -78,7 +78,16 @@ cp .env.example .env
 # Edit .env with your configuration
 
 # Start services with Docker Compose
-docker-compose up -d
+docker compose --env-file .env up -d
+```
+
+#### Using Role-based Install Script
+```bash
+# Quick development setup
+bash scripts/install.sh --dev
+
+# Full stack (training + serving + coordinator)
+bash scripts/install.sh --all
 ```
 
 #### Manual Setup
@@ -112,7 +121,6 @@ There are two ways to run a decoder node (`universal-decoder-node`):
 
 - **Private/Personal Use:**  
   You may run a decoder node for your own needs or testing without registering it with the project. No further action is needed.
-  > Run the decoder on your own device or cloud for private translation needs and testing. Registration is NOT required if you do not wish to contribute compute power to the project.
 
 - **Public Contribution:**  
   If you wish to contribute compute power to support the Universal Translation System, register your node so it can be added to the global decoder pool and serve requests for all users.
@@ -128,7 +136,7 @@ pip install universal-decoder-node
 universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com" --gpu-type "T4" --capacity 100 --coordinator-url "https://coordinator.example.com"
 
 # Start the decoder service
-universal-decoder-node start --host 0.0.0.0 --port 8000 --workers 4
+universal-decoder-node start --host 0.0.0.0 --port 8001 --workers 4
 ```
 
 #### Option 2: Custom Deploy with Docker
@@ -136,11 +144,11 @@ universal-decoder-node start --host 0.0.0.0 --port 8000 --workers 4
 2. Configure environment variables in `.env` file
 3. Run with Docker Compose:
    ```bash
-   docker-compose up -d decoder
+   docker compose --env-file .env up -d decoder
    ```
 4. Register your node with the coordinator:
    ```bash
-   docker-compose exec decoder universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com"
+   docker compose exec decoder universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com"
    ```
 
 **Decoder Node Requirements**
@@ -156,18 +164,18 @@ universal-decoder-node start --host 0.0.0.0 --port 8000 --workers 4
 
 ### How Encoder and Decoder Communicate
 - **Encoder (Edge/SDK)** encodes text to embeddings on device
-- **Decoder (Cloud Node)** exposes a REST API (e.g., `/decode` endpoint, served by Litserve)
+- **Decoder (Cloud Node)** exposes a REST API (`/decode` endpoint, served by FastAPI/uvicorn)
 - **Communication Protocol**: The encoder sends compressed embeddings (binary) to the decoder's `/decode` endpoint, specifying the target language in the header. The decoder returns the translated text as JSON.
 - **Coordinator** manages the decoder pool, handles load balancing, and monitors health
 - See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/API.md](docs/API.md) for protocol details.
 
-## 🌍 Our Mission
+## Our Mission
 
 To break down language barriers by making high-quality translation accessible on every device, regardless of internet speed or hardware limitations.
 
 We believe communication is a human right, not a luxury.
 
-## 📊 Project Health
+## Project Health
 
 ![Languages Supported](https://img.shields.io/badge/languages-20-brightgreen)
 ![Model Size](https://img.shields.io/badge/encoder%20size-35MB-blue)

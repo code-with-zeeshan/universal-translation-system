@@ -49,7 +49,7 @@ jobs:
           fi
 
           changed_web=false
-          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^web/universal-translation-sdk/' >/dev/null; then
+           if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^sdk/web/universal-translation-sdk/' >/dev/null; then
             changed_web=true
           fi
 
@@ -75,14 +75,14 @@ PY
 
       - name: Install and build
         if: steps.check.outputs.publish_web == 'true'
-        working-directory: web/universal-translation-sdk
+        working-directory: sdk/web/universal-translation-sdk
         run: |
           npm install
           npm run build
 
       - name: Publish to NPM
         if: steps.check.outputs.publish_web == 'true'
-        working-directory: web/universal-translation-sdk
+        working-directory: sdk/web/universal-translation-sdk
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |

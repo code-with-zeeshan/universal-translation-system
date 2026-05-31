@@ -51,17 +51,17 @@ from utils.security import validate_model_source, safe_load_model
 
 # --- Configuration and Constants ---
 from utils.logging_config import setup_logging, get_logger
-setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
 # Use structured logger adapter to encourage structured fields usage
 logger = get_logger("coordinator", context={"component": "coordinator"})
 
 # Configuration paths
-POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join("configs", "decoder_pool.json"))
+POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join(CONFIGS_DIR, "decoder_pool.json"))
 
 # Version information
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 # Shared API version for surface compatibility
-from utils.constants import API_VERSION
+from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, LOG_DIR, CONFIGS_DIR, VERSION_CONFIG_FILENAME
 
 # Security keys and tokens
 from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runtime_secrets
@@ -272,7 +272,7 @@ async def _startup_api_policy():
         import json
         from pathlib import Path
         # 1) Ensure API_VERSION matches core.apiVersion
-        cfg = json.loads(Path("version-config.json").read_text(encoding="utf-8"))
+        cfg = json.loads(Path(VERSION_CONFIG_FILENAME).read_text(encoding="utf-8"))
         core_api = str(cfg.get("core", {}).get("apiVersion", ""))
         if not core_api:
             raise RuntimeError("core.apiVersion missing in version-config.json")
@@ -283,7 +283,6 @@ async def _startup_api_policy():
         if manifest.exists():
             data = json.loads(manifest.read_text(encoding="utf-8"))
             fmt = str(data.get("format_version", "")).split(".")[0]
-            from utils.constants import SUPPORTED_VOCAB_FORMAT
             if fmt and fmt != str(SUPPORTED_VOCAB_FORMAT).split(".")[0]:
                 raise RuntimeError(
                     f"Unsupported vocabulary format {data.get('format_version')} (supported major: {SUPPORTED_VOCAB_FORMAT})"
@@ -304,6 +303,17 @@ JWT_PUBLIC_KEY_PATH = os.environ.get("JWT_PUBLIC_KEY_PATH")
 JWT_PRIVATE_KEY = os.environ.get("JWT_PRIVATE_KEY")
 JWT_KEY_IDS = os.environ.get("JWT_KEY_IDS")  # optional: '||'-separated list matching keys order
 JWKS_KEYS: List[Dict[str, Any]] = []  # populated at startup when JWT_PUBLIC_KEY exists
+_JWKS_LOCK = threading.RLock()
+
+def _get_jwks_keys():
+    with _JWKS_LOCK:
+        return JWKS_KEYS
+
+def _set_jwks_keys(keys):
+    with _JWKS_LOCK:
+        global JWKS_KEYS
+        JWKS_KEYS = keys
+
 security = HTTPBearer()
 
 def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -326,8 +336,9 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
             unverified_header = jwt.get_unverified_header(token)
             kid = unverified_header.get("kid")
             key_to_use = None
-            if kid and JWKS_KEYS:
-                for k in JWKS_KEYS:
+            keys = _get_jwks_keys()
+            if kid and keys:
+                for k in keys:
                     if k.get("kid") == kid:
                         # Reconstruct RSA public key from JWK n,e
                         n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
@@ -820,10 +831,11 @@ class DecoderPool:
 
     async def check_health(self):
         async with self.lock:
-            # Health check logic now iterates over self.nodes
-            tasks = [self._check_single_node(node) for node in self.nodes]
-            await asyncio.gather(*tasks)
-            
+            nodes_copy = list(self.nodes)
+        tasks = [self._check_single_node(node) for node in nodes_copy]
+        await asyncio.gather(*tasks)
+        
+        async with self.lock:
             active_count = sum(1 for n in self.nodes if n.get('healthy'))
             decoder_active.set(active_count)
             for node in self.nodes:
@@ -861,8 +873,9 @@ class DecoderPool:
             node['hot_adapters'] = []
             logger.warning(f"Health check failed for node {node['node_id']}: {e}")
 
-    def get_healthy_decoders(self) -> List[Dict]:
-        return [n for n in self.nodes if n.get('healthy')]
+    async def get_healthy_decoders(self) -> List[Dict]:
+        async with self.lock:
+            return [n for n in self.nodes if n.get('healthy')]
 
     async def add_decoder(self, node: Dict):
         async with self.lock:
@@ -899,6 +912,8 @@ class DecoderPool:
                 "nodes": self.nodes,
                 "ab_tests": self.ab_tests
             }, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save decoder pool to disk: {e}")
 
     def get_nodes_by_tags(self, tags: List[str], nodes_list: List[Dict]) -> List[Dict]:
         """Filters a list of nodes to find those matching ALL given tags."""
@@ -925,7 +940,7 @@ class DecoderPool:
                     break        
 
     # --- THE CORE A/B LOGIC ---
-    def pick_best_node(
+    async def pick_best_node(
         self, source_lang: str, target_lang: str, 
         adapter_name: str, 
         is_zero_shot: bool = False
@@ -937,7 +952,8 @@ class DecoderPool:
         1. Healthy node with the adapter already loaded (least loaded among them).
         2. If none, any healthy node (least loaded among them).
         """
-        healthy_nodes = self.get_healthy_decoders()
+        async with self.lock:
+            healthy_nodes = [n for n in self.nodes if n.get('healthy')]
         if not healthy_nodes:
             return None
 
@@ -1080,10 +1096,10 @@ async def startup_event():
 
     # Build JWKS set using shared utility
     from utils.jwks_utils import build_jwks_from_env
-    global JWKS_KEYS
-    JWKS_KEYS = build_jwks_from_env(component="coordinator", env=os.environ)
-    if JWKS_KEYS:
-        logger.info("JWKS initialized with KIDs: " + ", ".join([k["kid"] for k in JWKS_KEYS]))
+    _set_jwks_keys(build_jwks_from_env(component="coordinator", env=os.environ))
+    keys = _get_jwks_keys()
+    if keys:
+        logger.info("JWKS initialized with KIDs: " + ", ".join([k["kid"] for k in keys]))
     else:
         logger.warning("JWT public keys provided but no valid RSA keys parsed for JWKS")
 
@@ -1094,17 +1110,16 @@ async def startup_event():
     # Background job to periodically reload JWT_PUBLIC_KEY/JWT_PUBLIC_KEY_PATH for rotation without restart
     async def jwks_reload_loop():
         from utils.jwks_utils import build_jwks_from_env, diff_kids
-        global JWKS_KEYS
-        last_keys = JWKS_KEYS
+        last_keys = _get_jwks_keys()
         while True:
             try:
                 new_keys = build_jwks_from_env(component="coordinator", env=os.environ)
                 if new_keys:
                     added, removed = diff_kids(last_keys, new_keys)
-                    JWKS_KEYS = new_keys
+                    _set_jwks_keys(new_keys)
                     if added or removed:
                         logger.info(f"Coordinator JWKS changed. Added: {added or '[]'}, Removed: {removed or '[]'}")
-                    last_keys = new_keys
+                    last_keys = _get_jwks_keys()
             except Exception as ex:
                 logger.debug(f"JWKS reload loop error: {ex}")
             await asyncio.sleep(300)  # reload every 5 minutes
@@ -1157,7 +1172,7 @@ async def revoke_token(jti: str = Form(...), session_token: str | None = Cookie(
 async def get_status():
     """Get the current status of the decoder pool."""
     with tracer.start_as_current_span("get_status"):
-        healthy_decoders = pool.get_healthy_decoders()
+        healthy_decoders = await pool.get_healthy_decoders()
         return {
             "model_version": MODEL_VERSION,
             "decoder_pool_size": len(pool.nodes),
@@ -1198,7 +1213,7 @@ async def decode_proxy(
         adapter_name = f"{x_target_language}_{x_domain}" if x_domain else x_target_language
 
         # New A/B aware intelligent picker
-        node = pool.pick_best_node(x_source_language, x_target_language, adapter_name)
+        node = await pool.pick_best_node(x_source_language, x_target_language, adapter_name)
 
         if not node:
             requests_errors.labels(endpoint='/api/decode').inc()
@@ -1237,7 +1252,7 @@ async def handle_zero_shot_request(request: Request, source_lang: str, target_la
     source_adapter_name, target_adapter_name = get_pivot_adapters(source_lang, target_lang, domain)
     
     # 2. Pick a healthy, low-load node to perform the composition
-    node = pool.pick_best_node(source_lang, target_lang, "", is_zero_shot=True)
+    node = await pool.pick_best_node(source_lang, target_lang, "", is_zero_shot=True)
     if not node:
         raise HTTPException(status_code=503, detail="No healthy decoders available for zero-shot task.")
 
@@ -1372,8 +1387,9 @@ async def login(token: str = Form(...)):
         if private_key:
             # Try to select the first JWKS kid if we have any
             headers = {"alg": "RS256"}
-            if JWKS_KEYS:
-                headers["kid"] = JWKS_KEYS[0]["kid"]
+            keys = _get_jwks_keys()
+            if keys:
+                headers["kid"] = keys[0]["kid"]
             session_token = jwt.encode(claims, private_key, algorithm="RS256", headers=headers)
         else:
             session_token = jwt.encode(claims, SECRET_KEY, algorithm="HS256")
@@ -1391,7 +1407,7 @@ async def logout():
 @app.get("/.well-known/jwks.json")
 async def jwks():
     # Public discovery of RS256 keys for verifiers
-    return JSONResponse({"keys": JWKS_KEYS})
+    return JSONResponse({"keys": _get_jwks_keys()})
 
 # --- Probe & Metrics Routers ---
 probe_router = APIRouter(tags=["Probes"])
@@ -1409,7 +1425,7 @@ async def health():
     try:
         from pathlib import Path
         import json
-        vc = json.loads(Path('version-config.json').read_text(encoding='utf-8'))
+        vc = json.loads(Path(VERSION_CONFIG_FILENAME).read_text(encoding='utf-8'))
         core = vc.get('core', {})
         version = core.get('version')
         api_version = core.get('apiVersion')
@@ -1424,12 +1440,12 @@ async def ready():
     version = load_version_info()
 
     # JWKS required when RS256 configured via JWT_PUBLIC_KEY or JWT_PUBLIC_KEY_PATH
-    jwks_ok = jwks_readiness(env=os.environ, jwks_keys=JWKS_KEYS)
+    jwks_ok = jwks_readiness(env=os.environ, jwks_keys=_get_jwks_keys())
 
     # Decoder pool state (informational)
     try:
         total_nodes = len(pool.nodes)
-        healthy_nodes = len(pool.get_healthy_decoders())
+        healthy_nodes = len(await pool.get_healthy_decoders())
     except Exception:
         total_nodes = healthy_nodes = 0
 

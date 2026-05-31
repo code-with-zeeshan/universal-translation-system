@@ -50,7 +50,7 @@ jobs:
           fi
 
           changed_rn=false
-          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^react-native/UniversalTranslationSDK/' >/dev/null; then
+           if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^sdk/react-native/UniversalTranslationSDK/' >/dev/null; then
             changed_rn=true
           fi
 
@@ -75,11 +75,11 @@ PY
       - name: Lint Podspec
         if: steps.check.outputs.publish_pod == 'true'
         run: |
-          pod lib lint react-native/UniversalTranslationSDK/universal-translation-sdk.podspec --allow-warnings
+          pod lib lint sdk/react-native/UniversalTranslationSDK/universal-translation-sdk.podspec --allow-warnings
 
       - name: Push to trunk
         if: steps.check.outputs.publish_pod == 'true'
         env:
           COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
         run: |
-          pod trunk push react-native/UniversalTranslationSDK/universal-translation-sdk.podspec --allow-warnings --skip-tests
+          pod trunk push sdk/react-native/UniversalTranslationSDK/universal-translation-sdk.podspec --allow-warnings --skip-tests

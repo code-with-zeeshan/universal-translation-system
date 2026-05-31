@@ -18,17 +18,17 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
       - name: Set version
-        working-directory: web/universal-translation-sdk
+        working-directory: sdk/web/universal-translation-sdk
         run: |
           npm version ${{ github.event.inputs.release_version }} --no-git-tag-version
       - name: Install deps
-        working-directory: web/universal-translation-sdk
+        working-directory: sdk/web/universal-translation-sdk
         run: npm install
       - name: Build
-        working-directory: web/universal-translation-sdk
+        working-directory: sdk/web/universal-translation-sdk
         run: npm run build
       - name: Publish
-        working-directory: web/universal-translation-sdk
+        working-directory: sdk/web/universal-translation-sdk
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public

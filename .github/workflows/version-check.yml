@@ -9,8 +9,8 @@ on:
       - '**/setup.py'
       - '**/*.podspec'
       - 'universal-decoder-node/pyproject.toml'
-      - 'web/universal-translation-sdk/package.json'
-      - 'react-native/UniversalTranslationSDK/package.json'
+      - 'sdk/web/universal-translation-sdk/package.json'
+      - 'sdk/react-native/UniversalTranslationSDK/package.json'
 
 jobs:
   check-versions:
@@ -50,7 +50,7 @@ jobs:
         errors = []
         
         # Android SDK
-        build_gradle = Path('android/UniversalTranslationSDK/build.gradle')
+        build_gradle = Path('sdk/android/UniversalTranslationSDK/build.gradle')
         if build_gradle.exists():
             content = build_gradle.read_text(encoding='utf-8')
             match = re.search(r'versionName\s+\"([^\"]+)\"', content)
@@ -61,7 +61,7 @@ jobs:
                     errors.append(f'Android: {file_version} != {config_version}')
         
         # iOS podspec
-        podspec = Path('ios/UniversalTranslationSDK.podspec')
+        podspec = Path('sdk/ios/UniversalTranslationSDK.podspec')
         if podspec.exists():
             content = podspec.read_text(encoding='utf-8')
             match = re.search(r"s\.version\s*=\s*'([^']+)'", content)
@@ -94,7 +94,7 @@ jobs:
                     errors.append(f'Python pyproject.toml (decoder-node): {file_version} != {config_version}')
         
         # Web SDK package.json
-        web_pkg = Path('web/universal-translation-sdk/package.json')
+        web_pkg = Path('sdk/web/universal-translation-sdk/package.json')
         if web_pkg.exists():
             import json as _json
             pkg = _json.loads(web_pkg.read_text(encoding='utf-8'))
@@ -104,7 +104,7 @@ jobs:
                 errors.append(f'Web SDK: {file_version} != {config_version}')
         
         # React Native SDK package.json
-        rn_pkg = Path('react-native/UniversalTranslationSDK/package.json')
+        rn_pkg = Path('sdk/react-native/UniversalTranslationSDK/package.json')
         if rn_pkg.exists():
             import json as _json
             pkg = _json.loads(rn_pkg.read_text(encoding='utf-8'))

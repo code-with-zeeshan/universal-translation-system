@@ -1,0 +1,59 @@
+# docker/Dockerfile.cloud — Cloud decoder FastAPI service
+# Multi-stage build for minimal production image
+
+# Stage 1: Python dependencies
+FROM python:3.10-slim AS builder
+
+WORKDIR /app
+
+COPY requirements/base.txt requirements/base.txt
+COPY requirements/serve.txt requirements/serve.txt
+COPY requirements/decoder.txt requirements/decoder.txt
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+        -r requirements/base.txt \
+        -r requirements/serve.txt \
+        -r requirements/decoder.txt
+
+# Stage 2: Runtime
+FROM python:3.10-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN adduser --disabled-password --gecos '' appuser
+
+WORKDIR /app
+
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+COPY cloud_decoder/ cloud_decoder/
+COPY utils/ utils/
+COPY vocabulary/ vocabulary/
+COPY monitoring/ monitoring/
+COPY config/ config/
+COPY version-config.json .
+
+RUN chown -R appuser:appuser /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000 \
+    API_WORKERS=1 \
+    OMP_NUM_THREADS=4 \
+    TOKENIZERS_PARALLELISM=false
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -fsS http://localhost:${API_PORT:-8000}/health || exit 1
+
+USER appuser
+
+ENTRYPOINT ["uvicorn", "cloud_decoder.optimized_decoder:app", "--host", "0.0.0.0", "--port", "8000"]
+# Override port via API_PORT env var (default 8000)

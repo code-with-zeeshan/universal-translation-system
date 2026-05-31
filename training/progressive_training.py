@@ -4,21 +4,17 @@ import torch.multiprocessing as mp
 import yaml
 import json
 import logging
-import shutil
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 import time
-import tempfile
-import os
-import sys
 from datetime import datetime
 from dataclasses import make_dataclass
 
-from utils.gpu_utils import optimize_gpu_memory, get_gpu_memory_info
+from utils.gpu_utils import optimize_gpu_memory
 from utils.shutdown_handler import GracefulShutdown
+from utils.constants import MODELS_ENCODER_DIR, MODELS_DECODER_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, LOG_DIR
 from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
-from training.intelligent_trainer import IntelligentTrainer
 from encoder.universal_encoder import UniversalEncoder
 from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
 from utils.dataset_classes import ModernParallelDataset
@@ -47,39 +43,39 @@ class ProgressiveTrainingOrchestrator:
         with open(self.base_config_path, 'r') as f:
             self.base_config = yaml.safe_load(f)
         
-        # Define language tiers
+        # Define language tiers (progressive curriculum)
         self.language_tiers = {
             'tier1': {
                 'languages': ['en', 'es', 'fr', 'de'],
-                'reason': 'High-resource Indo-European',
-                'epochs': 10,
+                'reason': 'High-resource Indo-European (foundation)',
+                'epochs': 3,
                 'lr': 5e-4,
                 'batch_size': 64,
-                'warmup_steps': 2000
+                'warmup_steps': 1000
             },
             'tier2': {
                 'languages': ['zh', 'ja', 'ru', 'pt', 'it'],
                 'reason': 'Major languages, different scripts',
-                'epochs': 8,
+                'epochs': 2,
                 'lr': 3e-4,
                 'batch_size': 48,
-                'warmup_steps': 1500
+                'warmup_steps': 500
             },
             'tier3': {
                 'languages': ['ar', 'hi', 'ko', 'nl', 'pl'],
                 'reason': 'Medium-resource, diverse',
-                'epochs': 6,
+                'epochs': 2,
                 'lr': 2e-4,
                 'batch_size': 32,
-                'warmup_steps': 1000
+                'warmup_steps': 300
             },
             'tier4': {
                 'languages': ['tr', 'th', 'vi', 'uk', 'id', 'sv'],
                 'reason': 'Lower-resource languages',
-                'epochs': 4,
+                'epochs': 1,
                 'lr': 1e-4,
                 'batch_size': 24,
-                'warmup_steps': 500
+                'warmup_steps': 200
             }
         }
         
@@ -212,8 +208,8 @@ class ProgressiveTrainingOrchestrator:
         else:
             logger.info("No previous tier checkpoint found. Checking for bootstrapped models...")
             # --- ADDED: Load bootstrapped models if they exist ---
-            bootstrapped_encoder_path = Path('models/encoder/universal_encoder_initial.pt')
-            bootstrapped_decoder_path = Path('models/decoder/universal_decoder_initial.pt')
+            bootstrapped_encoder_path = Path(f"{MODELS_ENCODER_DIR}/universal_encoder_initial.pt")
+            bootstrapped_decoder_path = Path(f"{MODELS_DECODER_DIR}/universal_decoder_initial.pt")
 
             if bootstrapped_encoder_path.exists():
                 logger.info(f"Found bootstrapped encoder at {bootstrapped_encoder_path}. Loading weights...")
@@ -236,8 +232,8 @@ class ProgressiveTrainingOrchestrator:
         # Load datasets based on the tier's language configuration
         # This is a simplified example; in a real scenario, you would filter the main dataset
         # or load tier-specific data files.
-        train_data_path = Path(config_dict['data']['processed_dir']) / 'train_final.txt'
-        val_data_path = Path(config_dict['data']['processed_dir']) / 'val_final.txt'
+        train_data_path = Path(config_dict['data']['processed_dir']) / TRAIN_FINAL_FILENAME
+        val_data_path = Path(config_dict['data']['processed_dir']) / VAL_FINAL_FILENAME
 
         # --- MODIFIED: Filter dataset by active languages for the tier ---
         active_languages = tier_config.get('languages')
@@ -315,7 +311,7 @@ class ProgressiveTrainingOrchestrator:
         
         # Find best checkpoint from this tier
         tier_checkpoint_dir = self.checkpoint_base_dir / tier_name
-        checkpoints = list(tier_checkpoint_dir.glob("best_model.pt"))
+        checkpoints = list(tier_checkpoint_dir.glob(BEST_MODEL_FILENAME))
         
         if checkpoints:
             result['best_checkpoint'] = str(checkpoints[0])
@@ -494,7 +490,7 @@ def main():
     
     # Setup logging
     from utils.logging_config import setup_logging
-    setup_logging(log_dir="logs/progressive_training", log_level="INFO")
+    setup_logging(log_dir=f"{LOG_DIR}/progressive_training", log_level="INFO")
     
     # Parse arguments
     import argparse

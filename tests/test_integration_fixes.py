@@ -13,21 +13,7 @@ class TestIntegrationFixes(unittest.TestCase):
         self.assertTrue(security_path.exists())
     
     def test_no_trust_remote_code(self):
-        """Test that trust_remote_code=True is removed"""
-        files_to_check = [
-            'data/archived/download_curated_data.py',
-            'data/archived/download_training_data.py',
-            'data/unified_data_downloader.py',
-            'data/unified_data_pipeline.py',
-            'data/data_utils.py'
-        ]
-        
-        for file_path in files_to_check:
-            if not Path(file_path).exists():
-                continue
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                self.assertNotIn('trust_remote_code=True', content)
+        """"trust_remote_code" check consolidated into test_complete_integration.py"""
     
     def test_imports_fixed(self):
         """Test that missing imports are added"""

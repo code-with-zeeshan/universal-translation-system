@@ -164,8 +164,8 @@ class VersionManager:
             # Update Android SDK Gradle files in both standalone and React Native module paths
             version_code = self.config['components'][component]['versionCode']
             gradle_paths = [
-                self.root_dir / 'android' / 'UniversalTranslationSDK' / 'build.gradle',
-                self.root_dir / 'react-native' / 'UniversalTranslationSDK' / 'android' / 'build.gradle',
+                self.root_dir / 'sdk' / 'android' / 'UniversalTranslationSDK' / 'build.gradle',
+                self.root_dir / 'sdk' / 'react-native' / 'UniversalTranslationSDK' / 'android' / 'build.gradle',
             ]
             for gradle_path in gradle_paths:
                 if gradle_path.exists():
@@ -187,7 +187,7 @@ class VersionManager:
                 
         elif component == 'ios-sdk':
             # Update podspec
-            podspec = self.root_dir / 'ios' / 'UniversalTranslationSDK.podspec'
+            podspec = self.root_dir / 'sdk' / 'ios' / 'UniversalTranslationSDK.podspec'
             if podspec.exists():
                 content = podspec.read_text()
                 content = re.sub(
@@ -196,10 +196,10 @@ class VersionManager:
                     content
                 )
                 podspec.write_text(content)
-                updates['ios/podspec'] = version
+                updates['sdk/ios/podspec'] = version
                 
             # Update Package.swift
-            package_swift = self.root_dir / 'ios' / 'UniversalTranslationSDK' / 'Package.swift'
+            package_swift = self.root_dir / 'sdk' / 'ios' / 'UniversalTranslationSDK' / 'Package.swift'
             if package_swift.exists():
                 content = package_swift.read_text()
                 # Add version comment
@@ -214,7 +214,7 @@ class VersionManager:
                     lines.insert(1, f'// Version: {version}')
                     content = '\n'.join(lines)
                 package_swift.write_text(content)
-                updates['ios/Package.swift'] = version
+                updates['sdk/ios/Package.swift'] = version
                 
         elif component == 'python-package':
             # Update setup.py
@@ -243,21 +243,21 @@ class VersionManager:
         
         elif component == 'web-sdk':
             # Update web SDK package.json
-            pkg_path = self.root_dir / 'web' / 'universal-translation-sdk' / 'package.json'
+            pkg_path = self.root_dir / 'sdk' / 'web' / 'universal-translation-sdk' / 'package.json'
             if pkg_path.exists():
                 pkg = json.loads(pkg_path.read_text(encoding='utf-8'))
                 pkg['version'] = version
                 pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding='utf-8')
-                updates['web/package.json'] = version
+                updates['sdk/web/package.json'] = version
         
         elif component == 'react-native-sdk':
             # Update RN SDK package.json (podspec reads version from package.json)
-            pkg_path = self.root_dir / 'react-native' / 'UniversalTranslationSDK' / 'package.json'
+            pkg_path = self.root_dir / 'sdk' / 'react-native' / 'UniversalTranslationSDK' / 'package.json'
             if pkg_path.exists():
                 pkg = json.loads(pkg_path.read_text(encoding='utf-8'))
                 pkg['version'] = version
                 pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding='utf-8')
-                updates['react-native/package.json'] = version
+                updates['sdk/react-native/package.json'] = version
         
         elif component == 'root-python':
             # Update root setup.py
@@ -424,7 +424,7 @@ class VersionManager:
         # Web SDK
         web_cfg = self.config['components'].get('web-sdk', {})
         web_expected = web_cfg.get('version')
-        web_pkg = root / 'web' / 'universal-translation-sdk' / 'package.json'
+        web_pkg = root / 'sdk' / 'web' / 'universal-translation-sdk' / 'package.json'
         web_found = _get_version_from_package_json(web_pkg)
         results['web-sdk/package.json'] = (web_found == web_expected)
         ok = ok and results['web-sdk/package.json']
@@ -432,17 +432,17 @@ class VersionManager:
         # React Native SDK (package.json)
         rn_cfg = self.config['components'].get('react-native-sdk', {})
         rn_expected = rn_cfg.get('version')
-        rn_pkg = root / 'react-native' / 'UniversalTranslationSDK' / 'package.json'
+        rn_pkg = root / 'sdk' / 'react-native' / 'UniversalTranslationSDK' / 'package.json'
         rn_found = _get_version_from_package_json(rn_pkg)
-        results['react-native/package.json'] = (rn_found == rn_expected)
-        ok = ok and results['react-native/package.json']
+        results['sdk/react-native/package.json'] = (rn_found == rn_expected)
+        ok = ok and results['sdk/react-native/package.json']
 
         # RN Podspec references package["version"] (structural check)
-        rn_podspec = root / 'react-native' / 'UniversalTranslationSDK' / 'universal-translation-sdk.podspec'
+        rn_podspec = root / 'sdk' / 'react-native' / 'UniversalTranslationSDK' / 'universal-translation-sdk.podspec'
         if rn_podspec.exists():
             txt = rn_podspec.read_text(encoding='utf-8')
-            results['react-native/podspec'] = ('s.version' in txt and 'package["version"]' in txt)
-            ok = ok and results['react-native/podspec']
+            results['sdk/react-native/podspec'] = ('s.version' in txt and 'package["version"]' in txt)
+            ok = ok and results['sdk/react-native/podspec']
 
         # Root Python package
         root_setup = root / 'setup.py'
@@ -463,15 +463,15 @@ class VersionManager:
         ok = ok and results['universal-decoder-node/setup.py'] and results['universal-decoder-node/pyproject.toml']
 
         # iOS SDK podspec (if present)
-        ios_podspec = root / 'ios' / 'UniversalTranslationSDK.podspec'
+        ios_podspec = root / 'sdk' / 'ios' / 'UniversalTranslationSDK.podspec'
         if ios_podspec.exists():
             ios_expected = self.config['components'].get('ios-sdk', {}).get('version')
             txt = ios_podspec.read_text(encoding='utf-8')
             m = re.search(r"s\.version\s*=\s*'([^']+)'", txt)
             ios_found = m.group(1) if m else None
             if ios_expected:
-                results['ios/podspec'] = (ios_found == ios_expected)
-                ok = ok and results['ios/podspec']
+                results['sdk/ios/podspec'] = (ios_found == ios_expected)
+                ok = ok and results['sdk/ios/podspec']
 
         results['__all__'] = ok
         return results

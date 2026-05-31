@@ -126,7 +126,6 @@ class APIKeyManager:
         Returns:
             The generated API key
         """
-        import secrets
         api_key = secrets.token_hex(16)
         
         expiry_time = int(time.time()) + expiry if expiry else None

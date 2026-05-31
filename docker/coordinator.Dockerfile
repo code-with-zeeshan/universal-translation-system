@@ -1,48 +1,55 @@
-FROM python:3.9-slim
+# docker/coordinator.Dockerfile — Coordinator service
+# Multi-stage build for minimal production image
+
+# Stage 1: Python dependencies
+FROM python:3.10-slim AS builder
 
 WORKDIR /app
 
-# Install system dependencies
+COPY requirements/base.txt requirements/base.txt
+COPY requirements/serve.txt requirements/serve.txt
+COPY requirements/coordinator.txt requirements/coordinator.txt
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+        -r requirements/base.txt \
+        -r requirements/serve.txt \
+        -r requirements/coordinator.txt
+
+# Stage 2: Runtime
+FROM python:3.10-slim
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements/base.txt /app/requirements/base.txt
-COPY requirements/serve.txt /app/requirements/serve.txt
-COPY requirements/coordinator.txt /app/requirements/coordinator.txt
+RUN adduser --disabled-password --gecos '' appuser
 
-# Install Python dependencies and add non-root user
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r /app/requirements/base.txt -r /app/requirements/serve.txt -r /app/requirements/coordinator.txt && \
-    useradd -ms /bin/bash appuser
+WORKDIR /app
 
-# Copy application code
-COPY . .
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Create necessary directories
-RUN mkdir -p /app/logs /app/config \
-    && chown -R appuser /app
+COPY coordinator/ coordinator/
+COPY utils/ utils/
+COPY config/ config/
+COPY version-config.json .
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV COORDINATOR_HOST=0.0.0.0
-ENV COORDINATOR_PORT=5100
-ENV COORDINATOR_WORKERS=1
-ENV COORDINATOR_TITLE="Universal Translation Coordinator"
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+RUN mkdir -p /app/logs /app/config && chown -R appuser:appuser /app
 
-# Expose port
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    COORDINATOR_HOST=0.0.0.0 \
+    COORDINATOR_PORT=5100 \
+    COORDINATOR_WORKERS=1
+
 EXPOSE 5100
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:5100/health || exit 1
+    CMD curl -fsS http://localhost:${COORDINATOR_PORT:-5100}/health || exit 1
 
-# Drop privileges
 USER appuser
 
-# Run the coordinator
-CMD ["uvicorn", "coordinator.advanced_coordinator:app", "--host", "0.0.0.0", "--port", "5100"]
+ENTRYPOINT ["uvicorn", "coordinator.advanced_coordinator:app", "--host", "0.0.0.0", "--port", "5100"]
+# Override port via COORDINATOR_PORT env var (default 5100)

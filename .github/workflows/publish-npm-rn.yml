@@ -5,7 +5,7 @@ on:
     tags:
       - 'rn-v*'
     paths:
-      - 'react-native/UniversalTranslationSDK/**'
+      - 'sdk/react-native/UniversalTranslationSDK/**'
       - '.github/workflows/publish-npm-rn.yml'
   workflow_dispatch:
 
@@ -22,14 +22,14 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install deps and prepare
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         run: |
           npm ci
           npm run prepare --if-present
 
       - name: Publish (stable)
         if: startsWith(github.ref, 'refs/tags/rn-v') && !contains(github.ref_name, '-alpha') && !contains(github.ref_name, '-beta') && !contains(github.ref_name, '-rc')
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -37,7 +37,7 @@ jobs:
 
       - name: Publish (pre-release tag)
         if: startsWith(github.ref, 'refs/tags/rn-v') && (contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc'))
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |

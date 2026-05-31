@@ -2,13 +2,20 @@
 
 This guide covers publishing the Android and iOS SDKs, and linking steps for React Native.
 
+All SDKs reside under the `sdk/` directory:
+- `sdk/android/UniversalTranslationSDK/`
+- `sdk/ios/UniversalTranslationSDK/`
+- `sdk/flutter/universal_translation_sdk/`
+- `sdk/react-native/UniversalTranslationSDK/`
+- `sdk/web/universal-translation-sdk/`
+
 ---
 
 ## Android: Gradle (Maven Publishing)
 
-### 1) Add Maven Publishing to your SDK module
+### 1) Add Maven Publishing
 ```gradle
-// sdk-module/build.gradle
+// sdk/android/UniversalTranslationSDK/build.gradle
 plugins {
   id 'com.android.library'
   id 'maven-publish'
@@ -21,52 +28,32 @@ publishing {
       groupId = 'com.example'
       artifactId = 'universal-translation-sdk'
       version = '1.0.0'
-
       pom {
         name = 'Universal Translation SDK (Android)'
         description = 'Android encoder client for Universal Translation System'
-        licenses {
-          license {
-            name = 'Apache-2.0'
-            url = 'https://www.apache.org/licenses/LICENSE-2.0'
-          }
-        }
+        licenses { license { name = 'Apache-2.0' } }
       }
     }
   }
   repositories {
-    mavenLocal() // for local testing
-    // maven {
-    //   url = uri("https://maven.your-org.com/releases")
-    //   credentials { username = findProperty('mavenUser'); password = findProperty('mavenPass') }
-    // }
+    mavenLocal()
   }
 }
 ```
 
-### 2) Build & publish locally
+### 2) Build & publish
 ```bash
-./gradlew :sdk-module:assembleRelease :sdk-module:publishToMavenLocal
-```
-
-### 3) Consume from an app
-```gradle
-repositories {
-  mavenLocal()
-  mavenCentral()
-}
-
-dependencies {
-  implementation 'com.example:universal-translation-sdk:1.0.0'
-}
+cd sdk/android/UniversalTranslationSDK
+./gradlew assembleRelease publishToMavenLocal
 ```
 
 ---
 
 ## iOS: CocoaPods Podspec & SPM
 
-### 1) Podspec template
+### 1) Podspec
 ```ruby
+# sdk/ios/UniversalTranslationSDK/UniversalTranslationSDK.podspec
 Pod::Spec.new do |s|
   s.name             = 'UniversalTranslationSDK'
   s.version          = '1.0.0'
@@ -77,90 +64,35 @@ Pod::Spec.new do |s|
   s.source           = { :git => 'https://github.com/code-with-zeeshan/universal-translation-system.git', :tag => s.version }
   s.platform         = :ios, '13.0'
   s.swift_version    = '5.7'
-  s.source_files     = 'ios/UniversalTranslationSDK/Sources/**/*.{swift,h,mm}'
-  s.public_header_files = 'ios/UniversalTranslationSDK/Sources/**/*.h'
-  s.requires_arc     = true
-  s.frameworks       = 'Foundation'
-
-  # If linking C++ encoder core
-  # s.vendored_libraries = 'ios/UniversalTranslationSDK/Libraries/libuniversal_encoder_core.a'
+  s.source_files     = 'Sources/**/*.{swift,h,mm}'
+  s.public_header_files = 'Sources/**/*.h'
 end
 ```
-
-### 2) Publish
-- Push to a spec repo (internal or CocoaPods trunk)
-- Or consume via `:path` during development:
-```ruby
-pod 'UniversalTranslationSDK', :path => '../ios/UniversalTranslationSDK'
-```
-
-### 3) Swift Package Manager
-- Tag Git repo (e.g., `1.0.0`) and add it in Xcode > Package Dependencies.
 
 ---
 
 ## Web SDK: npm Publishing
 
-### Package scope and name
-- Prefer a scoped name for organization packages: `@code-with-zeeshan/universal-translation-sdk`
-- Ensure `name`, `version`, `license`, `repository`, and `homepage` are set in `web/universal-translation-sdk/package.json`
-
-### Build & prepare
 ```bash
-cd web/universal-translation-sdk
+cd sdk/web/universal-translation-sdk
 npm install
-npm run build:wasm   # builds wasm if applicable
-npm run build        # builds dist/
+npm run build
+npm publish --access public
 ```
 
-### Pre-publish checks
-- `.npmignore` or `files` field includes only necessary artifacts (dist/, README, LICENSE, package.json, typings)
-- `main/module/types` fields point to built outputs (e.g., dist/index.cjs, dist/index.esm.js, dist/index.d.ts)
-- Version bumped in package.json
-
-### Login & publish
-```bash
-npm login
-npm publish --access public  # for scoped public packages
-```
-
-### Tagging & dist-tags
-```bash
-npm version patch            # or minor/major
-npm publish --tag next       # for prereleases
-```
-
-### Consuming
-```bash
-npm install @code-with-zeeshan/universal-translation-sdk
-```
+---
 
 ## React Native: Linking Notes
-
-- Autolinking works for RN 0.60+ when the library is correctly configured.
-- iOS: run `cd ios && pod install` after adding the RN package.
-- Android: confirm your root `settings.gradle` includes the RN library if not autolinked.
-
-### Manual linking fallback
-```bash
-npx react-native config # inspect config
-```
-- If using a native encoder module, ensure:
-  - Android: `CMakeLists.txt`/`Android.mk` and `.so`/AAR are included.
-  - iOS: Podspec exposes headers and any vendored libs.
+- Autolinking works for RN 0.60+.
+- iOS: `cd ios && pod install` after adding the RN package.
 
 ---
 
 ## Versioning & CI
-- Use semantic versioning (`MAJOR.MINOR.PATCH`).
-- Automate publishing in CI with protected tags and credentials in secrets.
-- Sign artifacts if required by your repository.
-
-## Naming & Scope Notes
-- Keep a consistent naming scheme across platforms:
+- Semantic versioning (`MAJOR.MINOR.PATCH`).
+- Automate publishing with GitHub Actions (`.github/workflows/sdk-publish.yml`, `web-npm-publish.yml`).
+- Naming convention:
   - Web: `@your-org/universal-translation-sdk`
   - React Native: `@your-org/universal-translation-sdk-rn`
   - Android (Maven): `com.yourorg:universal-translation-sdk`
-  - iOS (CocoaPods/SPM): `UniversalTranslationSDK`
-- Avoid breaking changes without major version bumps.
-- Reserve the same organization scope across registries (npm, Maven, CocoaPods trunk/Specs) to prevent squatters.
+  - iOS: `UniversalTranslationSDK`

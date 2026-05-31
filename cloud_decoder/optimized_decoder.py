@@ -39,7 +39,7 @@ from monitoring.metrics_collector import (
     gpu_utilization
 )
 # Shared constants for API and vocab format enforcement
-from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT
+from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, LOG_DIR, VERSION_CONFIG_FILENAME
 from utils.logging_config import setup_logging, get_logger
 from collections import OrderedDict
 # Import vocabulary manager
@@ -82,7 +82,6 @@ tracer = trace.get_tracer(__name__)
 # Environment variables for configuration
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 # API version is imported from utils.constants (env-overridable)
-from utils.constants import API_VERSION
 
 # Centralized secrets bootstrap and access
 from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runtime_secrets
@@ -131,7 +130,7 @@ API_WORKERS = int(os.environ.get("API_WORKERS", "1"))
 API_TITLE = os.environ.get("API_TITLE", "Cloud Decoder API")
 
 # Initialize logging (centralized)
-setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
 # Use structured logger adapter to encourage structured fields usage
 logger = get_logger("decoder", context={"component": "decoder"})
 
@@ -205,8 +204,13 @@ class AdapterManager:
                     raise RuntimeError(f"Failed to load adapter {adapter_name}")
 
             # This is the first thread to request this adapter, so it will load it.
-            # Create an event to signal other threads.
-            self.loading_events[adapter_name] = asyncio.Event()
+            # Create an event to signal other threads (inside the lock to prevent TOCTOU).
+            async with self.lock:
+                if adapter_name in self.cache:
+                    self.cache.move_to_end(adapter_name)
+                    return self.cache[adapter_name]
+                if adapter_name not in self.loading_events:
+                    self.loading_events[adapter_name] = asyncio.Event()
 
         # --- Perform slow I/O outside the main lock ---
         try:
@@ -574,8 +578,7 @@ async def startup_validation():
     # Policy: API_VERSION must match core.apiVersion; vocab format must be supported
     try:
         import json
-        from pathlib import Path
-        cfg = json.loads(Path("version-config.json").read_text(encoding="utf-8"))
+        cfg = json.loads(Path(VERSION_CONFIG_FILENAME).read_text(encoding="utf-8"))
         core_api = str(cfg.get("core", {}).get("apiVersion", ""))
         if not core_api:
             raise RuntimeError("core.apiVersion missing in version-config.json")
@@ -585,7 +588,6 @@ async def startup_validation():
         if manifest.exists():
             data = json.loads(manifest.read_text(encoding="utf-8"))
             fmt = str(data.get("format_version", "")).split(".")[0]
-            from utils.constants import SUPPORTED_VOCAB_FORMAT
             if fmt and fmt != str(SUPPORTED_VOCAB_FORMAT).split(".")[0]:
                 raise RuntimeError(
                     f"Unsupported vocabulary format {data.get('format_version')} (supported major: {SUPPORTED_VOCAB_FORMAT})"
@@ -596,19 +598,18 @@ async def startup_validation():
 
     # Build JWKS using shared utility
     from utils.jwks_utils import build_jwks_from_env, diff_kids
-    global JWKS_KEYS
-    JWKS_KEYS = build_jwks_from_env(component="decoder", env=os.environ)
+    jwks_keys = build_jwks_from_env(component="decoder", env=os.environ)
+    set_jwks_keys(jwks_keys)
 
     # Background job to periodically reload JWKS every 5 minutes, with change logging
     async def jwks_reload_loop_decoder():
-        global JWKS_KEYS
-        last_keys = JWKS_KEYS
+        last_keys = get_jwks_keys()
         while True:
             try:
                 new_keys = build_jwks_from_env(component="decoder", env=os.environ)
                 if new_keys:
                     added, removed = diff_kids(last_keys, new_keys)
-                    JWKS_KEYS = new_keys
+                    set_jwks_keys(new_keys)
                     if added or removed:
                         logger.info(f"Decoder JWKS changed. Added: {added or '[]'}, Removed: {removed or '[]'}")
                     last_keys = new_keys
@@ -710,8 +711,9 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
             unverified_header = jwt.get_unverified_header(token)
             kid = unverified_header.get("kid")
             key_to_use = None
-            if kid and JWKS_KEYS:
-                for k in JWKS_KEYS:
+            jwks_keys = get_jwks_keys()
+            if kid and jwks_keys:
+                for k in jwks_keys:
                     if k.get("kid") == kid:
                         n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
                         e = int.from_bytes(base64.urlsafe_b64decode(k["e"] + "=="), byteorder="big")
@@ -809,30 +811,33 @@ async def decode(request: Request, x_target_language: str = Header(None), x_adap
             
             # Get vocabulary pack for target language
             target_lang = x_target_language or "en"
-            vocab_pack = vocabulary_manager.get_vocab_for_pair("en", target_lang)
+            vocab_manager = get_vocabulary_manager()
+            vocab_pack = vocab_manager.get_vocab_for_pair("en", target_lang)
 
             # Optional: override adapter (e.g., composed adapter name) for zero-shot
+            current_model = get_model()
             adapter_to_use = x_adapter_override
-            if adapter_to_use and isinstance(model, AdapterUniversalEncoder):
+            if adapter_to_use and isinstance(current_model, AdapterUniversalEncoder):
                 try:
-                    if adapter_to_use not in model.language_adapters:
+                    if adapter_to_use not in current_model.language_adapters:
                         # Composition should have registered it; skip I/O
                         pass
-                    model.loaded_adapters.add(adapter_to_use)
+                    current_model.loaded_adapters.add(adapter_to_use)
                 except Exception:
                     adapter_to_use = None
             
             # Run decoder inference
-            if model is None:
+            if current_model is None:
                 raise HTTPException(status_code=503, detail="Model not loaded")
             
             # Prepare input tensors
-            encoder_hidden_states = torch.tensor(decompressed_data['hidden_states'], device=device)
-            encoder_attention_mask = torch.tensor(decompressed_data['attention_mask'], device=device)
+            dev = get_device()
+            encoder_hidden_states = torch.tensor(decompressed_data['hidden_states'], device=dev)
+            encoder_attention_mask = torch.tensor(decompressed_data['attention_mask'], device=dev)
             
             # Generate translation
             with torch.no_grad():
-                output_tokens, _ = model.generate(
+                output_tokens, _ = current_model.generate(
                     encoder_hidden_states=encoder_hidden_states,
                     encoder_attention_mask=encoder_attention_mask,
                     target_lang_id=vocab_pack.getTokenId(f"<{target_lang}>"),
@@ -873,7 +878,7 @@ async def decode(request: Request, x_target_language: str = Header(None), x_adap
 # JWKS endpoint (mirrored)
 @app.get("/.well-known/jwks.json")
 async def jwks_decoder():
-    return JSONResponse({"keys": JWKS_KEYS})
+    return JSONResponse({"keys": get_jwks_keys()})
 
 # Health and readiness endpoints using routers
 probe_router = APIRouter(tags=["Probes"])
@@ -890,14 +895,15 @@ async def decoder_health():
 @probe_router.get('/ready')
 async def decoder_ready():
     """Readiness probe: checks model, vocabulary manager, and JWKS (when RS256 configured)."""
-    from utils.service_health import load_version_info, jwks_readiness, build_ready_payload
+    from utils.service_health import jwks_readiness, build_ready_payload
 
     version = load_version_info()
-    jwks_ok = jwks_readiness(env=os.environ, jwks_keys=JWKS_KEYS)
+    jwks_keys = get_jwks_keys()
+    jwks_ok = jwks_readiness(env=os.environ, jwks_keys=jwks_keys)
 
     checks = {
-        "model": model is not None,
-        "vocabulary": vocabulary_manager is not None,
+        "model": get_model() is not None,
+        "vocabulary": get_vocabulary_manager() is not None,
         "jwks": jwks_ok,
     }
     payload = build_ready_payload(component="decoder", version=version, checks=checks)
@@ -979,12 +985,43 @@ model: Optional[AdapterUniversalEncoder] = None # We will use the adapter-aware 
 adapter_manager: Optional[AdapterManager] = None # Add a global manager
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vocabulary_manager = VocabularyManager()
+_MODEL_LOCK = threading.RLock()
+JWKS_LOCK = threading.RLock()
+
+def get_model():
+    with _MODEL_LOCK:
+        return model
+
+def set_model(val):
+    with _MODEL_LOCK:
+        global model
+        model = val
+
+def get_adapter_manager():
+    with _MODEL_LOCK:
+        return adapter_manager
+
+def get_device():
+    with _MODEL_LOCK:
+        return device
+
+def get_vocabulary_manager():
+    with _MODEL_LOCK:
+        return vocabulary_manager
+
+def set_jwks_keys(keys):
+    with JWKS_LOCK:
+        global JWKS_KEYS
+        JWKS_KEYS = keys
+
+def get_jwks_keys():
+    with JWKS_LOCK:
+        return JWKS_KEYS
+
 # --- END MODIFICATION ---
 
 @app.on_event("startup")
 async def startup():
-    global model, adapter_manager
-
     # Fast path for tests/CI to avoid heavy startup
     if os.environ.get("UTS_TEST_MODE") == "1":
         logger.info("UTS_TEST_MODE=1 detected: skipping heavy decoder startup")
@@ -992,7 +1029,6 @@ async def startup():
 
     # Prefetch artifacts from Hugging Face (models/vocabs/adapters) if configured
     try:
-        from utils.artifact_store import ArtifactStore
         store = ArtifactStore()  # requires HF_HUB_REPO_ID (and HF_TOKEN if needed)
 
         # Ensure base decoder model exists locally
@@ -1026,24 +1062,26 @@ async def startup():
         )
     
     # Load model
-    model = OptimizedUniversalDecoder().to(device)
+    decoder_model = OptimizedUniversalDecoder().to(get_device())
     # Load the base model (without any specific adapters loaded initially)
     # This assumes your production decoder is saved here
     base_model_path = "models/production/decoder.pt"
-    model = AdapterUniversalEncoder(base_model_path=base_model_path).to(device)
-    model.eval()
+    decoder_model = AdapterUniversalEncoder(base_model_path=base_model_path).to(get_device())
+    decoder_model.eval()
 
     # Initialize the adapter manager with the model instance
-    adapter_manager = AdapterManager(model=model, repo_id=HF_HUB_REPO_ID, max_cache_size=5)
+    adapter_manager = AdapterManager(model=decoder_model, repo_id=HF_HUB_REPO_ID, max_cache_size=5)
 
     # Compile with torch.compile for faster inference
     if torch.__version__ >= "2.0.0":
-        model = torch.compile(model, mode="reduce-overhead")
+        decoder_model = torch.compile(decoder_model, mode="reduce-overhead")
+
+    set_model(decoder_model)
 
     # Start batch processor
     asyncio.create_task(batcher.process_batches())
 
-    logger.info(f"✅ Decoder with Dynamic Adapter Loading is ready on {device}")
+    logger.info(f"✅ Decoder with Dynamic Adapter Loading is ready on {get_device()}")
     if torch.cuda.is_available():
         logger.info(f"💾 GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f}GB")
 
@@ -1052,9 +1090,10 @@ async def startup():
 @app.get("/loaded_adapters", response_model=List[str])
 async def get_loaded_adapters_endpoint():
     """Returns a list of adapters currently loaded in the GPU cache."""
-    if not adapter_manager:
+    mgr = get_adapter_manager()
+    if not mgr:
         raise HTTPException(status_code=503, detail="Adapter manager not initialized")
-    return await adapter_manager.get_loaded_adapters()
+    return await mgr.get_loaded_adapters()
 
 async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
     """Process a batch on GPU with dynamic adapter loading and correct tensor handling.
@@ -1065,14 +1104,16 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
       - optional 'domain': str
     Returns a list of result dicts ordered to match the input `batch`.
     """
-    if model is None:
+    current_model = get_model()
+    if current_model is None:
         raise RuntimeError("Model is not initialized")
-    if adapter_manager is None:
+    current_adapter_manager = get_adapter_manager()
+    if current_adapter_manager is None:
         raise RuntimeError("Adapter manager is not initialized")
+    current_vocab_manager = get_vocabulary_manager()
 
     # Best-effort artifact ensure before heavy compute
     try:
-        from utils.artifact_store import ArtifactStore
         store = ArtifactStore()
     except Exception:
         store = None
@@ -1099,7 +1140,7 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
     # Process each adapter group
     for adapter_name, requests in requests_by_adapter.items():
         # Ensure adapter is loaded (async)
-        await adapter_manager.get_adapter(adapter_name)
+        await current_adapter_manager.get_adapter(adapter_name)
 
         # Decompress and collect tensors
         hidden_list: List[torch.Tensor] = []
@@ -1118,12 +1159,12 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
         encoder_mask = torch.cat(mask_list, dim=0)                 # [B, T]
 
         # Choose target language id (group should be homogeneous)
-        target_lang_ids = [vocabulary_manager.language_to_pack.get(lang, 3) for lang in tgt_langs]
+        target_lang_ids = [current_vocab_manager.language_to_pack.get(lang, 3) for lang in tgt_langs]
         target_lang_id = target_lang_ids[0]
 
         # Generate outputs
         with torch.no_grad():
-            generated_ids, _scores = model.generate(
+            generated_ids, _scores = current_model.generate(
                 encoder_hidden,
                 encoder_mask,
                 target_lang_id,
@@ -1135,7 +1176,7 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
 
         # Decode per-sample and place back in original order
         for i in range(generated_ids.size(0)):
-            vocab_pack = vocabulary_manager.get_vocab_for_pair("en", tgt_langs[i])
+            vocab_pack = current_vocab_manager.get_vocab_for_pair("en", tgt_langs[i])
             tokens_np = generated_ids[i].detach().cpu().numpy()
             text = decode_tokens_to_text(tokens_np, vocab_pack)
             all_results[orig_indices[i]] = {
@@ -1171,9 +1212,10 @@ def decompress_encoder_output(compressed_data: bytes) -> Dict:
     # Reshape to the original 3D tensor shape
     hidden_states = dequantized_embeddings.reshape(1, seq_len, hidden_dim)
 
+    dev = get_device()
     return {
-        'hidden_states': torch.tensor(hidden_states, device=device),
-        'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=device)
+        'hidden_states': torch.tensor(hidden_states, device=dev),
+        'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=dev)
     }
 
 def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
@@ -1208,16 +1250,18 @@ async def compose_adapter_endpoint(request: CompositionRequest):
     Triggers the on-the-fly creation of a composed adapter for zero-shot pairs.
     This endpoint is protected and only accessible by internal services like the coordinator.
     """
-    if not model or not isinstance(model, AdapterUniversalEncoder):
+    current_model = get_model()
+    current_adapter_manager = get_adapter_manager()
+    if not current_model or not isinstance(current_model, AdapterUniversalEncoder):
         raise HTTPException(status_code=503, detail="Model not initialized or does not support adapters.")
     
     try:
         # Ensure the base adapters are loaded first (await async operations)
-        await adapter_manager.get_adapter(request.source_adapter)
-        await adapter_manager.get_adapter(request.target_adapter)
+        await current_adapter_manager.get_adapter(request.source_adapter)
+        await current_adapter_manager.get_adapter(request.target_adapter)
         
         # Perform the composition
-        composed_name = model.compose_adapters(
+        composed_name = current_model.compose_adapters(
             source_adapter_name=request.source_adapter,
             target_adapter_name=request.target_adapter,
             composition_strategy=request.strategy

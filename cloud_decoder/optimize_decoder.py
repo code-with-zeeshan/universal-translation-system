@@ -17,7 +17,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 
-from config.config_models import DecoderConfig, load_config
+from config.schemas import DecoderConfig, load_system_config
 
 # Setup logging
 logging.basicConfig(
@@ -291,7 +291,7 @@ def main():
     
     # Load configuration
     if args.config:
-        config = load_config(args.config).decoder
+        config = load_system_config(args.config).decoder
     else:
         config = DecoderConfig()
     

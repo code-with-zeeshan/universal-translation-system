@@ -3,8 +3,11 @@
 Resource tracking utilities for the Universal Translation System.
 This module provides tools for tracking and managing resource usage.
 """
+# NOTE: This module overlaps with resource_monitor.py. Both provide resource monitoring.
+# TODO: Merge resource_tracker.py and resource_monitor.py into a single module.
 
 import gc
+import functools
 import logging
 import threading
 import time
@@ -33,6 +36,7 @@ class ResourceTracker:
         self._tracked_objects: Dict[int, Tuple[weakref.ref, str, int]] = {}
         self._lock = threading.RLock()
         self._tracemalloc_started = False
+        self._stop_event = threading.Event()
         
         # Start tracemalloc if enabled
         if self.enabled:
@@ -142,14 +146,21 @@ class ResourceTracker:
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()
         
-        return {
+        result = {
             "rss": memory_info.rss,
             "rss_mb": memory_info.rss / (1024 * 1024),
             "vms": memory_info.vms,
             "vms_mb": memory_info.vms / (1024 * 1024),
             "percent": process.memory_percent(),
-            "tracked_objects": len(self._tracked_objects) if self.enabled else 0
         }
+        
+        if self.enabled:
+            with self._lock:
+                result["tracked_objects"] = len(self._tracked_objects)
+        else:
+            result["tracked_objects"] = 0
+        
+        return result
         
     def start_tracemalloc(self) -> None:
         """Start tracemalloc for detailed memory tracking."""
@@ -202,8 +213,8 @@ class ResourceTracker:
             return
         
         def check_leaks():
-            while True:
-                time.sleep(interval)
+            while not self._stop_event.is_set():
+                self._stop_event.wait(interval)
                 self.print_leaks()
             
         thread = threading.Thread(target=check_leaks, daemon=True)
@@ -217,15 +228,23 @@ class ResourceTracker:
             return
         
         def check_memory():
-            while True:
+            while not self._stop_event.is_set():
                 usage = self.get_memory_usage()
                 if usage["rss_mb"] > threshold_mb:
                     callback(usage)
-                time.sleep(60)  # Check every minute
+                self._stop_event.wait(60)  # Check every minute
             
         thread = threading.Thread(target=check_memory, daemon=True)
         thread.start()
         self._memory_alert_thread = thread
+
+    def stop_background_threads(self) -> None:
+        """Stop all background threads."""
+        self._stop_event.set()
+        if hasattr(self, '_leak_check_thread') and self._leak_check_thread:
+            self._leak_check_thread.join(timeout=5.0)
+        if hasattr(self, '_memory_alert_thread') and self._memory_alert_thread:
+            self._memory_alert_thread.join(timeout=5.0)
 
     def generate_object_lifecycle_report(self) -> Dict[str, Any]:
         """Generate a report of object lifecycles."""
@@ -255,12 +274,13 @@ class ResourceTracker:
         
     def _count_by_type(self) -> Dict[str, int]:
         """Count tracked objects by type."""
-        counts = {}
-        for obj_id, (ref, description, _, _) in self._tracked_objects.items():
-            obj = ref()
-            if obj is not None:
-                type_name = type(obj).__name__
-                counts[type_name] = counts.get(type_name, 0) + 1
+        with self._lock:
+            counts = {}
+            for obj_id, (ref, description, _, _) in self._tracked_objects.items():
+                obj = ref()
+                if obj is not None:
+                    type_name = type(obj).__name__
+                    counts[type_name] = counts.get(type_name, 0) + 1
         return counts
 
     def collect_garbage(self) -> Tuple[int, int, int]:

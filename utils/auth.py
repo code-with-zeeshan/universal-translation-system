@@ -2,6 +2,7 @@
 import secrets
 import hashlib
 import json
+import threading
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 import logging
@@ -21,6 +22,7 @@ class APIKeyManager:
         # Toggle to store API key metadata via CredentialManager (encrypted config)
         self.use_credmgr = os.environ.get("UTS_API_KEYS_USE_CREDMGR", "false").lower() == "true"
         self.keys = self._load_keys()
+        self._lock = threading.RLock()
 
     def _load_keys(self) -> Dict[str, Dict[str, any]]:
         """Load API keys from secure storage or file."""
@@ -60,37 +62,40 @@ class APIKeyManager:
         api_key = secrets.token_urlsafe(32)
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
         now = datetime.now().isoformat()
-        self.keys[key_hash] = {
-            'client_name': client_name,
-            'permissions': permissions,
-            'created_at': now,
-            'last_used': None,
-            'request_count': 0,
-            'rotated_at': None,
-        }
-        self._save_keys()
+        with self._lock:
+            self.keys[key_hash] = {
+                'client_name': client_name,
+                'permissions': permissions,
+                'created_at': now,
+                'last_used': None,
+                'request_count': 0,
+                'rotated_at': None,
+            }
+            self._save_keys()
         logger.info(f"Generated API key for {client_name}")
         return api_key
 
     def validate_api_key(self, api_key: str) -> Optional[Dict[str, any]]:
         """Validate API key and return metadata."""
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        if key_hash in self.keys:
-            self.keys[key_hash]['last_used'] = datetime.now().isoformat()
-            self.keys[key_hash]['request_count'] += 1
-            self._save_keys()
-            return self.keys[key_hash]
+        with self._lock:
+            if key_hash in self.keys:
+                self.keys[key_hash]['last_used'] = datetime.now().isoformat()
+                self.keys[key_hash]['request_count'] += 1
+                self._save_keys()
+                return dict(self.keys[key_hash])
         return None
 
     def revoke_api_key(self, api_key: str) -> bool:
         """Revoke an API key; returns True if revoked."""
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        if key_hash in self.keys:
-            client = self.keys[key_hash]['client_name']
-            del self.keys[key_hash]
-            self._save_keys()
-            logger.info(f"Revoked API key for {client}")
-            return True
+        with self._lock:
+            if key_hash in self.keys:
+                client = self.keys[key_hash]['client_name']
+                del self.keys[key_hash]
+                self._save_keys()
+                logger.info(f"Revoked API key for {client}")
+                return True
         return False
 
     def rotate_api_key(self, api_key: str) -> Tuple[bool, Optional[str]]:
@@ -99,16 +104,14 @@ class APIKeyManager:
         Returns (success, new_api_key_or_none).
         """
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        meta = self.keys.get(key_hash)
-        if not meta:
-            return False, None
-        client = meta['client_name']
-        perms = meta['permissions']
-        # Mark rotated time for old record then remove
-        meta['rotated_at'] = datetime.now().isoformat()
-        # Persist rotation mark then delete
-        self._save_keys()
-        del self.keys[key_hash]
-        # Issue new key
-        new_key = self.generate_api_key(client, perms)
+        with self._lock:
+            meta = self.keys.get(key_hash)
+            if not meta:
+                return False, None
+            client = meta['client_name']
+            perms = meta['permissions']
+            meta['rotated_at'] = datetime.now().isoformat()
+            self._save_keys()
+            del self.keys[key_hash]
+            new_key = self.generate_api_key(client, perms)
         return True, new_key

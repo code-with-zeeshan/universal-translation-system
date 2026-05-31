@@ -1,49 +1,39 @@
-# utils/secrets_bootstrap.py
-"""
-Centralized secrets bootstrap and access helpers.
-- Loads *_FILE envs into actual env vars at process start
-- Provides get_secret() that prefers CredentialManager keys, with env fallbacks
-- Validates minimum strength and RS256 key sizes where applicable
-"""
-from __future__ import annotations
 import os
+import stat
+import time
 import logging
-from typing import Optional, Dict, Iterable
+from typing import Optional, Dict, Iterable, Tuple
 
 from .credential_manager import credential_manager
 
 logger = logging.getLogger(__name__)
 
-# Map well-known environment variable names to credential keys
-# This preserves compatibility while enabling a single access path
 ENV_TO_CRED_KEY: Dict[str, str] = {
-    # Coordinator
     "COORDINATOR_SECRET": "coordinator_secret",
     "COORDINATOR_JWT_SECRET": "coordinator_jwt_secret",
     "COORDINATOR_TOKEN": "coordinator_token",
-    # Decoder
     "DECODER_JWT_SECRET": "decoder_jwt_secret",
-    # Shared internal token
     "INTERNAL_SERVICE_TOKEN": "internal_service_token",
-    # Generic JWT secret (for utils.jwt_auth default)
     "JWT_SECRET": "jwt_secret",
-    # RS256 public/private
     "JWT_PUBLIC_KEY": "jwt_public_key",
     "JWT_PUBLIC_KEY_PATH": "jwt_public_key_path",
     "JWT_PRIVATE_KEY": "jwt_private_key",
     "JWT_PRIVATE_KEY_FILE": "jwt_private_key_file",
-    # Secure serialization HMAC
     "UTS_HMAC_KEY": "uts_hmac_key",
+    "REDIS_PASSWORD": "redis_password",
+    "HF_TOKEN": "hf_token",
+    "GRAFANA_ADMIN_PASSWORD": "grafana_admin_password",
 }
 
-# Pairs of (file env var, target env var)
 FILE_ENV_PAIRS: Iterable[tuple[str, str]] = (
     ("COORDINATOR_SECRET_FILE", "COORDINATOR_SECRET"),
     ("COORDINATOR_JWT_SECRET_FILE", "COORDINATOR_JWT_SECRET"),
     ("COORDINATOR_TOKEN_FILE", "COORDINATOR_TOKEN"),
     ("INTERNAL_SERVICE_TOKEN_FILE", "INTERNAL_SERVICE_TOKEN"),
     ("DECODER_JWT_SECRET_FILE", "DECODER_JWT_SECRET"),
-    ("JWT_PRIVATE_KEY_FILE", "JWT_PRIVATE_KEY"),  # keep PRIVATE in env for consumers that read it
+    ("JWT_PRIVATE_KEY_FILE", "JWT_PRIVATE_KEY"),
+    ("REDIS_PASSWORD_FILE", "REDIS_PASSWORD"),
+    ("HF_TOKEN_FILE", "HF_TOKEN"),
 )
 
 INSECURE_DEFAULTS = {
@@ -56,44 +46,46 @@ INSECURE_DEFAULTS = {
 }
 
 
+def _check_file_permissions(path: str) -> None:
+    try:
+        st = os.stat(path)
+        if stat.S_IRWXG & st.st_mode or stat.S_IRWXO & st.st_mode:
+            logger.warning("Secret file %s has group/world-accessible permissions; recommended: 0600", path)
+    except OSError:
+        pass
+
+
 def _read_file_trim(path: str) -> Optional[str]:
     try:
+        _check_file_permissions(path)
         with open(path, "r", encoding="utf-8") as f:
             return f.read().strip()
     except Exception as e:
-        logger.warning(f"Failed reading secret file {path}: {e}")
+        logger.warning("Failed reading secret file %s: %s", path, e)
         return None
 
 
 def bootstrap_secrets(role: Optional[str] = None) -> None:
-    """
-    Resolve *_FILE env vars to their target env vars.
-    Idempotent: safe to call multiple times.
-    role: optional "coordinator" | "decoder" to limit logging context
-    """
     for file_env, target_env in FILE_ENV_PAIRS:
         file_path = os.environ.get(file_env)
         if file_path and not os.environ.get(target_env):
             content = _read_file_trim(file_path)
             if content:
                 os.environ[target_env] = content
-                logger.debug(f"Loaded secret for {target_env} from {file_env}")
+                logger.debug("Loaded secret for %s from %s (role=%s)", target_env, file_env, role)
 
 
 def get_secret(env_name: str, default: Optional[str] = None) -> Optional[str]:
-    """
-    Get a secret with priority:
-    1) CredentialManager (mapped key)
-    2) Environment variable (env_name)
-    3) default
-    """
     key = ENV_TO_CRED_KEY.get(env_name, env_name.lower())
-    # 1) Credential manager (UTS_ prefix applied inside)
     value = credential_manager.get(key)
     if value:
+        logger.debug("Secret %s resolved from credential manager", env_name)
         return value
-    # 2) Environment fallback
-    return os.environ.get(env_name, default)
+    value = os.environ.get(env_name)
+    if value:
+        logger.debug("Secret %s resolved from environment", env_name)
+        return value
+    return default
 
 
 def is_strong_secret(value: Optional[str], min_len: int = 32) -> bool:
@@ -104,17 +96,46 @@ def is_strong_secret(value: Optional[str], min_len: int = 32) -> bool:
     return True
 
 
+# ---------------------------------------------------------------------------
+# Secret expiry / rotation tracking
+# ---------------------------------------------------------------------------
+# To track expiry callers set a companion env var: <SECRET_NAME>_EXPIRY=<unix_ts>
+# rotate_secret_if_expired() checks and rotates via credential_manager.
+
+def get_secret_expiry(env_name: str) -> Optional[float]:
+    expiry_str = os.environ.get(f"{env_name}_EXPIRY")
+    if expiry_str:
+        try:
+            return float(expiry_str)
+        except ValueError:
+            logger.warning("Invalid expiry value for %s: %s", env_name, expiry_str)
+    return None
+
+
+def is_secret_expired(env_name: str) -> bool:
+    expiry = get_secret_expiry(env_name)
+    if expiry is None:
+        return False
+    return time.time() >= expiry
+
+
+def rotate_secret_if_expired(env_name: str, rotate_func, min_len: int = 32) -> Tuple[bool, Optional[str]]:
+    if not is_secret_expired(env_name):
+        return False, None
+    current = get_secret(env_name)
+    if current and not is_strong_secret(current, min_len=min_len):
+        logger.warning("Secret %s is weak, not rotating automatically", env_name)
+        return False, None
+    new_value = rotate_func()
+    key = ENV_TO_CRED_KEY.get(env_name, env_name.lower())
+    credential_manager.set(key, new_value)
+    logger.info("Rotated expired secret %s", env_name)
+    return True, new_value
+
+
 def validate_runtime_secrets(role: Optional[str] = None) -> None:
-    """
-    Validate presence and strength of required secrets for given role.
-    - coordinator: COORDINATOR_SECRET, COORDINATOR_TOKEN, INTERNAL_SERVICE_TOKEN, and either COORDINATOR_JWT_SECRET (HS256) or RS256 keys
-    - decoder: DECODER_JWT_SECRET and INTERNAL_SERVICE_TOKEN
-    - always: UTS_HMAC_KEY should exist (secure_serialization enforces too)
-    Raises RuntimeError with actionable messages on failure.
-    """
     errors = []
 
-    # Secure serialization HMAC key recommended everywhere
     if not is_strong_secret(os.environ.get("UTS_HMAC_KEY")):
         errors.append("UTS_HMAC_KEY must be set to a strong, random value (>=32 chars).")
 
@@ -132,15 +153,11 @@ def validate_runtime_secrets(role: Optional[str] = None) -> None:
         if not (is_strong_secret(hs) or (pub and priv)):
             errors.append("Provide either strong COORDINATOR_JWT_SECRET (HS256) or RS256 keys (JWT_PRIVATE_KEY and JWT_PUBLIC_KEY/PATH).")
 
-        # If RS256 private key provided, validate size >= 2048 bits
         if priv:
             try:
                 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-                from cryptography.hazmat.backends import default_backend as _db
-                key = load_pem_private_key(priv.encode("utf-8"), password=None, backend=_db())
-                size = getattr(getattr(key, "key_size", None), "__int__", lambda: key.key_size)()
-                if hasattr(key, "key_size"):
-                    size = key.key_size
+                key = load_pem_private_key(priv.encode("utf-8"), password=None)
+                size = getattr(key, "key_size", None)
                 if not size or int(size) < 2048:
                     errors.append("RS256 private key must be >= 2048 bits.")
             except Exception as e:

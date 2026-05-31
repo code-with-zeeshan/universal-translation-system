@@ -22,8 +22,6 @@ __all__ = [
     "VocabularyPackCreator"
 ]
 
-from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
-
 def create_vocabulary_manager(config, context=None):
     """Factory function to create appropriate vocabulary manager."""
     

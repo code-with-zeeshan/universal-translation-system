@@ -31,12 +31,15 @@ class FunctionProfiler:
     """
     
     _instance = None
+    _singleton_lock = threading.RLock()
     
     @classmethod
     def get_instance(cls) -> 'FunctionProfiler':
         """Get singleton instance of FunctionProfiler"""
         if cls._instance is None:
-            cls._instance = FunctionProfiler()
+            with cls._singleton_lock:
+                if cls._instance is None:
+                    cls._instance = cls()
         return cls._instance
     
     def __init__(self, config=None, max_history: int = 1000):

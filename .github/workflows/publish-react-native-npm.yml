@@ -49,7 +49,7 @@ jobs:
           fi
 
           changed_rn=false
-          if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^react-native/UniversalTranslationSDK/' >/dev/null; then
+           if [[ "$changed" == "ALL" ]] || echo "$changed" | grep -E '^sdk/react-native/UniversalTranslationSDK/' >/dev/null; then
             changed_rn=true
           fi
 
@@ -75,14 +75,14 @@ PY
 
       - name: Install and build
         if: steps.check.outputs.publish_rn == 'true'
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         run: |
           npm install
           npm run prepare
 
       - name: Publish to NPM
         if: steps.check.outputs.publish_rn == 'true'
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |

@@ -29,9 +29,10 @@ from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
 from config.schemas import RootConfig, load_config as load_pydantic_config
+from utils.constants import LOG_DIR, MODELS_ENCODER_DIR, MODELS_DECODER_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, TEST_FINAL_FILENAME, EVALUATION_REPORT_FILENAME
 
 # Centralized logging for training
-setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("training")
 
 
@@ -60,7 +61,7 @@ def load_configuration_dynamic_or_yaml(config_path: str, dynamic: bool) -> RootC
     """Load configuration from YAML or build a dynamic default when requested."""
     if dynamic or (config_path and config_path.strip().lower() == 'dynamic'):
         # Build a default RootConfig; trainer will refine based on hardware
-        from config.schemas import RootConfig, DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
+        from config.schemas import DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
         cfg = RootConfig(
             data=DataConfig(training_distribution={}),
             model=ModelConfig(),
@@ -102,8 +103,8 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
     )
     
     # Load pretrained weights if available
-    encoder_path = Path('models/encoder/universal_encoder_initial.pt')
-    decoder_path = Path('models/decoder/universal_decoder_initial.pt')
+    encoder_path = Path(f"{MODELS_ENCODER_DIR}/universal_encoder_initial.pt")
+    decoder_path = Path(f"{MODELS_DECODER_DIR}/universal_decoder_initial.pt")
     
     if encoder_path.exists():
         try:
@@ -128,8 +129,8 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     """Load training and validation datasets"""
     logger.info("📚 Loading datasets...")
     
-    train_path = Path(config.data.processed_dir) / 'train_final.txt'
-    val_path = Path(config.data.processed_dir) / 'val_final.txt'
+    train_path = Path(config.data.processed_dir) / TRAIN_FINAL_FILENAME
+    val_path = Path(config.data.processed_dir) / VAL_FINAL_FILENAME
     
     if not train_path.exists():
         logger.error(f"Training data not found at {train_path}")
@@ -239,7 +240,7 @@ def launch_training(args: argparse.Namespace):
     logger.info("="*60)
     
     # Register final model
-    final_model_path = Path(config.training.checkpoint_dir) / experiment_name / "best_model.pt"
+    final_model_path = Path(config.training.checkpoint_dir) / experiment_name / BEST_MODEL_FILENAME
     if final_model_path.exists():
         version = versioning.register_model(
             model_path=str(final_model_path),
@@ -292,7 +293,7 @@ def launch_evaluation(args: argparse.Namespace):
     logger.info("🔍 Starting model evaluation...")
     
     # Load configuration
-    config = load_configuration(args.config)
+    config = load_configuration_dynamic_or_yaml(args.config, dynamic=False)
     
     # Initialize models
     encoder, decoder = initialize_models(config)
@@ -308,7 +309,7 @@ def launch_evaluation(args: argparse.Namespace):
     
     # Load test dataset
     test_dataset = ModernParallelDataset(
-        args.test_data or str(Path(config.data.processed_dir) / 'test_final.txt'),
+        args.test_data or str(Path(config.data.processed_dir) / TEST_FINAL_FILENAME),
         vocab_dir=config.vocabulary.vocab_dir
     )
     
@@ -326,7 +327,7 @@ def launch_evaluation(args: argparse.Namespace):
     logger.info(f"📊 Evaluation results: {results}")
     
     # Save results
-    results_path = Path(args.output_dir) / 'evaluation_results.json'
+    results_path = Path(args.output_dir) / EVALUATION_REPORT_FILENAME
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2)
     
@@ -338,7 +339,7 @@ def launch_profiling(args: argparse.Namespace):
     logger.info("🔬 Starting training profiling...")
     
     # Load configuration
-    config = load_configuration(args.config)
+    config = load_configuration_dynamic_or_yaml(args.config, dynamic=False)
     
     # Initialize components
     encoder, decoder = initialize_models(config)
@@ -404,7 +405,7 @@ def main():
                             help='Override learning rate')
     train_parser.add_argument('--num-epochs', type=int,
                             help='Override number of epochs')
-    train_parser.add_argument('--log-dir', type=str, default='logs',
+    train_parser.add_argument('--log-dir', type=str, default=LOG_DIR,
                             help='Directory for logs')
     train_parser.add_argument('--log-level', type=str, default='info',
                             choices=['debug', 'info', 'warning', 'error'],

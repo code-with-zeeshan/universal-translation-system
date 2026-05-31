@@ -3,128 +3,71 @@
 This document summarizes the improvements made to the Universal Translation System.
 
 ## 1. Documentation Improvements
-
-### 1.1 Environment Variables Documentation
 - Added monitoring-specific variables to environment-variables.md
 - Added training-specific variables to environment-variables.md
-- Fixed the link to the troubleshooting guide
-
-### 1.2 Security Documentation
-- Created comprehensive security best practices documentation (SECURITY_BEST_PRACTICES.md)
+- Created comprehensive security best practices documentation
 - Added guidance on JWT secret management
-- Added network security recommendations
-- Added container security best practices
 
 ## 2. Docker Configuration Improvements
-
-### 2.1 Docker Compose Health Checks
 - Updated health checks to use wget instead of curl
-- Added wget to the Dockerfiles to ensure it's available
-
-### 2.2 Docker Compose Environment Variables
-- Updated JWT secret default values to use secure random generation
-- Added clear instructions in .env.example for generating secure secrets
+- All Dockerfiles now use pinned base images (non-root user, multi-stage builds)
+- Coordinator healthcheck port corrected from 8002 to 5100
+- Decoder Dockerfile corrected from litserve to uvicorn
+- Helm chart ports updated (8080/9000 -> 5100/8001)
+- Prometheus/Grafana images pinned (v2.51.0, 10.4.0)
 
 ## 3. Kubernetes Configuration Improvements
+- Added resource requests alongside limits
+- Added health probes (liveness and readiness)
+- Created Helm chart at `charts/uts/` with coordinator, decoder, encoder, redis
+- Created secrets template at `kubernetes/secrets.yaml`
 
-### 3.1 Resource Requests
-- Added resource requests alongside limits for better scheduling
-- Ensured consistent resource allocation
+## 4. Structure Improvements
+- SDKs consolidated under `sdk/` directory
+- Config models merged into canonical `config/schemas.py`
+- 30 new modules created from 7 oversized files (backward-compatible shims preserved)
+- 4,251 lines eliminated via library replacements (keyring, PyJWT, slowapi, etc.)
+- 5 zero-usage modules deleted (1,820 lines)
+- 16+ archived files deleted (~5,000 lines)
 
-### 3.2 Health Probes
-- Added Kubernetes health probes (liveness and readiness)
-- Configured appropriate timeouts and failure thresholds
+## 5. Monitoring Improvements
+- Comprehensive Prometheus configuration with alerting and recording rules
+- Grafana dashboards with translation, resource, and component-specific panels
+- Prometheus scraper ports corrected in config
 
-## 4. Code Structure Improvements
+## 6. Performance Improvements
+- Thread safety: 19 race conditions fixed across 11+ files
+- Memory management: Lock -> RLock, background thread stop mechanism
+- Double-checked locking for RedisManager singleton
+- FunctionProfiler singleton lock-protected
 
-### 4.1 Main Entry Point
-- Enhanced error handling for subprocess calls
-- Added comprehensive logging for command execution
-- Implemented proper exit code handling
+## 7. Path Standardization
+- 60+ path constants in `utils/constants.py` with `UTS_*` env-var overrides
+- All 25+ files updated to use centralized constants
 
-## 5. Prometheus Configuration Improvements
+## 8. Testing
+- 285+ tests across 14 new test files
+- Consolidated duplicate test files
+- Configuration testing for all core modules
 
-### 5.1 Comprehensive Prometheus Configuration
-- Created a complete Prometheus configuration with proper scrape configs
-- Added recording rules for common queries
-- Added alerting rules for critical conditions
+## 9. Config Merge
+- `config/config_models.py` merged into `config/schemas.py`
+- Added `EncoderConfig`, `DecoderConfig`, `CoordinatorConfig`, `CircuitBreakerConfig`, `SystemConfig`
+- `load_system_config()` for serving stack, `load_config()` for training pipeline
 
-## 6. Testing Improvements
-
-### 6.1 Configuration Testing
-- Added tests for environment variable configuration
-- Created validation for configuration files
-- Added CI workflow for testing configuration
-
-## 7. Performance Optimization
-
-### 7.1 Decoder Optimization
-- Created a script for optimizing the decoder model
-- Implemented quantization support
-- Added benchmarking capabilities
-- Added TorchScript conversion
-
-## 8. CI/CD Pipeline Improvements
-
-### 8.1 Docker Build Validation
-- Enhanced CI workflow for Docker builds
-- Added Kubernetes manifest validation
-- Added configuration testing workflow
-
-## 9. Performance and Resource Management Improvements
-
-### 9.1 Memory Management System
-- Implemented comprehensive memory monitoring for both system and GPU memory
-- Added automatic cleanup mechanism based on configurable thresholds
-- Integrated model optimization for inference with support for torch.compile
-- Created alert system with callback support for extensibility
-- Added memory usage tracking to status endpoints
-
-### 9.2 Profiling System
-- Implemented comprehensive function and code section profiling
-- Added bottleneck detection with configurable thresholds
-- Created support for multiple export formats (JSON, CSV, TXT)
-- Implemented history tracking for trend analysis
-- Added profiling to key methods like model loading and batch processing
-
-### 9.3 Configuration System Enhancement
-- Created hierarchical configuration with separate classes for different concerns
-- Added support for memory management configuration
-- Added support for profiling configuration
-- Implemented HTTPS enforcement configuration
-- Enhanced configuration loading/saving with YAML support
-
-### 9.4 HTTPS Enforcement
-- Implemented configurable HTTPS enforcement middleware
-- Added path exclusions for health check and metrics endpoints
-- Implemented comprehensive security headers
-- Added configuration options for HTTPS port
-
-## 10. Redis Integration and Coordinator Improvements
-
-### 10.1 RedisManager Centralization
-- Coordinator switched to using `utils.redis_manager.RedisManager` for all Redis operations (sync usage in async flow)
-- Removed direct async Redis client usage in coordinator internals
-
-### 10.2 Periodic Redis-to-Disk Mirroring
-- New `DecoderPool.mirror_redis_to_disk()` method mirrors Redis state to `configs/decoder_pool.json` without mutating in-memory state
-- Background task periodically mirrors Redis to disk to keep file fallback fresh
-- Interval controlled by `COORDINATOR_MIRROR_INTERVAL` (default 60s), validated with 5s minimum and startup logging
-
-### 10.3 Robust Reload and Save Paths
-- `_load_from_redis()` loads via RedisManager and mirrors to disk
-- `_save()` persists via RedisManager and always writes disk as backup
-- Improved logging for all code paths and fallbacks
+## 10. Production Scripts
+- `scripts/install.sh` -- Role-based install (`--train`, `--serve`, `--coordinator`, `--dev`, `--encoder-core`, `--all`)
+- `scripts/build_encoder_core.sh` -- Native C++ build (Linux, macOS, Android, iOS)
+- `scripts/setup_redis.sh` -- Redis setup with Docker fallback
+- `scripts/setup_serving.sh` -- Cloud decoder + universal-decoder-node setup
+- `scripts/version_manager.py` -- Component semver management
+- `scripts/_shared.py` -- Shared utilities (`sha256_file()`, `find_schema_files()`)
 
 ## Next Steps
-
-1. **Implement Automated Testing**: Expand test coverage for all components
-2. **Enhance Monitoring**: Implement additional metrics and dashboards
-3. **Optimize Encoder**: Create similar optimization script for the encoder
-4. **Security Audit**: Conduct a comprehensive security audit
-5. **Performance Benchmarking**: Establish baseline performance metrics
-6. **Distributed Tracing**: Implement distributed tracing across all components
-7. **Circuit Breaker Pattern**: Implement circuit breakers for external dependencies
-8. **Graceful Degradation**: Add mechanisms for graceful degradation under resource constraints
-9. **A/B Testing Framework**: Implement framework for safely rolling out model improvements
-10. **Automated Canary Analysis**: Add support for automated canary analysis for deployments
+1. Install deps and run full test suite on target environment
+2. Bootstrap pretrained models (XLM-RoBERTa, mBART/NLLB)
+3. Run first training cycle
+4. Build encoder_core native binaries
+5. Set up Redis for decoder pool coordination
+6. Set up cloud decoder serving
+7. Build SDK packages after core training produces exportable weights

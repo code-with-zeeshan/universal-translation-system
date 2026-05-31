@@ -8,13 +8,13 @@ Additional API/schema/tokenizer compatibility checks beyond SemVer.
 - Optionally validates ONNX model opset/runtime when models are present
 - Emits non-zero exit on hard failures; warns on missing optional metadata
 """
-from __future__ import annotations
 import json
 import sys
 import re
-import hashlib
 from pathlib import Path
 from typing import Dict, Any, List
+
+from _shared import sha256_file, find_schema_files
 
 ROOT = Path(__file__).resolve().parents[1]
 VCFG = ROOT / "version-config.json"
@@ -23,33 +23,6 @@ VCFG = ROOT / "version-config.json"
 def load_json(p: Path) -> Dict[str, Any]:
     with open(p, 'r', encoding='utf-8') as f:
         return json.load(f)
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, 'rb') as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def find_schema_files() -> List[Path]:
-    candidates: List[Path] = []
-    schemas_root = ROOT / "docs" / "schemas"
-    if schemas_root.exists():
-        for p in schemas_root.rglob('*'):
-            if p.is_file() and (
-                p.suffix.lower() in {'.yaml', '.yml', '.json'} or p.suffix.lower() == '.proto'
-            ):
-                candidates.append(p)
-    # also consider top-level api specs if any
-    for p in [ROOT / 'openapi.yaml', ROOT / 'openapi.yml', ROOT / 'openapi.json']:
-        if p.exists():
-            candidates.append(p)
-    proto_dir = ROOT / 'proto'
-    if proto_dir.exists():
-        candidates.extend(list(proto_dir.rglob('*.proto')))
-    return candidates
 
 
 def validate_openapi_like(path: Path) -> List[str]:

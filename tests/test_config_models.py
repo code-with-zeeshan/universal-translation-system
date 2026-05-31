@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 import json
 
-from config.config_models import (
+from config.schemas import (
     EncoderConfig,
     DecoderConfig,
     CoordinatorConfig,
@@ -17,9 +17,9 @@ from config.config_models import (
     MonitoringConfig,
     TrainingConfig,
     SystemConfig,
-    load_config
+    RootConfig,
+    load_system_config,
 )
-from config.schemas import RootConfig  # Ensure we target current config as well
 
 
 class TestEncoderConfig:
@@ -248,7 +248,7 @@ class TestSystemConfig:
 
 
 class TestLoadConfig:
-    """Tests for load_config function."""
+    """Tests for load_system_config function."""
     
     def test_load_from_yaml(self):
         """Test loading from YAML."""
@@ -261,7 +261,7 @@ class TestLoadConfig:
             }, f)
         
         try:
-            config = load_config(yaml_path)
+            config = load_system_config(yaml_path)
             assert config.coordinator.jwt_secret == "a" * 32
         finally:
             os.unlink(yaml_path)
@@ -277,7 +277,7 @@ class TestLoadConfig:
             }, f)
         
         try:
-            config = load_config(json_path)
+            config = load_system_config(json_path)
             assert config.coordinator.jwt_secret == "a" * 32
         finally:
             os.unlink(json_path)
@@ -288,12 +288,12 @@ class TestLoadConfig:
         
         # This will still raise an error because we're not mocking the validator
         with pytest.raises(ValueError):
-            load_config()
+            load_system_config()
     
     def test_file_not_found(self):
         """Test file not found error."""
         with pytest.raises(FileNotFoundError):
-            load_config("nonexistent.yaml")
+            load_system_config("nonexistent.yaml")
     
     def test_unsupported_format(self):
         """Test unsupported format error."""
@@ -302,6 +302,6 @@ class TestLoadConfig:
         
         try:
             with pytest.raises(ValueError):
-                load_config(txt_path)
+                load_system_config(txt_path)
         finally:
             os.unlink(txt_path)

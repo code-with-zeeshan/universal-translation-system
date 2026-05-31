@@ -5,7 +5,7 @@
     ["@semantic-release/commit-analyzer", {"preset": "conventionalcommits"}],
     ["@semantic-release/release-notes-generator", {"preset": "conventionalcommits"}],
     ["@semantic-release/changelog", {"changelogFile": "CHANGELOG.md"}],
-    ["@semantic-release/npm", {"pkgRoot": "web/universal-translation-sdk", "npmPublish": false}],
-    ["@semantic-release/git", {"assets": ["CHANGELOG.md", "web/universal-translation-sdk/package.json"]}]
+    ["@semantic-release/npm", {"pkgRoot": "sdk/web/universal-translation-sdk", "npmPublish": false}],
+    ["@semantic-release/git", {"assets": ["CHANGELOG.md", "sdk/web/universal-translation-sdk/package.json"]}]
   ]
 }

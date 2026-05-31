@@ -1,6 +1,6 @@
 # Security Best Practices
 
-This document outlines security best practices for deploying and operating the Universal Translation System in production environments.
+This document outlines security best practices for deploying and operating the Universal Translation System in production.
 
 ## Table of Contents
 1. [Secret Management](#secret-management)
@@ -16,32 +16,20 @@ This document outlines security best practices for deploying and operating the U
 ### Environment Variables
 - **Never commit secrets to version control**
 - Use environment variables for all sensitive information
-- Prefer `*_FILE` environment variables in containers and orchestrators; the system bootstraps these automatically at startup.
-- A centralized bootstrap validates required secrets and fails fast with actionable diagnostics.
-- See: [Environment Variables: Secret Bootstrap & Validation](environment-variables.md#secret-bootstrap--validation)
-- Consider using a secrets management solution like:
-  - Kubernetes Secrets
-  - HashiCorp Vault
-  - AWS Secrets Manager
-  - Azure Key Vault
-  - Google Secret Manager
+- Prefer `*_FILE` environment variables in containers and orchestrators
+- Centralized bootstrap validates required secrets and fails fast
 
 ### Rotation & JWKS
-- Use the rotation helper CLI: `tools/rotate_secrets.py` (supports HS256 and RS256).
-- Example scheduled rotation workflow is provided in `.github/workflows/scheduled-rotation.yml`.
-- RS256: maintain multiple public keys via `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||` separator; JWKS is built automatically and can be reloaded without restart.
+- Use rotation CLI: `tools/rotate_secrets.py` (supports HS256 and RS256)
+- Scheduled rotation workflow: `.github/workflows/scheduled-rotation.yml`
+- RS256: maintain multiple public keys via `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||` separator
 
 ### JWT Secrets
-- Generate strong, random JWT secrets:
-  ```bash
-  # Generate a secure random key
-  openssl rand -hex 32
-  ```
-- Rotate JWT secrets periodically (at least every 90 days)
-- Use different secrets for different environments (dev, staging, prod)
-- Implement proper token expiration and refresh mechanisms
+- Generate strong secrets: `openssl rand -hex 32`
+- Rotate periodically (at least every 90 days)
+- Use different secrets per environment
 
-### Example: Using Kubernetes Secrets
+### Example: Kubernetes Secrets
 ```yaml
 apiVersion: v1
 kind: Secret
@@ -49,12 +37,13 @@ metadata:
   name: translation-system-secrets
 type: Opaque
 data:
-  decoder-jwt-secret: <base64-encoded-secret>
-  coordinator-jwt-secret: <base64-encoded-secret>
-  coordinator-secret: <base64-encoded-secret>
-  coordinator-token: <base64-encoded-secret>
-  internal-service-token: <base64-encoded-secret>
+  decoder-jwt-secret: <base64>
+  coordinator-jwt-secret: <base64>
+  coordinator-secret: <base64>
+  coordinator-token: <base64>
+  internal-service-token: <base64>
 ```
+- See `kubernetes/secrets.yaml` for the full template.
 
 ## Authentication and Authorization
 
@@ -62,202 +51,60 @@ data:
 - Always use JWT authentication for admin endpoints
 - Implement proper token validation
 - Use short-lived tokens (1 hour or less)
-- Implement refresh token rotation
 
 ### Service Authentication (Internal)
-- Use `X-Internal-Auth: <INTERNAL_SERVICE_TOKEN>` for internal-only endpoints (e.g., decoder `/compose_adapter`).
-- Rotate internal tokens periodically and scope them per environment.
+- Use `X-Internal-Auth: <INTERNAL_SERVICE_TOKEN>` for internal-only endpoints
+- Rotate internal tokens periodically
 
 ### Client Authentication
-- Coordinator public entrypoint (`/api/decode`) should require `X-API-Key` with per-client keys managed by APIKeyManager.
-- Rate-limit by client key and emit 429 when exceeded.
-- Consider HMAC-signed requests if keys are widely distributed.
+- Coordinator `/api/decode` requires `X-API-Key` with per-client keys
+- Rate-limit by client key; emit 429 when exceeded
 
 ### Role-Based Access Control
 - Implement RBAC for administrative functions
-- Define clear roles and permissions
-- Principle of least privilege: grant only necessary permissions
-- Regularly audit access and permissions
-
-### Example: JWT Configuration
-```python
-# Python example
-from jose import jwt
-import time
-
-def create_access_token(data: dict, expires_delta: int = 3600):
-    to_encode = data.copy()
-    expire = time.time() + expires_delta
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm="HS256")
-    return encoded_jwt
-
-def verify_token(token: str):
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-        return payload
-    except jwt.JWTError:
-        return None
-```
+- Principle of least privilege
 
 ## Network Security
 
 ### TLS/SSL
 - Always use HTTPS for all API endpoints
 - Use TLS 1.2 or higher
-- Regularly update certificates
-- Consider using Let's Encrypt for automated certificate management
+- See `universal_decoder_node/utils/https_middleware.py` for HTTPS enforcement
 
 ### Network Policies
-- Implement network policies to restrict traffic between services
-- Use Kubernetes Network Policies or similar mechanisms
+- Use Kubernetes Network Policies to restrict traffic
 - Allow only necessary communication paths
-- Block unnecessary outbound internet access
-
-### Example: Kubernetes Network Policy
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: decoder-network-policy
-spec:
-  podSelector:
-    matchLabels:
-      app: decoder
-  policyTypes:
-  - Ingress
-  - Egress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: coordinator
-    ports:
-    - protocol: TCP
-      port: 8001
-  egress:
-  - to:
-    - podSelector:
-        matchLabels:
-          app: monitoring
-    ports:
-    - protocol: TCP
-      port: 9090
-```
 
 ## Container Security
 
 ### Image Security
-- Use minimal base images (e.g., Alpine Linux)
-- Scan images for vulnerabilities
-- Use image signing and verification
-- Never run containers as root
+- Use minimal base images (Ubuntu 22.04 for encoder, Python slim for others)
+- All Dockerfiles use non-root users (`adduser`)
+- Multi-stage builds for slim images
 
 ### Runtime Security
 - Set resource limits for all containers
 - Use read-only file systems where possible
 - Mount secrets as volumes, not environment variables
-- Implement pod security policies
-
-### Example: Secure Dockerfile
-```dockerfile
-FROM python:3.9-slim
-
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-# Install dependencies (modular)
-COPY requirements/base.txt /app/requirements/base.txt
-COPY requirements/serve.txt /app/requirements/serve.txt
-# Add per-service extras as needed, e.g., coordinator or decoder
-COPY requirements/coordinator.txt /app/requirements/coordinator.txt
-RUN pip install --no-cache-dir -r /app/requirements/base.txt -r /app/requirements/serve.txt -r /app/requirements/coordinator.txt
-
-# Copy application code
-COPY . /app
-WORKDIR /app
-
-# Set proper permissions
-RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
-
-# Run with proper security flags
-CMD ["python", "app.py"]
-```
 
 ## Data Protection
-
-### Data in Transit
-- Use TLS for all data transmission
-- Implement proper certificate validation
-- Consider using mutual TLS (mTLS) for service-to-service communication
-
-### Data at Rest
+- TLS for data in transit
 - Encrypt sensitive data at rest
-- Use volume encryption for persistent storage
-- Implement proper key management
-
-### Data Minimization
-- Only collect and store necessary data
-- Implement data retention policies
-- Anonymize or pseudonymize data where possible
+- Only embeddings sent to cloud (not raw text)
 
 ## Monitoring and Logging
-
-### Security Monitoring
 - Monitor for unusual access patterns
 - Set up alerts for authentication failures
-- Track and alert on resource usage anomalies
-- Implement rate limiting and monitor for abuse
-
-### Logging
-- Implement centralized, secure logging
-- Include security-relevant events
 - Do not log sensitive information
-- Ensure logs are tamper-proof
-
-### Example: Security Monitoring with Prometheus
-```yaml
-# Prometheus alert rule
-groups:
-- name: security_alerts
-  rules:
-  - alert: HighAuthFailures
-    expr: sum(rate(authentication_failures_total[5m])) > 10
-    for: 5m
-    labels:
-      severity: critical
-    annotations:
-      summary: "High authentication failure rate"
-      description: "Authentication failures are occurring at a high rate."
-```
+- Use centralized logging with sectioned log handlers
 
 ## Secure Development Practices
-
-### Code Security
-- Implement code reviews with security focus
-- Use static code analysis tools
-- Follow secure coding guidelines
-- Regularly update dependencies
-
-### Dependency Management
-- Regularly scan for vulnerable dependencies
-- Use dependency lockfiles
-- Implement automated dependency updates
-- Have a process for emergency security patches
-
-### CI/CD Security
-- Scan code and dependencies in CI pipeline
-- Implement security gates in deployment pipeline
-- Use separate environments for testing and production
-- Implement proper access controls for CI/CD systems
+- Code reviews with security focus
+- Static code analysis
+- Regular dependency updates
+- Security gates in CI/CD pipeline
 
 ## Additional Resources
-
 - [OWASP Top Ten](https://owasp.org/www-project-top-ten/)
-- [NIST Cybersecurity Framework](https://www.nist.gov/cyberframework)
 - [Kubernetes Security Best Practices](https://kubernetes.io/docs/concepts/security/overview/)
-- [Docker Security Best Practices](https://docs.docker.com/develop/security-best-practices/)
 - [JWT Security Best Practices](https://auth0.com/blog/a-look-at-the-latest-draft-for-jwt-bcp/)

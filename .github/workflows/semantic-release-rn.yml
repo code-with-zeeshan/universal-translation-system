@@ -4,8 +4,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'react-native/UniversalTranslationSDK/**'
-      - 'react-native/UniversalTranslationSDK/.releaserc.json'
+      - 'sdk/react-native/UniversalTranslationSDK/**'
+      - 'sdk/react-native/UniversalTranslationSDK/.releaserc.json'
   workflow_dispatch:
 
 jobs:
@@ -25,12 +25,12 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install semantic-release
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         run: |
           npm install --no-save semantic-release @semantic-release/changelog @semantic-release/npm @semantic-release/git @semantic-release/commit-analyzer @semantic-release/release-notes-generator conventional-changelog-conventionalcommits
 
       - name: Release
-        working-directory: react-native/UniversalTranslationSDK
+        working-directory: sdk/react-native/UniversalTranslationSDK
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

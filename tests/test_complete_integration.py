@@ -40,6 +40,9 @@ class TestCompleteIntegration(unittest.TestCase):
         files_to_check = [
             'data/download_curated_data.py',
             'data/download_training_data.py',
+            'data/unified_data_downloader.py',
+            'data/unified_data_pipeline.py',
+            'data/data_utils.py',
             'training/bootstrap_from_pretrained.py'
         ]
         
@@ -231,8 +234,8 @@ class TestCompleteIntegration(unittest.TestCase):
         # In a real test, you would initialize the SDKs and test their functionality
         
         # For now, just verify that the SDK files exist
-        react_native_sdk = Path('react-native/UniversalTranslationSDK/src/translationClient.ts')
-        web_sdk = Path('web/universal-translation-sdk/src/translationClient.ts')
+        react_native_sdk = Path('sdk/react-native/UniversalTranslationSDK/src/translationClient.ts')
+        web_sdk = Path('sdk/web/universal-translation-sdk/src/translationClient.ts')
         
         self.assertTrue(react_native_sdk.exists(), "React Native SDK file not found")
         self.assertTrue(web_sdk.exists(), "Web SDK file not found")
@@ -281,7 +284,7 @@ class TestCompleteIntegration(unittest.TestCase):
     
     def test_dataset_classes_available(self):
         """Test dataset classes are properly defined"""
-        from utils.dataset_classes import ModernParallelDataset, StreamingParallelDataset
+        from utils.dataset_classes import ModernParallelDataset
         
         # Test instantiation
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -574,8 +577,8 @@ async def test_setup_data_pipeline_no_processed_data(universal_translation_syste
     # Mock Path.exists to return False for processed_dir
     with patch('pathlib.Path.exists', side_effect=lambda p: False if "processed" in str(p) else True):
         # Mock the prepare_all_data method of PracticalDataPipeline
-        with patch('data.unified_data_pipeline.UnifiedDataPipeline.prepare_all_data', return_value=None) as mock_prepare_all_data,
-             patch('connector.pipeline_connector.PipelineConnector.create_monolingual_corpora', return_value=None) as mock_create_monolingual,
+        with patch('data.unified_data_pipeline.UnifiedDataPipeline.prepare_all_data', return_value=None) as mock_prepare_all_data, \
+             patch('connector.pipeline_connector.PipelineConnector.create_monolingual_corpora', return_value=None) as mock_create_monolingual, \
              patch('connector.pipeline_connector.PipelineConnector.create_final_training_file', return_value=None) as mock_create_final:
             
             result = system.setup_data_pipeline()
@@ -599,7 +602,7 @@ def test_setup_vocabulary_system_no_packs(universal_translation_system):
     system = universal_translation_system
     
     # Mock Path.exists to return False for vocab_dir and glob to return empty list
-    with patch('pathlib.Path.exists', return_value=False),
+    with patch('pathlib.Path.exists', return_value=False), \
          patch('pathlib.Path.glob', return_value=[]):
         
         result = system.setup_vocabulary_system()
@@ -611,7 +614,7 @@ def test_setup_vocabulary_system_packs_exist(universal_translation_system):
     system = universal_translation_system
     
     # Mock Path.exists to return True for vocab_dir and glob to return a mock file
-    with patch('pathlib.Path.exists', return_value=True),
+    with patch('pathlib.Path.exists', return_value=True), \
          patch('pathlib.Path.glob', return_value=[MagicMock(name="mock_pack.msgpack")]):
         
         result = system.setup_vocabulary_system()

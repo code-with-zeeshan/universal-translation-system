@@ -69,7 +69,7 @@ jobs:
     - name: Fix Android Project
       if: matrix.language == 'java-kotlin'
       run: |
-        cd android/UniversalTranslationSDK
+        cd sdk/android/UniversalTranslationSDK
         
         # Create settings.gradle
         echo 'rootProject.name = "UniversalTranslationSDK"' > settings.gradle
@@ -124,7 +124,7 @@ jobs:
     - name: Build Android
       if: matrix.language == 'java-kotlin'
       run: |
-        cd android/UniversalTranslationSDK
+        cd sdk/android/UniversalTranslationSDK
         # Try direct gradle command since wrapper might not work
         gradle assembleDebug --no-daemon --stacktrace || true
       env:
@@ -151,7 +151,7 @@ jobs:
     - name: Build iOS
       if: matrix.language == 'swift'
       run: |
-        cd ios/UniversalTranslationSDK
+        cd sdk/ios/UniversalTranslationSDK
         
         # Create a minimal Package.resolved to handle dependencies
         cat > Package.resolved << 'EOF'

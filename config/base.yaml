@@ -8,9 +8,9 @@ pipeline_version: "1.0.0"
 
 # Data configuration
 data:
-  max_sentence_length: 50
+  max_sentence_length: 64
   output_dir: "data/processed"
-  total_size_gb: 8
+  total_size_gb: 2
   processed_dir: data/processed
   checkpoint_dir: "checkpoints/default_run" # Added for better organization
   model_dir: "models/production"
@@ -37,30 +37,30 @@ data:
     - sv
   
   training_distribution:
-    en-es: 2000000
-    en-fr: 2000000
-    en-de: 2000000
-    en-zh: 1500000
-    en-ru: 1500000
-    en-ja: 1000000
-    en-ar: 1000000
-    en-pt: 1000000
-    en-it: 1000000
-    en-hi: 500000
-    en-ko: 500000
-    en-tr: 500000
-    en-th: 300000
-    en-vi: 300000
-    en-pl: 300000
-    en-uk: 300000
-    en-nl: 300000
-    en-id: 300000
-    en-sv: 300000
-    es-pt: 200000
-    zh-ja: 200000
-    fr-es: 200000
-    de-fr: 200000
-    ru-uk: 200000
+    en-es: 400000
+    en-fr: 400000
+    en-de: 400000
+    en-zh: 300000
+    en-ru: 300000
+    en-ja: 200000
+    en-ar: 200000
+    en-pt: 200000
+    en-it: 200000
+    en-hi: 100000
+    en-ko: 100000
+    en-tr: 100000
+    en-th: 60000
+    en-vi: 60000
+    en-pl: 60000
+    en-uk: 60000
+    en-nl: 60000
+    en-id: 60000
+    en-sv: 60000
+    es-pt: 40000
+    zh-ja: 40000
+    fr-es: 40000
+    de-fr: 40000
+    ru-uk: 40000
   
   vocabulary_strategy:
     approach: production # or "research"
@@ -87,22 +87,22 @@ data_strategy:
     default: ['opus-100', 'nllb-seed', 'tatoeba']
 
 
-# Model architecture
+# Model architecture (compact ~40MB target)
 model:
-  hidden_dim: 1024
+  hidden_dim: 768
   num_layers: 6
-  num_heads: 16
+  num_heads: 8
   decoder_dim: 512
   decoder_layers: 6
   decoder_heads: 8
   dropout: 0.1
-  max_vocab_size: 50000
+  max_vocab_size: 32000
 
 # Common training settings
 training:
   # High-level strategy
-  use_fsdp: true
-  num_epochs: 20
+  use_fsdp: false
+  num_epochs: 10
   batch_size: 32
   accumulation_steps: 4
   effective_batch_size: 128
@@ -113,6 +113,13 @@ training:
   warmup_steps: 4000
   max_grad_norm: 1.0
   
+  # PEFT / LoRA (freeze backbone, train only adapters)
+  use_lora: true
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  use_rslora: true
+
   # Memory & Performance Optimizations
   mixed_precision: true
   dtype: "bfloat16"
@@ -135,48 +142,9 @@ training:
   validate_every: 1
   log_every: 50
   profile_training: false # Added missing parameter
-  max_sentence_length: 50
+  max_sentence_length: 64
   dynamic_vocabulary: true
   vocab_switch_penalty: 0.001
-  # The following keys were present but are better handled by the trainer logic
-  # dynamic_batch_size: true
-  # adam_beta1: 0.9
-  # adam_beta2: 0.98
-  # adam_epsilon: 1e-8
-  # pin_memory: true
-  # persistent_workers: true
-  # prefetch_factor: 4
-  # use_channels_last: true
-  # use_fused_optimizer: true
-  # enable_nested_tensor: true
-  # use_inductor: true
-  # profile_memory: false
-  # use_safetensors: true
-  language_to_pack_mapping:
-    en: latin
-    es: latin
-    fr: latin
-    de: latin
-    it: latin
-    pt: latin
-    nl: latin
-    sv: latin
-    pl: latin
-    id: latin
-    vi: latin
-    tr: latin
-    zh: cjk
-    ja: cjk
-    ko: cjk
-    ar: arabic
-    hi: devanagari
-    ru: cyrillic
-    uk: cyrillic
-    th: thai
-
-
-  dynamic_vocabulary: true
-  vocab_switch_penalty: 0.001  # Small penalty for switching  
 
 # Distributed training defaults
 distributed:
@@ -189,7 +157,7 @@ distributed:
 
 # Monitoring and logging
 monitoring:
-  use_wandb: true
+  use_wandb: false
   use_tensorboard: false
   log_gradients: false
   log_weights: false
