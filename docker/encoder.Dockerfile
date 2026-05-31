@@ -1,5 +1,5 @@
 # Stage 1: Build the encoder core
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:26.04 AS builder
 
 RUN apt-get update && apt-get install -y \
     cmake \
@@ -14,7 +14,7 @@ COPY encoder_core/ .
 RUN mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
 # Stage 2: Minimal runtime image for CI/CD artifact or edge packaging
-FROM ubuntu:22.04
+FROM ubuntu:26.04
 COPY --from=builder /encoder_core/build/libuniversal_encoder_core.so /usr/lib/
 COPY --from=builder /encoder_core/include /usr/include/universal_encoder_core
 # Optionally copy test binaries or examples if needed for CI
