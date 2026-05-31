@@ -3,15 +3,19 @@
 Base classes for the Universal Translation System
 Eliminates code duplication across modules
 """
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 import logging
 from pathlib import Path
 import threading
-from typing import Dict, List, Optional, Any, TypeVar, Generic, Callable, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Any, TypeVar, Generic, Callable, Union
 import torch
 import torch.nn as nn
 import os
-from config.schemas import RootConfig
+
+if TYPE_CHECKING:
+    from config.schemas import RootConfig
 
 T = TypeVar('T')
 R = TypeVar('R')
