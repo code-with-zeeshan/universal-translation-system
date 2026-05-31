@@ -137,19 +137,6 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'good'
             },
-            'opus_opensubtitles': {
-                'dataset_name': 'Helsinki-NLP/opus_opensubtitles',
-                'type': DatasetType.TRAINING,
-                'streaming': True,
-                'quality': 'moderate'
-            },
-            'ccmatrix': {
-                'dataset_name': 'yhavinga/ccmatrix',
-                'config_name': 'multilingual',
-                'type': DatasetType.TRAINING,
-                'streaming': True,
-                'quality': 'good'
-            },
             'wmt19': {'dataset_name': 'wmt19', 'type': DatasetType.TRAINING},
             'wmt20': {'dataset_name': 'wmt20', 'type': DatasetType.TRAINING},
             'wmt21': {'dataset_name': 'wmt21', 'type': DatasetType.TRAINING},
@@ -215,14 +202,14 @@ class UnifiedDataDownloader:
         """Get recommended data sources for a language pair"""
         if self.source_preferences:
             if source == 'en' or target == 'en':
-                return self.source_preferences.get('en_centric', ['opus-100', 'ccmatrix'])
+                return self.source_preferences.get('en_centric', ['opus-100'])
             european = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
             if source in european and target in european:
-                return self.source_preferences.get('european', ['opus-100', 'ccmatrix'])
+                return self.source_preferences.get('european', ['opus-100'])
             asian = ['zh', 'ja', 'ko', 'th', 'vi', 'id']
             if source in asian and target in asian:
-                return self.source_preferences.get('asian', ['ccmatrix', 'opus-100'])
-        return ['opus-100', 'ccmatrix']
+                return self.source_preferences.get('asian', ['opus-100'])
+        return ['opus-100']
     
     def get_download_schedule(self, dataset_type: DatasetType = DatasetType.TRAINING) -> List[Dict]:
         """Get optimized download schedule with parallel batches"""
