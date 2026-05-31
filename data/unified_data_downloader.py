@@ -34,7 +34,7 @@ from config.schemas import RootConfig
 from utils.exceptions import DataError
 from utils.common_utils import DirectoryManager
 from utils.security import validate_model_source
-from .data_utils import DataProcessor, DatasetLoader
+from data.data_utils import DataProcessor, DatasetLoader
 
 class DatasetType(Enum):
     """Types of datasets for different purposes"""
@@ -713,3 +713,45 @@ class UnifiedDataDownloader:
         )
         
         return self._download_pair_data(pair, output_path.parent)
+
+
+def main():
+    """CLI entry point for the unified data downloader"""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Unified Data Downloader")
+    parser.add_argument("--config", default="configs/decoder_pool.json",
+                        help="Path to config file")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Estimate download size without downloading")
+    args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    from config.schemas import load_config
+    config = load_config(args.config)
+
+    downloader = UnifiedDataDownloader(config)
+
+    if args.dry_run:
+        print("=" * 60)
+        print("DRY RUN — Estimating download sizes")
+        print("=" * 60)
+        estimates = downloader.estimate_download_size()
+        print(f"  Estimated total: {estimates.get('total_gb', 0):.2f} GB")
+        schedule = downloader.get_download_schedule()
+        for batch in schedule:
+            print(f"\n  Batch: {batch['batch_name']}")
+            print(f"    Pairs: {len(batch['pairs'])}")
+            for pair in batch['pairs']:
+                print(f"      {pair.pair_string} ({pair.priority.value}, {pair.expected_size:,} sentences)")
+        print("\nDry run complete. Pass --dry-run to see this, or omit it to download.")
+        return
+
+    stats = downloader.download_all()
+    print(f"\nDownload complete: {stats}")
+
+
+if __name__ == "__main__":
+    main()

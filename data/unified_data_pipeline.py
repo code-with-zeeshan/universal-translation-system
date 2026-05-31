@@ -12,8 +12,8 @@ from typing import Iterator
 from torch.utils.data import Sampler, Dataset
 
 from utils.logging_config import setup_logging
-from .pipeline_state import PipelineStage, PipelineState
-from .pipeline_orchestrator import UnifiedDataPipeline
+from data.pipeline_state import PipelineStage, PipelineState
+from data.pipeline_orchestrator import UnifiedDataPipeline
 
 # Ensure centralized logging for data pipeline
 setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -81,3 +81,13 @@ __all__ = [
     "BalancedLanguageSampler",
     "UnifiedDataPipeline",
 ]
+
+
+def main():
+    """CLI entry point for the unified data pipeline"""
+    from data.pipeline_orchestrator import main as orch_main
+    orch_main()
+
+
+if __name__ == "__main__":
+    main()
