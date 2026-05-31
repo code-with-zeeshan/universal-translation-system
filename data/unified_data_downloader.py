@@ -129,13 +129,25 @@ class UnifiedDataDownloader:
         return session
     
     def _initialize_data_sources(self) -> Dict[str, Dict]:
-        """Initialize all data sources"""
+        """Initialize all data sources (tried in order per pair)"""
         return {
             'opus-100': {
                 'dataset_name': 'Helsinki-NLP/opus-100',
                 'type': DatasetType.TRAINING,
                 'streaming': True,
                 'quality': 'good'
+            },
+            'opus-tatoeba': {
+                'dataset_name': 'Helsinki-NLP/opus-tatoeba',
+                'type': DatasetType.TRAINING,
+                'streaming': True,
+                'quality': 'good'
+            },
+            'opus_opensubtitles': {
+                'dataset_name': 'Helsinki-NLP/opus_opensubtitles',
+                'type': DatasetType.TRAINING,
+                'streaming': True,
+                'quality': 'moderate'
             },
             'wmt19': {'dataset_name': 'wmt19', 'type': DatasetType.TRAINING},
             'wmt20': {'dataset_name': 'wmt20', 'type': DatasetType.TRAINING},
@@ -199,17 +211,17 @@ class UnifiedDataDownloader:
             return DownloadPriority.LOW
     
     def _get_data_sources(self, source: str, target: str) -> List[str]:
-        """Get recommended data sources for a language pair"""
+        """Get recommended data sources for a language pair (tried in order)"""
         if self.source_preferences:
             if source == 'en' or target == 'en':
-                return self.source_preferences.get('en_centric', ['opus-100'])
+                return self.source_preferences.get('en_centric', ['opus-100', 'opus-tatoeba', 'opus_opensubtitles'])
             european = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
             if source in european and target in european:
-                return self.source_preferences.get('european', ['opus-100'])
+                return self.source_preferences.get('european', ['opus-100', 'opus-tatoeba'])
             asian = ['zh', 'ja', 'ko', 'th', 'vi', 'id']
             if source in asian and target in asian:
-                return self.source_preferences.get('asian', ['opus-100'])
-        return ['opus-100']
+                return self.source_preferences.get('asian', ['opus-100', 'opus-tatoeba'])
+        return ['opus-100', 'opus-tatoeba', 'opus_opensubtitles']
     
     def get_download_schedule(self, dataset_type: DatasetType = DatasetType.TRAINING) -> List[Dict]:
         """Get optimized download schedule with parallel batches"""
@@ -484,43 +496,50 @@ class UnifiedDataDownloader:
                                    pair: LanguagePair,
                                    source_info: Dict,
                                    output_dir: Path) -> bool:
-        """Download dataset with streaming support"""
-        try:
-            dataset = self.dataset_loader.load_dataset_safely(
-                source_info['dataset_name'],
-                config_name=source_info.get('config_name', pair.pair_string),
-                streaming=True,
-            )
-            
-            if dataset:
-                self.data_processor.process_streaming_dataset(
+        """Download dataset with streaming support (falls back to non-streaming)"""
+        # Try streaming first
+        for attempt_streaming in [True, False]:
+            try:
+                dataset = self.dataset_loader.load_dataset_safely(
+                    source_info['dataset_name'],
+                    config_name=source_info.get('config_name', pair.pair_string),
+                    streaming=attempt_streaming,
+                )
+                if dataset is None:
+                    continue
+                count = self.data_processor.process_streaming_dataset(
                     dataset,
                     output_dir / source_info['dataset_name'].split('/')[-1],
                     max_samples=pair.expected_size
                 )
-                return True
-        except Exception as e:
-            self.logger.debug(f"Streaming download failed: {e}")
+                if count > 0:
+                    self.logger.info(f"✓ Downloaded {count:,} samples from {source_info['dataset_name']}")
+                    return True
+                self.logger.warning(f"0 samples from {source_info['dataset_name']}, trying next source")
+            except Exception as e:
+                mode = "streaming" if attempt_streaming else "non-streaming"
+                self.logger.warning(f"{source_info['dataset_name']} ({mode}) failed: {e}")
+                continue
         return False
     
     def _download_standard_dataset(self,
                                   pair: LanguagePair,
                                   source_info: Dict,
                                   output_dir: Path) -> bool:
-        """Download standard dataset"""
+        """Download standard (non-streaming) dataset"""
         try:
             dataset = self.dataset_loader.load_dataset_safely(
                 source_info['dataset_name'],
                 config_name=source_info.get('config_name'),
                 split=source_info.get('split', 'train'),
             )
-            
             if dataset:
                 save_path = output_dir / source_info['dataset_name'].split('/')[-1]
                 dataset.save_to_disk(str(save_path))
+                self.logger.info(f"✓ Saved {source_info['dataset_name']} to {save_path}")
                 return True
         except Exception as e:
-            self.logger.debug(f"Standard download failed: {e}")
+            self.logger.warning(f"{source_info['dataset_name']} failed: {e}")
         return False
     
     def _download_opus_pair(self,

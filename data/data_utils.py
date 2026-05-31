@@ -173,50 +173,35 @@ class DatasetLoader:
         **kwargs
     ) -> Optional[Dataset]:
         """
-        Safely load a dataset with error handling
+        Safely load a dataset with error handling and retry/fallback.
         
-        Args:
-            dataset: Streaming dataset from HuggingFace
-            output_path: Path to save processed data
-            batch_size: Number of samples to process at once (default: 1000)
-            max_samples: Maximum number of samples to process (default: None - process all)
-            
-        Returns:
-            int: Number of samples processed
-
-        Raises:
-            DataError: If dataset processing fails
-            IOError: If output path is not writable    
+        Tries with trust_remote_code=True first, then False (some
+        Parquet-based datasets reject the flag).
         """
-        try:
-            from datasets import load_dataset
-            
-            self.logger.info(f"📥 Loading dataset: {dataset_name}")
-            
-            # Build arguments
-            load_args = {
-                'path': dataset_name,
-                'streaming': streaming,
-                'trust_remote_code': True
-            }
-            
-            if config_name:
-                load_args['name'] = config_name
-            if split:
-                load_args['split'] = split
-                
-            # Add any additional arguments
-            load_args.update(kwargs)
-            
-            # Load dataset
-            dataset = load_dataset(**load_args)
-            
-            self.logger.info(f"✅ Successfully loaded {dataset_name}")
-            return dataset
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to load {dataset_name}: {e}")
-            raise DataError(f"Failed to load {dataset_name}: {e}") from e
+        from datasets import load_dataset
+        
+        for trust_remote in [True, False]:
+            try:
+                self.logger.info(f"📥 Loading dataset: {dataset_name}")
+                load_args = {
+                    'path': dataset_name,
+                    'streaming': streaming,
+                    'trust_remote_code': trust_remote,
+                }
+                if config_name:
+                    load_args['name'] = config_name
+                if split:
+                    load_args['split'] = split
+                load_args.update(kwargs)
+                dataset = load_dataset(**load_args)
+                self.logger.info(f"✅ Successfully loaded {dataset_name}")
+                return dataset
+            except Exception as e:
+                if trust_remote:
+                    self.logger.debug(f"trust_remote_code=True failed for {dataset_name}, trying False: {e}")
+                else:
+                    self.logger.error(f"❌ Failed to load {dataset_name}: {e}")
+                    raise DataError(f"Failed to load {dataset_name}: {e}") from e
 
 
 # Utility functions for common operations
