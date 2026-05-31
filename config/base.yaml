@@ -80,10 +80,10 @@ data_strategy:
     low: ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
   
   source_preferences:
-    en_centric: ['opus-100', 'opus-tatoeba', 'opus_opensubtitles', 'wmt']
-    european: ['opus-100', 'opus-tatoeba', 'wmt']
-    asian: ['opus-100', 'opus-tatoeba']
-    default: ['opus-100', 'opus-tatoeba', 'opus_opensubtitles']
+    en_centric: ['opus-100', 'opus_opensubtitles', 'wmt']
+    european: ['opus-100', 'opus_opensubtitles', 'wmt']
+    asian: ['opus-100']
+    default: ['opus-100', 'opus_opensubtitles']
 
 
 # Model architecture (compact ~40MB target)

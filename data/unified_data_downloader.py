@@ -137,12 +137,6 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'good'
             },
-            'opus-tatoeba': {
-                'dataset_name': 'Helsinki-NLP/opus-tatoeba',
-                'type': DatasetType.TRAINING,
-                'streaming': True,
-                'quality': 'good'
-            },
             'opus_opensubtitles': {
                 'dataset_name': 'Helsinki-NLP/opus_opensubtitles',
                 'type': DatasetType.TRAINING,
@@ -214,14 +208,14 @@ class UnifiedDataDownloader:
         """Get recommended data sources for a language pair (tried in order)"""
         if self.source_preferences:
             if source == 'en' or target == 'en':
-                return self.source_preferences.get('en_centric', ['opus-100', 'opus-tatoeba', 'opus_opensubtitles'])
+                return self.source_preferences.get('en_centric', ['opus-100', 'opus_opensubtitles'])
             european = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
             if source in european and target in european:
-                return self.source_preferences.get('european', ['opus-100', 'opus-tatoeba'])
+                return self.source_preferences.get('european', ['opus-100', 'opus_opensubtitles'])
             asian = ['zh', 'ja', 'ko', 'th', 'vi', 'id']
             if source in asian and target in asian:
-                return self.source_preferences.get('asian', ['opus-100', 'opus-tatoeba'])
-        return ['opus-100', 'opus-tatoeba', 'opus_opensubtitles']
+                return self.source_preferences.get('asian', ['opus-100'])
+        return ['opus-100', 'opus_opensubtitles']
     
     def get_download_schedule(self, dataset_type: DatasetType = DatasetType.TRAINING) -> List[Dict]:
         """Get optimized download schedule with parallel batches"""
@@ -500,14 +494,22 @@ class UnifiedDataDownloader:
                                    source_info: Dict,
                                    output_dir: Path) -> bool:
         """Download dataset with streaming support (falls back to non-streaming)"""
-        # Try streaming first
         for attempt_streaming in [True, False]:
             try:
-                dataset = self.dataset_loader.load_dataset_safely(
+                raw = self.dataset_loader.load_dataset_safely(
                     source_info['dataset_name'],
                     config_name=source_info.get('config_name', pair.pair_string),
                     streaming=attempt_streaming,
                 )
+                # load_dataset returns a DatasetDict when no split is given;
+                # extract the 'train' split for training data.
+                if hasattr(raw, 'keys'):
+                    dataset = raw.get('train')
+                    if dataset is None:
+                        # fall back to the first available split
+                        dataset = list(raw.values())[0]
+                else:
+                    dataset = raw
                 if dataset is None:
                     continue
                 count = self.data_processor.process_streaming_dataset(
