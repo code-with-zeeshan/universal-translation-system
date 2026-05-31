@@ -17,9 +17,8 @@ from utils.common_utils import DirectoryManager
 from data.unified_data_downloader import UnifiedDataDownloader, DatasetType
 from data.smart_sampler import SmartDataSampler
 from data.synthetic_augmentation import SyntheticDataAugmenter
-from data.custom_samplers import TemperatureSampler
+from data.custom_samplers import TemperatureSampler, BalancedLanguageSampler
 from data.pipeline_state import PipelineStage, PipelineState
-from data.unified_data_pipeline import BalancedLanguageSampler
 from connector.pipeline_connector import PipelineConnector
 from connector.vocabulary_connector import VocabularyConnector
 from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, LOG_DIR
