@@ -63,6 +63,28 @@ except ImportError:
     _FORMALITY_AVAILABLE = False
     _FORMALITY_PIPE = None
 
+# NLLB-based quality extractor (optional — provides model-backed quality scoring)
+try:
+    from utils.quality_extractor import NLLBQualityExtractor
+
+    _NLLB_EXTRACTOR: Optional["NLLBQualityExtractor"] = None
+
+    def _get_nllb_extractor() -> Optional["NLLBQualityExtractor"]:
+        global _NLLB_EXTRACTOR
+        if _NLLB_EXTRACTOR is None:
+            try:
+                _NLLB_EXTRACTOR = NLLBQualityExtractor()
+            except Exception:
+                _NLLB_EXTRACTOR = object()  # sentinel
+        return _NLLB_EXTRACTOR if not isinstance(_NLLB_EXTRACTOR, type(object())) else None
+
+    _NLLB_SCORING_AVAILABLE = True
+except (ImportError, Exception):
+    _NLLB_SCORING_AVAILABLE = False
+
+    def _get_nllb_extractor() -> None:
+        return None
+
 
 # ── Language mapping helpers ────────────────────────────────────────────
 
@@ -386,6 +408,7 @@ def score_translation_quality(
     source_lang: str,
     target_lang: str,
     log_probs: Optional[List[float]] = None,
+    use_nllb: bool = False,
 ) -> Dict[str, float]:
     """Score a translation on multiple quality dimensions.
 
@@ -395,6 +418,8 @@ def score_translation_quality(
         source_lang: Source language code
         target_lang: Target language code
         log_probs: Per-token log probabilities from decoder (if available)
+        use_nllb: If True and NLLB extractor is available, include NLLB-based
+                  perplexity as a quality signal (model-backed).
 
     Returns:
         Dict of quality scores (0-1 scale, higher is better)
@@ -429,7 +454,19 @@ def score_translation_quality(
     else:
         scores["diversity"] = 1.0
 
-    # 4. Overall quality
+    # 4. NLLB-based quality score (optional, model-backed)
+    if use_nllb and _NLLB_SCORING_AVAILABLE:
+        extractor = _get_nllb_extractor()
+        if extractor is not None:
+            try:
+                nllb_scores = extractor.score_translation(
+                    source_text, translation, source_lang, target_lang,
+                )
+                scores["nllb_score"] = nllb_scores.get("score", 0.5)
+            except Exception:
+                scores["nllb_score"] = 0.5
+
+    # 5. Overall quality
     score_keys = [k for k in scores if k != "overall"]
     scores["overall"] = sum(scores[k] for k in score_keys) / max(len(score_keys), 1)
 
@@ -513,12 +550,14 @@ class TranslationQualityPipeline:
         grammar_postprocess: bool = True,
         grammar_library_check: bool = True,
         tone_library_boost: bool = True,
+        use_nllb_scoring: bool = False,
     ):
         self.false_friends_enabled = false_friends_enabled
         self.idioms_enabled = idioms_enabled
         self.grammar_postprocess = grammar_postprocess
         self.grammar_library_check = grammar_library_check
         self.tone_library_boost = tone_library_boost
+        self.use_nllb_scoring = use_nllb_scoring
 
     def prepare_input(
         self,
@@ -587,6 +626,7 @@ class TranslationQualityPipeline:
         for translation, log_probs in candidates:
             scores = score_translation_quality(
                 source_text, translation, source_lang, target_lang, log_probs,
+                use_nllb=self.use_nllb_scoring,
             )
             scored.append((scores.get("overall", 0.5), translation))
 
