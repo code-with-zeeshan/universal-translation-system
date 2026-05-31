@@ -374,6 +374,7 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
     except HTTPException:
         raise
     except Exception:
+        logger.warning("Token validation failed", exc_info=True)
         raise HTTPException(status_code=401, detail="Invalid token")
 
 # CORS and Security headers middleware
@@ -1393,7 +1394,7 @@ async def login(token: str = Form(...)):
             session_token = jwt.encode(claims, private_key, algorithm="RS256", headers=headers)
         else:
             session_token = jwt.encode(claims, SECRET_KEY, algorithm="HS256")
-        response.set_cookie(key="session_token", value=session_token, httponly=True, samesite="strict")
+        response.set_cookie(key="session_token", value=session_token, httponly=True, samesite="strict", secure=True)
     return response
 
 @app.post("/logout")

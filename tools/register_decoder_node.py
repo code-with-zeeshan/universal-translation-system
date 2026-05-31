@@ -71,6 +71,10 @@ def register_with_redis(node_entry, redis_url):
         logger.error(f"Failed to register with Redis: {e}")
         return False
 
+def _sanitize_url(url: str) -> str:
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.hostname}{':' + str(parsed.port) if parsed.port else ''}{parsed.path}"
+
 def register_with_coordinator(node_entry, coordinator_url, api_key=None):
     """Register the decoder node directly with the coordinator API"""
     if not coordinator_url:
@@ -81,7 +85,7 @@ def register_with_coordinator(node_entry, coordinator_url, api_key=None):
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
             
-        logger.info(f"Registering with coordinator at {coordinator_url}")
+        logger.info(f"Registering with coordinator at {_sanitize_url(coordinator_url)}")
         response = requests.post(
             f"{coordinator_url}/admin/add_decoder",
             json=node_entry,
@@ -93,7 +97,7 @@ def register_with_coordinator(node_entry, coordinator_url, api_key=None):
             logger.info("Successfully registered with coordinator API")
             return True
         else:
-            logger.error(f"Failed to register with coordinator API: {response.status_code} - {response.text}")
+            logger.error(f"Failed to register with coordinator API: {response.status_code}")
             return False
     except Exception as e:
         logger.error(f"Error registering with coordinator: {e}")
@@ -202,7 +206,7 @@ def main():
     
     # 1. Try coordinator API first (most direct)
     if coordinator_url:
-        print(f"Attempting to register directly with coordinator at {coordinator_url}...")
+        print(f"Attempting to register directly with coordinator at {_sanitize_url(coordinator_url)}...")
         if register_with_coordinator(node_entry, coordinator_url, api_key):
             registration_success = True
             print("✅ Successfully registered with coordinator API")
@@ -211,7 +215,7 @@ def main():
     
     # 2. Try Redis next
     if not registration_success and redis_url:
-        print(f"Attempting to register with Redis at {redis_url}...")
+        print(f"Attempting to register with Redis at {_sanitize_url(redis_url)}...")
         if register_with_redis(node_entry, redis_url):
             registration_success = True
             print("✅ Successfully registered with Redis")

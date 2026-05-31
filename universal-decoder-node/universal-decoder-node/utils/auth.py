@@ -78,7 +78,7 @@ class APIKeyManager:
             
             # Check expiry
             if metadata.get("expiry") and metadata["expiry"] < time.time():
-                logger.warning(f"API key '{metadata['name']}' has expired")
+                logger.warning("An API key has expired")
                 return False, None
                 
             return True, metadata
