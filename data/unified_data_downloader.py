@@ -5,7 +5,6 @@ Replaces: download_curated_data.py, download_training_data.py, smart_data_downlo
 """
 
 import logging
-import zipfile
 import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -137,12 +136,6 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'good'
             },
-            'opus_opensubtitles': {
-                'dataset_name': 'Helsinki-NLP/opus_opensubtitles',
-                'type': DatasetType.TRAINING,
-                'streaming': True,
-                'quality': 'moderate'
-            },
             'wmt19': {'dataset_name': 'wmt19', 'type': DatasetType.TRAINING},
             'wmt20': {'dataset_name': 'wmt20', 'type': DatasetType.TRAINING},
             'wmt21': {'dataset_name': 'wmt21', 'type': DatasetType.TRAINING},
@@ -208,14 +201,14 @@ class UnifiedDataDownloader:
         """Get recommended data sources for a language pair (tried in order)"""
         if self.source_preferences:
             if source == 'en' or target == 'en':
-                return self.source_preferences.get('en_centric', ['opus-100', 'opus_opensubtitles'])
+                return self.source_preferences.get('en_centric', ['opus-100'])
             european = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
             if source in european and target in european:
-                return self.source_preferences.get('european', ['opus-100', 'opus_opensubtitles'])
+                return self.source_preferences.get('european', ['opus-100'])
             asian = ['zh', 'ja', 'ko', 'th', 'vi', 'id']
             if source in asian and target in asian:
                 return self.source_preferences.get('asian', ['opus-100'])
-        return ['opus-100', 'opus_opensubtitles']
+        return ['opus-100']
     
     def get_download_schedule(self, dataset_type: DatasetType = DatasetType.TRAINING) -> List[Dict]:
         """Get optimized download schedule with parallel batches"""
@@ -300,16 +293,10 @@ class UnifiedDataDownloader:
         return stats
     
     def _download_evaluation_data(self, base_dir: str) -> Dict[str, Any]:
-        """Download evaluation datasets"""
+        """Download evaluation datasets (from opus-100 test splits via training pipeline)"""
         output_dir = Path(base_dir) / 'evaluation'
         DirectoryManager.create_directory(output_dir)
-        stats = {}
-        if load_dataset is not None:
-            opus_count = self._download_opus_samples(output_dir)
-            stats['opus_samples'] = opus_count
-        else:
-            self.logger.warning("Skipping eval data download (datasets not installed)")
-        return stats
+        return {}
     
     def _download_training_data(self, base_dir: str) -> Dict[str, Any]:
         """Download training datasets with smart strategy"""
@@ -377,12 +364,7 @@ class UnifiedDataDownloader:
                     continue
                 
                 # Download based on source type
-                # Only Helsinki-NLP/opus_* (with underscore) are raw OPUS corpus
-                # mirrors → use direct HTTP download. opus-* (dash) are curated
-                # Parquet datasets on HF → use streaming/standard path.
-                if source_info['dataset_name'].startswith('Helsinki-NLP/opus_'):
-                    success = self._download_opus_pair(pair, source_info, pair_dir)
-                elif 'streaming' in source_info and source_info['streaming']:
+                if 'streaming' in source_info and source_info['streaming']:
                     success = self._download_streaming_dataset(pair, source_info, pair_dir)
                 else:
                     success = self._download_standard_dataset(pair, source_info, pair_dir)
@@ -395,99 +377,8 @@ class UnifiedDataDownloader:
         
         return success
     
-    def _download_flores200(self, output_dir: Path) -> bool:
-        """No-op: facebook/flores is gated and requires HF authentication."""
-        self.logger.info("FLORES-200 is a gated dataset. Run 'huggingface-cli login' to download. Evaluation will use sacrebleu offline.")
-        return False
-    
-    def _download_tatoeba(self, output_dir: Path) -> int:
-        """No-op: Helsinki-NLP/tatoeba uses a deprecated dataset script format."""
-        self.logger.debug("Tatoeba dataset skipped (script-based format no longer supported)")
-        return 0
-    
-    def _download_opus_samples(self, output_dir: Path) -> int:
-        """Download OPUS samples with size limits"""
-        opus_dir = output_dir / 'opus_samples'
-        DirectoryManager.create_directory(opus_dir)
-        
-        count = 0
-        corpora = ['OpenSubtitles', 'MultiUN']
-        lang_pairs = ['en-es', 'en-fr', 'en-de', 'en-zh', 'en-ru']
-        
-        for corpus in corpora:
-            for lang_pair in lang_pairs:
-                if self._download_opus_file(corpus, lang_pair, opus_dir, max_size_mb=50):
-                    count += 1
-        
-        return count
-    
-    def _download_opus_file(self, 
-                           corpus: str, 
-                           lang_pair: str, 
-                           output_dir: Path,
-                           max_size_mb: int = 100) -> bool:
-        """Download and extract OPUS file with size limit"""
-        url = f"https://opus.nlpl.eu/download.php?f={corpus}/v2018/moses/{lang_pair}.txt.zip"
-        output_file = output_dir / f'{corpus}_{lang_pair}.zip'
-        
-        try:
-            # Download with size limit
-            size_downloaded = 0
-            chunk_size = 1024 * 1024
-            
-            with self.session.get(url, stream=True, timeout=30) as response:
-                response.raise_for_status()
-                
-                with open(output_file, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            f.write(chunk)
-                            size_downloaded += len(chunk)
-                            
-                            if size_downloaded >= max_size_mb * 1024 * 1024:
-                                break
-            
-            # Extract
-            if output_file.exists():
-                self._extract_opus_file(output_file, output_dir)
-                return True
-                
-        except Exception as e:
-            self.logger.debug(f"Failed to download {corpus} {lang_pair}: {e}")
-        
-        return False
-    
-    def _extract_opus_file(self, zip_file: Path, output_dir: Path) -> None:
-        """Extract OPUS zip file to TSV format"""
-        try:
-            with zipfile.ZipFile(zip_file, 'r') as z:
-                lang_pair = zip_file.stem.split('_')[-1]
-                src_lang, tgt_lang = lang_pair.split('-')
-                
-                # Find parallel files
-                files = z.namelist()
-                src_file = next((f for f in files if f.endswith(f'.{src_lang}')), None)
-                tgt_file = next((f for f in files if f.endswith(f'.{tgt_lang}')), None)
-                
-                if src_file and tgt_file:
-                    # Read and combine
-                    with z.open(src_file) as sf, z.open(tgt_file) as tf:
-                        src_lines = sf.read().decode('utf-8').splitlines()
-                        tgt_lines = tf.read().decode('utf-8').splitlines()
-                    
-                    # Write TSV
-                    tsv_file = output_dir / f"{zip_file.stem}.tsv"
-                    with open(tsv_file, 'w', encoding='utf-8') as out:
-                        for src, tgt in zip(src_lines, tgt_lines):
-                            if src.strip() and tgt.strip():
-                                out.write(f"{src.strip()}\t{tgt.strip()}\n")
-                    
-                    # Clean up
-                    zip_file.unlink()
-                    self.logger.debug(f"Extracted {len(src_lines)} pairs from {zip_file.name}")
-                    
-        except Exception as e:
-            self.logger.error(f"Extraction failed for {zip_file.name}: {e}")
+    # Evaluation data is sourced from opus-100 test/validation splits
+    # via the training pipeline. No separate evaluation download needed.
     
     def _download_streaming_dataset(self, 
                                    pair: LanguagePair,
