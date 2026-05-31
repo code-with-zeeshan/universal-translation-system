@@ -12,7 +12,8 @@ try:
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
-    logger.warning("Warning: pandas not available. Install with: pip install pandas")
+
+logger = logging.getLogger(__name__)
 
 # Metrics imports
 try:
@@ -20,16 +21,16 @@ try:
     SACREBLEU_AVAILABLE = True
 except ImportError:
     SACREBLEU_AVAILABLE = False
-    logger.warning("Warning: sacrebleu not available. Install with: pip install sacrebleu")
 
 try:
     from comet import download_model, load_from_checkpoint
     COMET_AVAILABLE = True
 except ImportError:
     COMET_AVAILABLE = False
-    logger.warning("Warning: COMET not available. Install with: pip install unbabel-comet")
 
-logger = logging.getLogger(__name__)
+from utils.constants import EVALUATION_REPORT_FILENAME
+from evaluation.metrics import TranslationPair
+from utils.translation_quality import TranslationQualityPipeline, apply_tone_prompt, postprocess_grammar, score_translation_quality
 
 from utils.constants import EVALUATION_REPORT_FILENAME
 from evaluation.metrics import TranslationPair
@@ -71,19 +72,40 @@ class TranslationEvaluator:
         # Initialize BLEU scorer
         self.bleu_scorer = BLEU() if SACREBLEU_AVAILABLE else None
 
+        # Quality pipeline for scoring + post-processing
+        self._quality = TranslationQualityPipeline()
+
     def translate(self,
                   source_text: str,
                   source_lang: str,
                   target_lang: str,
-                  max_length: int = 128) -> str:
-        """Translate a single text using the encoder-decoder system"""
+                  max_length: int = 128,
+                  tone: Optional[str] = None,
+                  return_candidates: bool = False) -> str:
+        """Translate a single text using the encoder-decoder system with quality enhancements.
+
+        Args:
+            source_text: Text to translate
+            source_lang: Source language code
+            target_lang: Target language code
+            max_length: Maximum generation length
+            tone: Override tone (FORMAL/CASUAL/NEUTRAL) — auto-detected if None
+            return_candidates: If True, return all beam candidates for reranking
+
+        Returns:
+            Translated text (or tuple of (text, candidates) if return_candidates)
+        """
+        # Apply tone prompt if detected or provided
+        text = source_text
+        if tone:
+            text = apply_tone_prompt(source_text, tone, source_lang)
 
         with torch.no_grad():
             # Get vocabulary pack
             vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
 
             # Tokenize source text
-            source_tokens = self._tokenize(source_text, source_lang, vocab_pack)
+            source_tokens = self._tokenize(text, source_lang, vocab_pack)
             source_ids = torch.tensor([source_tokens], device=self.device)
             attention_mask = torch.ones_like(source_ids)
 
@@ -93,19 +115,35 @@ class TranslationEvaluator:
             # Get target language ID
             target_lang_id = vocab_pack.special_tokens.get(f'<{target_lang}>', 2)
 
-            # Decode
-            generated_ids, _ = self.decoder.generate(
+            # Decode with beam search for quality
+            generated_ids, beam_log_probs = self.decoder.generate(
                 encoder_hidden_states=encoder_output,
                 encoder_attention_mask=attention_mask,
                 target_lang_id=target_lang_id,
                 max_length=max_length,
                 temperature=0.7,
                 top_k=50,
-                top_p=0.9
+                top_p=0.9,
+                num_beams=4,
+                num_return_sequences=3 if return_candidates else 1,
             )
+
+            if return_candidates:
+                candidates = []
+                for i, ids in enumerate(generated_ids):
+                    cand_text = self._detokenize(ids.cpu().numpy(), vocab_pack)
+                    cand_text = postprocess_grammar(cand_text, target_lang)
+                    probs = beam_log_probs[i] if beam_log_probs is not None else None
+                    candidates.append((cand_text, probs))
+                # Rerank by quality score
+                best = self._quality.rerank_candidates(source_text, candidates, source_lang, target_lang)
+                return best
 
             # Convert tokens to text
             translation = self._detokenize(generated_ids[0].cpu().numpy(), vocab_pack)
+
+            # Grammar post-processing
+            translation = postprocess_grammar(translation, target_lang)
 
             return translation
 

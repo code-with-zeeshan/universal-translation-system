@@ -135,6 +135,45 @@ def _freeze_backbone_manual(model: nn.Module) -> nn.Module:
     return model
 
 
+def load_lora_adapters(
+    model: nn.Module,
+    lora_path: str,
+    device: Optional[torch.device] = None,
+) -> nn.Module:
+    """Load saved LoRA adapter weights into a model for inference.
+
+    Handles both PEFT-wrapped models and raw models by detecting
+    whether the model has PEFT's 'base_model' attribute.
+
+    Args:
+        model: The model to load adapters into (can be raw or already wrapped)
+        lora_path: Path to saved LoRA adapter weights (.pt or safetensors)
+        device: Device to load onto
+
+    Returns:
+        Model with LoRA weights loaded and set to eval mode
+    """
+    try:
+        from peft import PeftModel
+    except ImportError:
+        logger.error("peft not installed, cannot load LoRA adapters")
+        return model
+
+    device = device or torch.device("cpu")
+
+    if isinstance(model, PeftModel):
+        model.load_adapter(lora_path, adapter_name="default")
+        logger.info(f"Loaded LoRA adapter into PEFT model from {lora_path}")
+    elif hasattr(model, "load_adapter"):
+        model.load_adapter(lora_path)
+        logger.info(f"Loaded LoRA adapter from {lora_path}")
+    else:
+        logger.warning(f"Model does not support LoRA loading; skipping {lora_path}")
+
+    model.eval()
+    return model
+
+
 def get_lora_trainable_params(model: nn.Module) -> list:
     """Get only LoRA/trainable parameters for optimizer."""
     return [p for p in model.parameters() if p.requires_grad]

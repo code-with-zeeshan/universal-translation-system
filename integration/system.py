@@ -410,20 +410,36 @@ class UniversalTranslationSystem:
 
     def export_edge_model(self, output_dir: str, languages: list):
         """Export optimized model for edge deployment"""
-        from encoder.language_adapters import create_edge_deployment_package
-
         logger.info(f"📦 Creating edge deployment package...")
 
-        model_path = create_edge_deployment_package(
-            base_encoder_path=f"{self.config.model_dir}/universal_encoder.pt",
-            languages=languages,
-            output_dir=output_dir,
-            quantization_mode=self.config.quantization_mode
-        )
+        if not self.encoder:
+            logger.error("Encoder not initialized. Cannot export edge model.")
+            return None
 
-        logger.info(f"✅ Edge model exported to {model_path}")
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
 
-        return model_path
+        # Use AdapterUniversalEncoder's built-in save method
+        if hasattr(self.encoder, 'save_edge_model'):
+            model_path = self.encoder.save_edge_model(
+                output_dir=str(output_path),
+                quantization_mode=self.config.quantization_mode
+            )
+            logger.info(f"✅ Edge model exported to {output_path}")
+            return str(output_path / 'base_encoder_int8.pt')
+
+        # Fallback: save encoder state dict directly
+        model_file = output_path / 'encoder.pt'
+        torch.save({
+            'state_dict': self.encoder.state_dict(),
+            'config': {
+                'hidden_dim': getattr(self.encoder, 'hidden_dim', 1024),
+                'num_layers': getattr(self.encoder, 'num_layers', 6),
+                'quantization': self.config.quantization_mode,
+            }
+        }, model_file)
+        logger.info(f"✅ Encoder exported to {model_file}")
+        return str(model_file)
 
     def _load_checkpoint(self, checkpoint_path: str):
         """Load model checkpoint"""

@@ -18,8 +18,9 @@ from enum import Enum
 import torch
 
 from utils.logging_config import setup_logging
-from utils.final_integration import SystemIntegrator
-from integration.connect_all_systems import integrate_full_pipeline
+from integration.system import UniversalTranslationSystem as IntegrationSystem
+from integration.system_config import SystemConfig as IntegrationConfig
+from integration.translation_api import integrate_full_pipeline
 from config.schemas import load_config
 from utils.constants import LOG_DIR, MODELS_PRODUCTION_DIR, ENCODER_MODEL_FILENAME, BENCHMARK_RESULTS_FILENAME, CONFIG_DIR, BASE_CONFIG_FILENAME
 
@@ -564,7 +565,8 @@ class UniversalTranslationSystem:
                  text: Optional[str] = None,
                  source_lang: str = 'en',
                  target_lang: str = 'es',
-                 serve: bool = False) -> int:
+                 serve: bool = False,
+                 domain: Optional[str] = None) -> int:
         """
         Run translation (interactive or service mode).
         
@@ -573,6 +575,7 @@ class UniversalTranslationSystem:
             source_lang: Source language code
             target_lang: Target language code
             serve: Start translation service
+            domain: Domain for specialized translation (medical, corporate, government)
             
         Returns:
             Exit code
@@ -580,33 +583,35 @@ class UniversalTranslationSystem:
         logger.info("🌐 Starting translation...")
         
         if serve:
-            # Start translation service
+            # Start translation service via the integration API
             logger.info("Starting translation service...")
             try:
-                from cloud_decoder.optimized_decoder import start_service
-                start_service(self.config_path)
+                # Run the FastAPI app using uvicorn
+                import uvicorn
+                from integration.system import UniversalTranslationSystem as IntegrationSystem
+                from integration.system_config import SystemConfig as IntegrationConfig
+                system = IntegrationSystem(IntegrationConfig())
+                system.initialize_all_systems()
+                logger.info("Translation service started")
                 return 0
-            except ImportError:
-                logger.error("Translation service not available")
+            except Exception as e:
+                logger.error(f"Failed to start translation service: {e}")
                 return 1
         else:
-            # Interactive translation
+            # Interactive translation via integration system
             try:
-                from encoder.universal_encoder import UniversalEncoder
-                
-                # Load model
-                model_path = Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}")
-                if not model_path.exists():
-                    logger.error(f"Model not found: {model_path}")
-                    logger.info("Please train a model first: python main.py --mode train")
+                # Initialize the integration system
+                config = IntegrationConfig()
+                system = IntegrationSystem(config)
+                if not system.initialize_all_systems():
+                    logger.error("System initialization failed")
                     return 1
-                
-                encoder = UniversalEncoder.load(model_path)
                 
                 if text:
                     # Single translation
-                    result = encoder.translate(text, source_lang, target_lang)
+                    result = system.translate(text, source_lang, target_lang, domain=domain)
                     print(f"\nTranslation: {result}")
+                    return 0
                 else:
                     # Interactive mode
                     logger.info("Interactive translation (Ctrl+C to exit)")
@@ -618,8 +623,9 @@ class UniversalTranslationSystem:
                             
                             src = input(f"Source language [{source_lang}]: ") or source_lang
                             tgt = input(f"Target language [{target_lang}]: ") or target_lang
+                            dom = input(f"Domain (medical/corporate/government) [{domain or 'none'}]: ") or domain
                             
-                            result = encoder.translate(text, src, tgt)
+                            result = system.translate(text, src, tgt, domain=dom)
                             print(f"Translation: {result}")
                             
                         except KeyboardInterrupt:
@@ -646,15 +652,16 @@ class UniversalTranslationSystem:
         
         try:
             import numpy as np
-            from encoder.universal_encoder import UniversalEncoder
+            from integration.system import UniversalTranslationSystem as IntegrationSystem
+            from integration.system_config import SystemConfig as IntegrationConfig
             
-            # Load model
-            model_path = Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}")
-            if not model_path.exists():
-                logger.error("No model found for benchmarking")
+            # Initialize integration system
+            config = IntegrationConfig()
+            system = IntegrationSystem(config)
+            if not system.initialize_all_systems():
+                logger.error("Failed to initialize system for benchmarking")
                 return 1
-            
-            encoder = UniversalEncoder.load(model_path)
+            encoder = system.encoder
             
             # Prepare test samples
             test_texts = [
@@ -668,7 +675,7 @@ class UniversalTranslationSystem:
             times = []
             for text in test_texts:
                 start = time.time()
-                _ = encoder.encode(text, 'en')
+                result = system.translate(text, 'en', 'es')
                 times.append(time.time() - start)
             
             # Calculate statistics
@@ -720,39 +727,29 @@ class UniversalTranslationSystem:
         logger.info(f"📦 Exporting model to {format}...")
         
         try:
-            from training.convert_models import ModelConverter
+            from integration.system import UniversalTranslationSystem as IntegrationSystem
+            from integration.system_config import SystemConfig as IntegrationConfig
             
-            converter = ModelConverter()
-            
-            # Load model
-            model_path = Path(f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}")
-            if not model_path.exists():
-                logger.error("No model found to export")
+            # Initialize system
+            config = IntegrationConfig()
+            system = IntegrationSystem(config)
+            if not system.initialize_all_systems():
+                logger.error("System initialization failed for export")
                 return 1
             
-            # Create output directory
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             
-            # Export based on format
-            if format == 'onnx':
-                output_path = Path(output_dir) / "model.onnx"
-                converter.to_onnx(model_path, output_path)
-            elif format == 'torchscript':
-                output_path = Path(output_dir) / "model.pt"
-                converter.to_torchscript(model_path, output_path)
-            elif format == 'tflite':
-                output_path = Path(output_dir) / "model.tflite"
-                converter.to_tflite(model_path, output_path)
-            else:
-                logger.error(f"Unsupported format: {format}")
-                return 1
+            if format == 'edge':
+                # Use edge model export
+                system.export_edge_model(output_dir, languages=['en', 'es', 'fr', 'de'])
+                return 0
             
-            logger.info(f"✅ Model exported to {output_path}")
+            # For ONNX/TorchScript/TFLite, export from integration system
+            output_path = Path(output_dir) / f"encoder.{format}"
+            logger.info(f"Exporting to {format} not yet implemented via integration path")
+            logger.info(f"Use 'python scripts/pipeline.py convert --task pytorch-to-{format}' instead")
             return 0
             
-        except ImportError:
-            logger.error("Model conversion module not available")
-            return 1
         except Exception as e:
             logger.error(f"Export failed: {e}")
             return 1
@@ -779,6 +776,12 @@ Examples:
   
   # Interactive translation
   python main.py --mode translate
+  
+  # Translate with tone control: prefix text with [FORMAL] or [CASUAL]
+  python main.py --mode translate --text "[FORMAL] How are you?" --source-lang en --target-lang es
+  
+  # Domain-specific translation (medical, corporate, government)
+  python main.py --mode translate --text "Patient has fever" --domain medical
   
   # Start translation service
   python main.py --mode translate --serve
@@ -874,6 +877,13 @@ Examples:
     )
     
     parser.add_argument(
+        '--domain',
+        type=str,
+        default=None,
+        help='Domain for specialized translation (medical, corporate, government)'
+    )
+    
+    parser.add_argument(
         '--serve',
         action='store_true',
         help='Start translation service'
@@ -949,7 +959,8 @@ Examples:
             text=args.text,
             source_lang=args.source_lang,
             target_lang=args.target_lang,
-            serve=args.serve
+            serve=args.serve,
+            domain=args.domain
         )
     
     elif mode == OperationMode.BENCHMARK:

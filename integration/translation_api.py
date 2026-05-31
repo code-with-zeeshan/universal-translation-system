@@ -12,7 +12,8 @@ import time
 import yaml
 from prometheus_client import Counter, Histogram
 from utils.unified_validation import InputValidator
-from utils.constants import MODELS_ADAPTERS_DIR, CONFIG_DIR
+from utils.constants import MODELS_ADAPTERS_DIR, MODELS_PRODUCTION_DIR, CONFIG_DIR
+from utils.translation_quality import TranslationQualityPipeline, detect_tone, strip_tone_tag
 
 from .system import UniversalTranslationSystem
 from .system_config import SystemConfig
@@ -23,11 +24,20 @@ logger = logging.getLogger(__name__)
 translation_counter = Counter('translations_total', 'Total translations', ['source_lang', 'target_lang'])
 translation_duration = Histogram('translation_duration_seconds', 'Translation duration')
 
+# Quality pipeline (lazy-init)
+_quality_pipeline = None
+
+def _get_quality_pipeline() -> TranslationQualityPipeline:
+    global _quality_pipeline
+    if _quality_pipeline is None:
+        _quality_pipeline = TranslationQualityPipeline()
+    return _quality_pipeline
+
 
 # --- Translate methods (patched onto UniversalTranslationSystem) ---
 
 def translate(self, text: str, source_lang: str, target_lang: str, domain: Optional[str] = None) -> str:
-    """Translate text with input validation and optional domain-specific expertise."""
+    """Translate text with input validation, quality pipeline, and optional domain-specific expertise."""
     # Validation:
     text = InputValidator.validate_text_input(text, max_length=5000)
 
@@ -40,42 +50,56 @@ def translate(self, text: str, source_lang: str, target_lang: str, domain: Optio
     if not self.encoder or not self.decoder:
         raise RuntimeError("Models not initialized")
 
-    # --- MODIFIED ---
-    # 1. Determine which vocabulary and adapter to use
-    if domain:
-        # Construct domain-specific names
-        vocab_pack_name = f"latin_{domain}" # e.g., 'latin_medical'
-        adapter_name = f"{source_lang}_{domain}" # e.g., 'es_medical'
+    # --- Quality pipeline: prepare input ---
+    quality = _get_quality_pipeline()
+    processed_text, tone, effective_domain = quality.prepare_input(text, source_lang, target_lang, domain)
+
+    # --- Determine adapter and vocab ---
+    if effective_domain and effective_domain != "general":
+        vocab_pack_name = f"latin_{effective_domain}"
+        adapter_name = f"{source_lang}_{effective_domain}"
     else:
-        # Fallback to general-purpose packs
         vocab_pack_name = self.vocab_manager.language_to_pack.get(source_lang, 'latin')
         adapter_name = source_lang
 
-    # 2. Load the correct vocabulary pack
+    # Load the correct vocabulary pack
     try:
         vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
     except Exception:
-        if domain:
+        if effective_domain and effective_domain != "general":
             logger.warning(f"Domain vocab '{vocab_pack_name}' not found. Falling back to general vocab.")
-            general_pack_name = self.vocab_manager.language_to_pack.get(source_lang, 'latin')
             vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
-            # Also fallback the adapter name
             adapter_name = source_lang
         else:
-            raise # Re-raise if general vocab is not found
+            raise
 
-    # 3. Load the correct adapter and translate (atomic under lock)
+    # --- Translate with quality enhancements (atomic under lock) ---
     with self._model_lock:
-        self.encoder.load_language_adapter(adapter_name, adapter_path=f"{MODELS_ADAPTERS_DIR}/best_{adapter_name}_adapter.pt")
+        # Load domain adapter (bottleneck type)
+        adapter_path = Path(f"{MODELS_ADAPTERS_DIR}/best_{adapter_name}_adapter.pt")
+        if adapter_path.exists():
+            self.encoder.load_language_adapter(adapter_name, str(adapter_path))
 
-        # 4. Translate
-        if self.evaluator:
-            return self.evaluator.translate(text, source_lang, target_lang)
-        else:
+        # Load LoRA adapter if trained alongside
+        lora_path = Path(f"{MODELS_PRODUCTION_DIR}/lora_{adapter_name}.pt")
+        if lora_path.exists():
+            from training.peft_integration import load_lora_adapters
+            self.encoder = load_lora_adapters(self.encoder, str(lora_path), self.device)
+            self.decoder = load_lora_adapters(self.decoder, str(lora_path), self.device)
+
+        if not self.evaluator:
             raise RuntimeError("Translation system not fully initialized")
 
+        # Translate with processed text (tone hints included)
+        translation = self.evaluator.translate(processed_text, source_lang, target_lang)
 
-async def translate_async(self, text: str, source_lang: str, target_lang: str) -> str:
+    # Post-process: grammar fixes + tone consistency
+    translation = quality.postprocess(translation, target_lang, tone)
+
+    return translation
+
+
+async def translate_async(self, text: str, source_lang: str, target_lang: str, domain: Optional[str] = None) -> str:
     """Async translation for better concurrency"""
     # Record metrics
     start_time = time.time()
@@ -88,7 +112,8 @@ async def translate_async(self, text: str, source_lang: str, target_lang: str) -
         self.translate,
         text,
         source_lang,
-        target_lang
+        target_lang,
+        domain,
     )
 
     # Record duration
