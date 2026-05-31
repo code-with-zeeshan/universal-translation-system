@@ -383,7 +383,10 @@ class UnifiedDataDownloader:
                     continue
                 
                 # Download based on source type
-                if source_info['dataset_name'].startswith('Helsinki-NLP/opus'):
+                # Only Helsinki-NLP/opus_* (with underscore) are raw OPUS corpus
+                # mirrors → use direct HTTP download. opus-* (dash) are curated
+                # Parquet datasets on HF → use streaming/standard path.
+                if source_info['dataset_name'].startswith('Helsinki-NLP/opus_'):
                     success = self._download_opus_pair(pair, source_info, pair_dir)
                 elif 'streaming' in source_info and source_info['streaming']:
                     success = self._download_streaming_dataset(pair, source_info, pair_dir)
@@ -542,14 +545,22 @@ class UnifiedDataDownloader:
             self.logger.warning(f"{source_info['dataset_name']} failed: {e}")
         return False
     
+    _OPUS_CORPUS_NAMES = {
+        'opensubtitles': 'OpenSubtitles',
+        'books': 'Books',
+        'multium': 'MultiUN',
+        'tatoeba': 'Tatoeba',
+    }
+
     def _download_opus_pair(self,
                            pair: LanguagePair,
                            source_info: Dict,
                            output_dir: Path) -> bool:
         """Download OPUS dataset for language pair"""
-        corpus = source_info['dataset_name'].split('/')[-1].replace('opus_', '')
+        suffix = source_info['dataset_name'].split('/')[-1].replace('opus_', '')
+        corpus = self._OPUS_CORPUS_NAMES.get(suffix.lower(), suffix.capitalize())
         return self._download_opus_file(
-            corpus.capitalize(),
+            corpus,
             pair.pair_string,
             output_dir,
             max_size_mb=500 if pair.priority == DownloadPriority.HIGH else 100
