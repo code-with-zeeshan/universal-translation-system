@@ -17,9 +17,10 @@ class VocabularyConnector:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
     
-    def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed'):
+    def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed',
+                                           output_dir: str = 'vocabs'):
         """Create vocabulary packs after data pipeline completes"""
-        self.logger.info("Creating vocabulary packs from processed data...")
+        self.logger.info(f"Creating vocabulary packs in {output_dir} from {processed_dir}...")
         
         # Check if monolingual corpora exist
         processed_path = Path(processed_dir)
@@ -29,7 +30,7 @@ class VocabularyConnector:
         # Create vocabulary packs
         creator = VocabularyPackCreator(
             corpus_dir=processed_dir,
-            output_dir='vocabs'
+            output_dir=output_dir,
         )
         
         # Create all standard packs
