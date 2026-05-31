@@ -19,7 +19,8 @@ TRUSTED_SOURCES = [
     'Helsinki-NLP/',
     'huggingface/',
     'openai/',
-    'anthropic/'
+    'anthropic/',
+    'yhavinga/',
 ]
 
 def validate_path_component(path_component: str) -> str:

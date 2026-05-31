@@ -80,11 +80,10 @@ data_strategy:
     low: ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
   
   source_preferences:
-    # Recommended sources by pair type
-    en_centric: ['opus-100', 'nllb-seed', 'ccmatrix', 'wmt']
+    en_centric: ['opus-100', 'ccmatrix', 'wmt']
     european: ['opus-100', 'wmt', 'opus_books']
-    asian: ['opus-100', 'nllb-seed', 'ted_talks']
-    default: ['opus-100', 'nllb-seed', 'tatoeba']
+    asian: ['opus-100', 'ted_talks']
+    default: ['opus-100']
 
 
 # Model architecture (compact ~40MB target)

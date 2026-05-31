@@ -129,27 +129,8 @@ class UnifiedDataDownloader:
         return session
     
     def _initialize_data_sources(self) -> Dict[str, Dict]:
-        """Initialize all data sources from all three downloaders"""
+        """Initialize all data sources"""
         return {
-            # From curated downloader
-            'flores200': {
-                'dataset_name': 'facebook/flores',
-                'config_name': 'flores200_sacrebleu_tokenized_xlm_roberta_base',
-                'split': 'dev',
-                'type': DatasetType.EVALUATION,
-                'size': '~10MB per language',
-                'sentences': 1000,
-                'quality': 'excellent'
-            },
-            'tatoeba': {
-                'dataset_name': 'Helsinki-NLP/tatoeba',
-                'type': DatasetType.EVALUATION,
-                'size': '~5-50MB per pair',
-                'sentences': '1k-500k',
-                'quality': 'good'
-            },
-            
-            # From training downloader
             'opus-100': {
                 'dataset_name': 'Helsinki-NLP/opus-100',
                 'type': DatasetType.TRAINING,
@@ -162,12 +143,6 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'moderate'
             },
-            'nllb-seed': {
-                'dataset_name': 'facebook/nllb-seed',
-                'type': DatasetType.TRAINING,
-                'streaming': True,
-                'quality': 'excellent'
-            },
             'ccmatrix': {
                 'dataset_name': 'yhavinga/ccmatrix',
                 'config_name': 'multilingual',
@@ -175,8 +150,6 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'good'
             },
-            
-            # WMT datasets
             'wmt19': {'dataset_name': 'wmt19', 'type': DatasetType.TRAINING},
             'wmt20': {'dataset_name': 'wmt20', 'type': DatasetType.TRAINING},
             'wmt21': {'dataset_name': 'wmt21', 'type': DatasetType.TRAINING},
@@ -189,15 +162,14 @@ class UnifiedDataDownloader:
         required_pairs = []
         
         if dataset_type == DatasetType.EVALUATION:
-            # For evaluation, just need English pairs
             for lang in self.languages:
                 if lang != 'en':
                     required_pairs.append(LanguagePair(
                         source='en',
                         target=lang,
                         priority=DownloadPriority.HIGH,
-                        expected_size=1000,  # FLORES size
-                        data_sources=['flores200', 'tatoeba'],
+                        expected_size=1000,
+                        data_sources=['opus-100'],
                         dataset_type=DatasetType.EVALUATION
                     ))
         else:
@@ -241,21 +213,16 @@ class UnifiedDataDownloader:
     
     def _get_data_sources(self, source: str, target: str) -> List[str]:
         """Get recommended data sources for a language pair"""
-        # Use preferences if configured
         if self.source_preferences:
             if source == 'en' or target == 'en':
-                return self.source_preferences.get('en_centric', ['opus-100', 'nllb-seed'])
-            
+                return self.source_preferences.get('en_centric', ['opus-100', 'ccmatrix'])
             european = ['es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl']
             if source in european and target in european:
                 return self.source_preferences.get('european', ['opus-100'])
-            
             asian = ['zh', 'ja', 'ko', 'th', 'vi', 'id']
             if source in asian and target in asian:
                 return self.source_preferences.get('asian', ['ccmatrix'])
-        
-        # Default sources
-        return ['opus-100', 'nllb-seed', 'ccmatrix']
+        return ['opus-100', 'ccmatrix']
     
     def get_download_schedule(self, dataset_type: DatasetType = DatasetType.TRAINING) -> List[Dict]:
         """Get optimized download schedule with parallel batches"""
@@ -340,29 +307,15 @@ class UnifiedDataDownloader:
         return stats
     
     def _download_evaluation_data(self, base_dir: str) -> Dict[str, Any]:
-        """Download evaluation datasets (from curated downloader)"""
+        """Download evaluation datasets"""
         output_dir = Path(base_dir) / 'evaluation'
         DirectoryManager.create_directory(output_dir)
-        
         stats = {}
-        
-        # If running without requests/datasets, skip evaluation downloads in smoke mode
-        if requests is None or load_dataset is None:
-            self.logger.warning("Skipping evaluation data download (requests/datasets not installed) - smoke mode")
-            return stats
-
-        # FLORES-200
-        if self._download_flores200(output_dir):
-            stats['flores200'] = 1
-        
-        # Tatoeba
-        tatoeba_count = self._download_tatoeba(output_dir)
-        stats['tatoeba'] = tatoeba_count
-        
-        # OPUS samples
-        opus_count = self._download_opus_samples(output_dir)
-        stats['opus_samples'] = opus_count
-        
+        if load_dataset is not None:
+            opus_count = self._download_opus_samples(output_dir)
+            stats['opus_samples'] = opus_count
+        else:
+            self.logger.warning("Skipping eval data download (datasets not installed)")
         return stats
     
     def _download_training_data(self, base_dir: str) -> Dict[str, Any]:
@@ -447,52 +400,14 @@ class UnifiedDataDownloader:
         return success
     
     def _download_flores200(self, output_dir: Path) -> bool:
-        """Download FLORES-200 evaluation dataset"""
-        try:
-            dataset = self.dataset_loader.load_dataset_safely(
-                'facebook/flores',
-                config_name='flores200_sacrebleu_tokenized_xlm_roberta_base',
-                split='dev',
-                trust_remote_code=False
-            )
-            
-            if dataset:
-                save_path = output_dir / 'flores200'
-                dataset.save_to_disk(str(save_path))
-                self.logger.info(f"✓ FLORES-200 saved to {save_path}")
-                return True
-        except Exception as e:
-            self.logger.error(f"Failed to download FLORES-200: {e}")
+        """No-op: facebook/flores is gated and requires HF authentication."""
+        self.logger.info("FLORES-200 is a gated dataset. Run 'huggingface-cli login' to download. Evaluation will use sacrebleu offline.")
         return False
     
     def _download_tatoeba(self, output_dir: Path) -> int:
-        """Download Tatoeba datasets"""
-        count = 0
-        for target_lang in self.languages:
-            if target_lang == 'en':
-                continue
-            
-            try:
-                dataset = self.dataset_loader.load_dataset_safely(
-                    'Helsinki-NLP/tatoeba',
-                    lang1='eng',
-                    lang2=target_lang,
-                    split='train',
-                    trust_remote_code=False
-                )
-                
-                if dataset:
-                    # Limit size
-                    if len(dataset) > 100000:
-                        dataset = dataset.select(range(100000))
-                    
-                    save_path = output_dir / f'tatoeba_en_{target_lang}'
-                    dataset.save_to_disk(str(save_path))
-                    count += 1
-            except Exception as e:
-                self.logger.debug(f"No Tatoeba data for en-{target_lang}: {e}")
-        
-        return count
+        """No-op: Helsinki-NLP/tatoeba uses a deprecated dataset script format."""
+        self.logger.debug("Tatoeba dataset skipped (script-based format no longer supported)")
+        return 0
     
     def _download_opus_samples(self, output_dir: Path) -> int:
         """Download OPUS samples with size limits"""
@@ -516,7 +431,7 @@ class UnifiedDataDownloader:
                            output_dir: Path,
                            max_size_mb: int = 100) -> bool:
         """Download and extract OPUS file with size limit"""
-        url = f"https://object.pouta.csc.fi/OPUS-{corpus}/v2018/moses/{lang_pair}.txt.zip"
+        url = f"https://opus.nlpl.eu/download.php?f={corpus}/v2018/moses/{lang_pair}.txt.zip"
         output_file = output_dir / f'{corpus}_{lang_pair}.zip'
         
         try:
