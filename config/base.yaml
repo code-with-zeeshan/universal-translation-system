@@ -8,7 +8,7 @@ pipeline_version: "1.0.0"
 
 # Data configuration
 data:
-  max_sentence_length: 64
+  max_sentence_length: 128
   output_dir: "data/processed"
   total_size_gb: 2
   processed_dir: data/processed
@@ -61,6 +61,15 @@ data:
     fr-es: 40000
     de-fr: 40000
     ru-uk: 40000
+    es-fr: 40000
+    it-es: 40000
+    it-fr: 40000
+    nl-de: 40000
+    pl-ru: 40000
+    ko-ja: 40000
+    vi-zh: 40000
+    ar-fr: 40000
+    th-vi: 40000
   
   augmentation_pairs:
     - en-es
@@ -76,6 +85,15 @@ data:
     - de-fr
     - zh-ja
     - ru-uk
+    - es-fr
+    - it-es
+    - it-fr
+    - nl-de
+    - pl-ru
+    - ko-ja
+    - vi-zh
+    - ar-fr
+    - th-vi
 
   vocabulary_strategy:
     approach: production # or "research"
@@ -91,7 +109,8 @@ data_strategy:
   priority_rules:
     high: ['en-es', 'en-fr', 'en-de', 'en-zh', 'en-ru']
     medium: ['en-ja', 'en-ar', 'en-pt', 'en-it', 'en-hi', 'en-ko',
-             'es-pt', 'es-fr', 'de-fr', 'zh-ja', 'ar-fr', 'ru-uk']
+             'es-pt', 'es-fr', 'de-fr', 'zh-ja', 'ar-fr', 'ru-uk',
+             'it-es', 'it-fr', 'nl-de', 'pl-ru', 'ko-ja', 'vi-zh', 'th-vi']
     low: ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
   
   source_preferences:
@@ -156,7 +175,7 @@ training:
   validate_every: 1
   log_every: 50
   profile_training: false # Added missing parameter
-  max_sentence_length: 64
+  max_sentence_length: 128
   dynamic_vocabulary: true
   vocab_switch_penalty: 0.001
 

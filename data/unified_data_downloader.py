@@ -7,10 +7,13 @@ Replaces: download_curated_data.py, download_training_data.py, smart_data_downlo
 import logging
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+import zipfile
+import io
 # Optional dependency: requests. Provide minimal shim for smoke/dry-run.
 try:
     import requests  # type: ignore
@@ -127,6 +130,8 @@ class UnifiedDataDownloader:
         session.mount("https://", adapter)
         return session
     
+    _OPUS_DIRECT_URL = "https://opus.nlpl.eu/download.php?f={corpus}/{lang_pair}.txt.zip"
+
     def _initialize_data_sources(self) -> Dict[str, Dict]:
         """Initialize all data sources (tried in order per pair)"""
         return {
@@ -135,6 +140,29 @@ class UnifiedDataDownloader:
                 'type': DatasetType.TRAINING,
                 'streaming': True,
                 'quality': 'good'
+            },
+            'opus_paracrawl': {
+                'dataset_name': 'Helsinki-NLP/opus_paracrawl',
+                'type': DatasetType.TRAINING,
+                'streaming': True,
+                'quality': 'medium',
+            },
+            'open_subtitles': {
+                'dataset_name': 'Helsinki-NLP/open_subtitles',
+                'type': DatasetType.TRAINING,
+                'streaming': True,
+                'quality': 'medium',
+            },
+            'opus_wikimatrix': {
+                'dataset_name': 'Helsinki-NLP/opus_wikimatrix',
+                'type': DatasetType.TRAINING,
+                'streaming': True,
+                'quality': 'medium',
+            },
+            'opus_direct': {
+                'type': DatasetType.TRAINING,
+                'streaming': False,
+                'quality': 'medium',
             },
             'wmt19': {'dataset_name': 'wmt19', 'type': DatasetType.TRAINING},
             'wmt20': {'dataset_name': 'wmt20', 'type': DatasetType.TRAINING},
@@ -358,6 +386,13 @@ class UnifiedDataDownloader:
             source_info = self.data_sources[source_name]
             
             try:
+                # Special handling for direct OPUS download (no HF dataset)
+                if source_name == 'opus_direct':
+                    success = self._download_direct_opus(pair, output_dir)
+                    if success:
+                        break
+                    continue
+
                 # Validate source
                 if not validate_model_source(source_info['dataset_name']):
                     self.logger.warning(f"Skipping untrusted source: {source_name}")
@@ -448,6 +483,40 @@ class UnifiedDataDownloader:
         'multium': 'MultiUN',
         'tatoeba': 'Tatoeba',
     }
+
+    def _download_direct_opus(self, pair: LanguagePair, output_dir: Path) -> bool:
+        """Download directly from opus.nlpl.eu as fallback when HF datasets fail."""
+        if self.session is None:
+            self.logger.warning("HTTP session unavailable, skipping direct OPUS download")
+            return False
+
+        corpora = ['OpenSubtitles', 'ParaCrawl', 'WikiMatrix']
+        flat_file = output_dir / f"{pair.pair_string}.txt"
+
+        for corpus in corpora:
+            url = self._OPUS_DIRECT_URL.format(corpus=corpus, lang_pair=pair.pair_string)
+            try:
+                self.logger.info(f"Downloading {corpus} from {url}")
+                resp = self.session.get(url, timeout=120, stream=True)
+                if resp.status_code != 200:
+                    self.logger.debug(f"{corpus} not available for {pair.pair_string} (HTTP {resp.status_code})")
+                    continue
+                total = 0
+                with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+                    for name in zf.namelist():
+                        if name.endswith('.txt') or name.endswith('.tsv'):
+                            with zf.open(name) as f:
+                                content = f.read().decode('utf-8')
+                            with open(flat_file, 'a', encoding='utf-8') as out:
+                                out.write(content)
+                                total += content.count('\n')
+                if total > 0:
+                    self.logger.info(f"✓ Downloaded {total:,} lines from {corpus} for {pair.pair_string}")
+                    return True
+            except Exception as e:
+                self.logger.warning(f"Direct OPUS download failed for {corpus}/{pair.pair_string}: {e}")
+                continue
+        return False
 
     def _download_opus_pair(self,
                            pair: LanguagePair,

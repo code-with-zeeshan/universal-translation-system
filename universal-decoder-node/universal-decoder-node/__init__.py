@@ -14,12 +14,14 @@ from .decoder import (
     OptimizedUniversalDecoder,
     OptimizedDecoderLayer,
     ContinuousBatcher,
-    DecoderService
+    DecoderService,
 )
+from .litserve_decoder import DecoderLitAPI
 
 __all__ = [
     "OptimizedUniversalDecoder",
-    "OptimizedDecoderLayer", 
+    "OptimizedDecoderLayer",
     "ContinuousBatcher",
-    "DecoderService"
+    "DecoderService",
+    "DecoderLitAPI",
 ]

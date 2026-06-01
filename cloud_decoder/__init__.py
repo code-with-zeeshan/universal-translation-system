@@ -1,4 +1,3 @@
-# cloud_decoder/__init__.py
 """
 Cloud decoder module for the Universal Translation System.
 
@@ -9,11 +8,11 @@ continuous batching and GPU optimization.
 from .optimized_decoder import (
     OptimizedUniversalDecoder,
     OptimizedDecoderLayer,
-    ContinuousBatcher
+    ContinuousBatcher,
 )
 
 __all__ = [
     "OptimizedUniversalDecoder",
     "OptimizedDecoderLayer",
-    "ContinuousBatcher"
+    "ContinuousBatcher",
 ]

@@ -74,6 +74,36 @@ def start(host: str, port: int, workers: int, model_path: Optional[str],
 
 
 @cli.command()
+@click.option('--host', default=DEFAULT_HOST, help='Host to bind to')
+@click.option('--port', default=DEFAULT_PORT, type=int, help='Port to bind to')
+@click.option('--model-path', type=click.Path(exists=True), help='Path to model file')
+@click.option('--vocab-dir', default=DEFAULT_VOCAB_DIR, type=click.Path(), help='Directory containing vocabulary packs')
+@click.option('--max-batch-size', default=8, type=int, help='Max batch size for LitServe auto-batching')
+def serve(host: str, port: int, model_path: Optional[str], vocab_dir: str, max_batch_size: int):
+    """Start decoder with LitServe (2x faster than FastAPI)"""
+    import litserve as ls
+    from .litserve_decoder import DecoderLitAPI
+
+    click.echo(f"🚀 Starting LitServe decoder on {host}:{port}...")
+    click.echo(f"📦 Max batch size: {max_batch_size}")
+    click.echo(f"🧠 Model: {model_path or 'default'}")
+    click.echo(f"📚 Vocab directory: {vocab_dir}")
+
+    if model_path:
+        os.environ['MODEL_PATH'] = model_path
+    os.environ['VOCAB_DIR'] = vocab_dir
+
+    api = DecoderLitAPI(
+        model_path=model_path,
+        vocab_dir=vocab_dir,
+        max_batch_size=max_batch_size,
+        batch_timeout=0.01,
+    )
+    server = ls.LitServer(api, accelerator="auto")
+    server.run(port=port)
+
+
+@cli.command()
 @click.option('--endpoint', default=DEFAULT_DECODER_ENDPOINT, help='Decoder endpoint')
 @click.option('--detailed', is_flag=True, help='Show detailed status')
 def status(endpoint: str, detailed: bool):

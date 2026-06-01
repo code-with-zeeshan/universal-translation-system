@@ -744,10 +744,24 @@ class UniversalTranslationSystem:
                 system.export_edge_model(output_dir, languages=['en', 'es', 'fr', 'de'])
                 return 0
             
-            # For ONNX/TorchScript/TFLite, export from integration system
-            output_path = Path(output_dir) / f"encoder.{format}"
-            logger.info(f"Exporting to {format} not yet implemented via integration path")
-            logger.info(f"Use 'python scripts/pipeline.py convert --task pytorch-to-{format}' instead")
+            # For ONNX/TorchScript/TFLite, use ModelConverter directly
+            from training.convert_models import ModelConverter
+            conv = ModelConverter()
+            dummy = torch.randn(1, 512)
+
+            if format == 'onnx':
+                onnx_path = str(Path(output_dir) / 'encoder.onnx')
+                ok = conv.pytorch_to_onnx(
+                    str(system.encoder_path or 'models/encoder.pt'),
+                    onnx_path, dummy, use_dynamo=True,
+                )
+                if ok:
+                    logger.info(f"✅ ONNX model exported to {onnx_path}")
+                    return 0
+                logger.error("ONNX export failed")
+                return 1
+
+            logger.info(f"Export to {format} not implemented — use 'python scripts/pipeline.py convert'")
             return 0
             
         except Exception as e:

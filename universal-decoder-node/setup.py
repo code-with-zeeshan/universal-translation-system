@@ -27,13 +27,14 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        # Core runtime used by FastAPI decoder service
+        # Core runtime used by decoder service
         "torch>=2.0.0",
         "numpy>=1.21.0,<2.0.0",
         "msgpack>=1.0.0",
         "lz4>=4.3.2",
         "fastapi==0.104.1",
         "uvicorn[standard]==0.24.0.post1",
+        "litserve>=0.12.0",
         "pydantic==2.5.3",
         "click>=8.1.0",
         "requests>=2.31.0",
@@ -68,6 +69,7 @@ setup(
         "console_scripts": [
             "universal-decoder-node=universal_decoder_node.cli:cli",
             "udn=universal_decoder_node.cli:cli",  # Short alias
+            "udn-litserve=universal_decoder_node.litserve_decoder:main",  # LitServe variant
         ],
     },
     include_package_data=True,

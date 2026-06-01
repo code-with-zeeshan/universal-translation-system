@@ -19,6 +19,8 @@ from data.smart_sampler import SmartDataSampler
 from data.synthetic_augmentation import SyntheticDataAugmenter
 from data.custom_samplers import TemperatureSampler, BalancedLanguageSampler
 from data.pipeline_state import PipelineStage, PipelineState
+from data.wikipedia_backtranslation import WikipediaBacktranslator
+from data.knowledge_distillation import KnowledgeDistillator
 from connector.pipeline_connector import PipelineConnector
 from connector.vocabulary_connector import VocabularyConnector
 from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, LOG_DIR
@@ -93,6 +95,20 @@ class UnifiedDataPipeline:
                 self.logger.warning(f"PipelineConnector unavailable ({e}); using limited pipeline features")
                 self.pipeline_connector = None
             self.vocab_connector = VocabularyConnector()
+            
+            # Strategy 2: Wikipedia backtranslation data
+            try:
+                self.wikipedia = WikipediaBacktranslator()
+            except Exception as e:
+                self.logger.warning(f"Wikipedia backtranslator unavailable ({e})")
+                self.wikipedia = None
+            
+            # Strategy 3: Knowledge distillation from NLLB-3.3B
+            try:
+                self.distillator = KnowledgeDistillator()
+            except Exception as e:
+                self.logger.warning(f"Knowledge distillator unavailable ({e})")
+                self.distillator = None
             
             # Get strategy from downloader
             self.required_pairs = self.downloader.get_required_pairs()
@@ -265,8 +281,11 @@ class UnifiedDataPipeline:
                 stage_handlers = {
                     PipelineStage.DOWNLOAD_EVAL: self._download_evaluation_data,
                     PipelineStage.DOWNLOAD_TRAIN: self._download_training_data,
+                    PipelineStage.WIKIPEDIA_BT: self._download_wikipedia_bt,
+                    PipelineStage.DIRECT_OPUS: self._download_direct_opus,
                     PipelineStage.SAMPLE_FILTER: self._sample_and_filter_data,
                     PipelineStage.AUGMENT: self._augment_data,
+                    PipelineStage.DISTILL: self._distill_data,
                     PipelineStage.CREATE_READY: self._create_training_ready,
                     PipelineStage.VALIDATE: self._validate_dataset,
                     PipelineStage.VOCABULARY: self._create_vocabulary
@@ -450,6 +469,66 @@ class UnifiedDataPipeline:
             span.set_attribute("augmented.total", augmented_total)
             self.logger.info(f"✅ Generated {augmented_total:,} synthetic samples")
     
+    async def _download_wikipedia_bt(self):
+        """Download Wikipedia monolingual data for backtranslation (strategy 2)."""
+        with tracer.start_as_current_span("download_wikipedia_bt") as span:
+            if getattr(self, 'dry_run', False) or self.wikipedia is None:
+                self.logger.info("🧪 Dry-run or Wikipedia unavailable: Skipping")
+                span.set_attribute("skipped", True)
+                return
+
+            self.logger.info("🌐 Downloading Wikipedia monolingual data...")
+            self.wikipedia.output_dir = self.dirs['raw']
+            langs = self.config.data.active_languages
+            stats = self.wikipedia.download_monolingual(langs=langs, max_per_lang=200_000)
+            for lang, count in stats.items():
+                span.set_attribute(f"wikipedia.{lang}", count)
+            self.logger.info(f"✅ Retrieved Wikipedia data for {sum(1 for c in stats.values() if c > 0)} languages")
+
+    async def _download_direct_opus(self):
+        """Direct OPUS.nlpl.eu download fallback for pairs missing after HF download (strategy 4)."""
+        with tracer.start_as_current_span("download_direct_opus") as span:
+            if getattr(self, 'dry_run', False):
+                self.logger.info("🧪 Dry-run: Skipping direct OPUS")
+                span.set_attribute("skipped", True)
+                return
+
+            raw_dir = self.dirs['base'] / 'raw'
+            self.logger.info("📦 Direct OPUS download (fallback for missing pairs)...")
+
+            schedule = self.downloader.get_download_schedule(DatasetType.TRAINING)
+            downloaded = 0
+            for batch in schedule:
+                for pair in batch.get('pairs', []):
+                    pair_str = pair.pair_string
+                    if (raw_dir / f"{pair_str}.txt").exists():
+                        continue
+                    if pair_str not in self.required_pairs:
+                        continue
+                    ok = self.downloader._download_direct_opus(pair, raw_dir)
+                    if ok:
+                        downloaded += 1
+            span.set_attribute("direct_opus.downloaded", downloaded)
+            self.logger.info(f"✅ Direct OPUS: {downloaded} additional pairs downloaded")
+
+    async def _distill_data(self):
+        """Knowledge distillation from NLLB-3.3B teacher (strategy 3)."""
+        with tracer.start_as_current_span("distill_data") as span:
+            if getattr(self, 'dry_run', False) or self.distillator is None:
+                self.logger.info("🧪 Dry-run or distillator unavailable: Skipping")
+                span.set_attribute("skipped", True)
+                return
+
+            self.logger.info("🧪 Running knowledge distillation from NLLB-3.3B...")
+            stats = self.distillator.distill_sampled_dir(
+                str(self.dirs['sampled']),
+                str(self.dirs['final'] / 'distilled'),
+                max_pairs_per_pair=50_000,
+            )
+            for pair, count in stats.items():
+                span.set_attribute(f"distilled.{pair}", count)
+            self.logger.info(f"✅ Distilled {sum(stats.values()):,} pairs")
+
     async def _create_training_ready(self):
         """Create training-ready data files"""
         with tracer.start_as_current_span("create_training_ready") as span:
