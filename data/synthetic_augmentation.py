@@ -157,6 +157,92 @@ FALSE_FRIEND_SEEDS: Dict[str, Dict[str, str]] = {
         "masa": "table",
         "rapor": "report",
     },
+    "en_ja": {
+        "マンション": "apartment building",
+        "サイン": "signature",
+        "バイト": "part-time job",
+        "カンニング": "cheating on exam",
+        "スマート": "slim",
+        "コンセント": "electrical outlet",
+        "マフラー": "scarf",
+        "クレーム": "complaint",
+        "リフォーム": "renovation",
+        "ワンピース": "dress",
+        "ハンドル": "steering wheel",
+        "テンション": "excitement",
+    },
+    "en_ko": {
+        "미팅": "blind date",
+        "핸드폰": "mobile phone",
+        "아이쇼핑": "window shopping",
+        "커닝": "cheating on exam",
+        "노트북": "laptop",
+        "스킨십": "physical affection",
+        "볼펜": "ballpoint pen",
+        "오픈카": "convertible car",
+        "사이다": "lemon-lime soda",
+        "원룸": "studio apartment",
+    },
+    "en_zh": {
+        "加油": "go for it",
+        "白菜": "Chinese cabbage",
+        "方便": "convenient",
+        "地道": "authentic",
+        "东西": "thing",
+        "热水": "hot water",
+        "认真": "serious",
+    },
+    "en_ru": {
+        "магазин": "shop",
+        "фамилия": "surname",
+        "парик": "wig",
+        "аккорд": "chord",
+        "артист": "performer",
+        "баллон": "cylinder",
+        "банда": "gang",
+    },
+    "en_ar": {
+        "باص": "bus",
+        "تلفون": "telephone",
+        "سياسة": "politics",
+        "جمهورية": "republic",
+        "جغرافيا": "geography",
+    },
+    "en_th": {
+        "ปากกา": "pen",
+        "ฝรั่ง": "Westerner/guava",
+        "ปลา": "fish",
+        "กล้วย": "banana",
+        "ข้าว": "rice",
+    },
+    "en_vi": {
+        "phở": "pho noodle soup",
+        "cà phê": "coffee",
+        "bác sĩ": "doctor",
+        "bánh mì": "bread",
+        "học sinh": "student",
+    },
+    "en_hi": {
+        "अंगूर": "grapes",
+        "बंदर": "monkey",
+        "समय": "time",
+        "पानी": "water",
+        "जवाब": "answer",
+    },
+    "en_uk": {
+        "магазин": "shop",
+        "краватка": "necktie",
+        "паливо": "fuel",
+        "гурток": "club/hobby group",
+        "лікарня": "hospital",
+    },
+    "en_id": {
+        "kulkas": "refrigerator",
+        "knalpot": "exhaust pipe",
+        "kantor": "office",
+        "kacang": "peanut",
+        "belanja": "shopping",
+    },
 }
 
 IDIOM_SEEDS: Dict[str, List[str]] = {
@@ -239,6 +325,72 @@ IDIOM_SEEDS: Dict[str, List[str]] = {
         "Pire için yorgan yakmak.",
         "Kafayı yemek.",
         "Sinir küpü.",
+    ],
+    "ru": [
+        "Рукой подать.",
+        "Спустя рукава.",
+        "Игра не стоит свеч.",
+        "Козёл отпущения.",
+        "Дело в шляпе.",
+        "Бить баклуши.",
+        "Когда рак на горе свистнет.",
+    ],
+    "ar": [
+        "رجع بخفي حنين.",
+        "يدس السم في العسل.",
+        "اختلط الحابل بالنابل.",
+        "على رأسي وعيني.",
+        "بلغ السيل الزبى.",
+        "بين المطرقة والسندان.",
+        "اليد الواحدة لا تصفق.",
+    ],
+    "ko": [
+        "호랑이도 제 말 하면 온다.",
+        "가는 말이 고와야 오는 말이 곱다.",
+        "소 잃고 외양간 고친다.",
+        "누워서 떡 먹기.",
+        "바늘 가는 데 실 간다.",
+        "낮말은 새가 듣고 밤말은 쥐가 듣는다.",
+    ],
+    "hi": [
+        "बंदर क्या जाने अदरक का स्वाद।",
+        "दूर के ढोल सुहावने लगते हैं।",
+        "आगे कुआँ पीछे खाई।",
+        "जले पर नमक छिड़कना।",
+        "अंत भला तो सब भला।",
+        "ऊँट के मुँह में जीरा।",
+    ],
+    "th": [
+        "กินน้ำใต้ศอก",
+        "เห็นช้างเท่าหมู",
+        "จับปลาสองมือ",
+        "น้ำขึ้นให้รีบตัก",
+        "ปิดทองหลังพระ",
+        "รำไม่ดีโทษปี่โทษกลอง",
+    ],
+    "vi": [
+        "Đẽo cày giữa đường.",
+        "Ếch ngồi đáy giếng.",
+        "Nước mắt cá sấu.",
+        "Mèo khen mèo dài đuôi.",
+        "Chó cậy gần nhà, gà cậy gần chuồng.",
+        "Có công mài sắt có ngày nên kim.",
+    ],
+    "uk": [
+        "Пекти раків.",
+        "Бити байдики.",
+        "Вовка ноги годують.",
+        "Куй залізо поки гаряче.",
+        "Мов білка в колесі.",
+        "Тримати камінь за пазухою.",
+    ],
+    "id": [
+        "Ada gula ada semut.",
+        "Bagai pinang dibelah dua.",
+        "Besar pasak daripada tiang.",
+        "Sekali merengkuh dayung, dua tiga pulau terlampaui.",
+        "Tiada gading yang tak retak.",
+        "Sambil menyelam minum air.",
     ],
 }
 
@@ -740,11 +892,22 @@ class SyntheticDataAugmenter:
 
 # ── Convenience batch runner ───────────────────────────────────────────
 
+def _has_ff_seeds(src: str, tgt: str) -> bool:
+    return f"{src}_{tgt}" in FALSE_FRIEND_SEEDS
+
+
+def _has_idiom_seeds(lang: str) -> bool:
+    return lang in IDIOM_SEEDS and bool(IDIOM_SEEDS[lang])
+
+
 def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None):
     """Run all augmentation strategies for all language pairs.
 
     Generates training data for false friends, idioms, tone, and
     backtranslation across all supported language pairs.
+
+    Only processes pairs that have seed data defined in FALSE_FRIEND_SEEDS
+    or IDIOM_SEEDS to avoid unnecessary NLLB invocations.
     """
     if langs is None:
         langs = config.data.active_languages
@@ -753,24 +916,40 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
     base_dir = Path(config.data.processed_dir) / "augmented"
     results = {}
 
+    total_pairs = 0
+    skipped_no_seeds = 0
+
     for src in langs:
         for tgt in langs:
             if src == tgt:
                 continue
 
+            total_pairs += 1
             pair_key = f"{src}_{tgt}"
+            has_ff = _has_ff_seeds(src, tgt)
+            has_idiom = _has_idiom_seeds(src)
+
+            if not has_ff and not has_idiom:
+                skipped_no_seeds += 1
+                continue
+
             pair_dir = base_dir / pair_key
             DirectoryManager.create_directory(pair_dir)
 
-            # False friends
-            ff_out = str(pair_dir / "false_friends.txt")
-            results[f"ff_{pair_key}"] = augmenter.generate_false_friend_examples(src, tgt, ff_out)
+            if has_ff:
+                ff_out = str(pair_dir / "false_friends.txt")
+                results[f"ff_{pair_key}"] = augmenter.generate_false_friend_examples(src, tgt, ff_out)
 
-            # Idioms
-            idiom_out = str(pair_dir / "idioms.txt")
-            results[f"idiom_{pair_key}"] = augmenter.generate_idiom_examples(src, tgt, idiom_out)
+            if has_idiom:
+                idiom_out = str(pair_dir / "idioms.txt")
+                results[f"idiom_{pair_key}"] = augmenter.generate_idiom_examples(src, tgt, idiom_out)
 
-    logger.info(f"Batch augmentation complete. {sum(v.get('generated', 0) for v in results.values())} total examples.")
+    total_generated = sum(v.get('generated', 0) for v in results.values())
+    logger.info(
+        f"Batch augmentation complete. {total_generated} total examples "
+        f"across {len(results)} strategies "
+        f"({skipped_no_seeds}/{total_pairs} pairs skipped – no seed data)."
+    )
     return results
 
 
