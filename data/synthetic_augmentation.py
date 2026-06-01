@@ -1103,6 +1103,7 @@ class SyntheticDataAugmenter:
         self.languages = self.config.data.active_languages
         self.quality_threshold = self.config.data.quality_threshold
         self.output_dir = Path(self.config.data.processed_dir)
+        self.pipeline_batch_size = 128
 
         self._model = None
         self._tokenizer = None
@@ -1136,11 +1137,13 @@ class SyntheticDataAugmenter:
     def translator(self):
         if self._translator is None:
             use_cuda = hasattr(torch, 'cuda') and torch.cuda.is_available()
+            bs = self.pipeline_batch_size if use_cuda else 1
+            self.logger.info(f"Creating NLLB pipeline with batch_size={bs}")
             pipe_kwargs = dict(
                 task="translation",
                 model=self.model,
                 tokenizer=self.tokenizer,
-                batch_size=(8 if use_cuda else 1),
+                batch_size=bs,
             )
             if not use_cuda:
                 pipe_kwargs['device'] = -1
@@ -1454,7 +1457,7 @@ class SyntheticDataAugmenter:
                 eng_sentences = [c.replace("{meaning}", correct_meaning) for c in contexts]
 
                 # Translate to source language → natural source sentences containing ff_word
-                batch_size = 32
+                batch_size = 128
                 for i in range(0, len(eng_sentences), batch_size):
                     batch = eng_sentences[i:i + batch_size]
                     try:
@@ -1482,7 +1485,7 @@ class SyntheticDataAugmenter:
         target_lang: str,
         output_file: str,
         max_sentences: int = 100000,
-        batch_size: int = 32,
+        batch_size: int = 128,
     ) -> Dict[str, int]:
         """
         Use backtranslation to create synthetic parallel data.
