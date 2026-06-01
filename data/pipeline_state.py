@@ -15,6 +15,7 @@ class PipelineStage(Enum):
     CREATE_READY = "create_ready"
     VALIDATE = "validate"
     VOCABULARY = "vocabulary"
+    COMET_QUALITY = "comet_quality"
 
 
 @dataclass

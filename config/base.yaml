@@ -196,6 +196,20 @@ monitoring:
   log_weights: false
   log_learning_rate: true   
 
+# Pipeline execution settings
+pipeline:
+  enabled_stages:
+    - download_evaluation
+    - download_training
+    - sample_filter
+    - augment
+    - create_ready
+    - validate
+    - vocabulary
+  comet_quality_threshold: 0.7
+  max_dynamic_ff_per_pair: 5000
+  max_idiom_per_lang: 2000
+
 security:
   trusted_model_sources:
     - facebook/

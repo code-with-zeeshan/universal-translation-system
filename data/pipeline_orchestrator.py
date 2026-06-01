@@ -28,6 +28,18 @@ from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, LOG_DIR
 tracer = trace.get_tracer(__name__)
 
 
+CORE_STAGES = [
+    PipelineStage.DOWNLOAD_EVAL,
+    PipelineStage.DOWNLOAD_TRAIN,
+    PipelineStage.SAMPLE_FILTER,
+    PipelineStage.AUGMENT,
+    PipelineStage.CREATE_READY,
+    PipelineStage.COMET_QUALITY,
+    PipelineStage.VALIDATE,
+    PipelineStage.VOCABULARY,
+]
+
+
 class UnifiedDataPipeline:
     """
     Unified data pipeline orchestrator combining all data management functionality.
@@ -181,7 +193,13 @@ class UnifiedDataPipeline:
             start_time = asyncio.get_event_loop().time()
             
             # Determine stages to run
-            stages_to_run = stages or list(PipelineStage)
+            if stages is not None:
+                stages_to_run = stages
+            elif (hasattr(self.config, 'pipeline') and self.config.pipeline
+                  and self.config.pipeline.enabled_stages):
+                stages_to_run = [PipelineStage(s) for s in self.config.pipeline.enabled_stages]
+            else:
+                stages_to_run = CORE_STAGES
             
             # Execute pipeline stages
             for stage in stages_to_run:
@@ -288,7 +306,8 @@ class UnifiedDataPipeline:
                     PipelineStage.DISTILL: self._distill_data,
                     PipelineStage.CREATE_READY: self._create_training_ready,
                     PipelineStage.VALIDATE: self._validate_dataset,
-                    PipelineStage.VOCABULARY: self._create_vocabulary
+                    PipelineStage.VOCABULARY: self._create_vocabulary,
+                    PipelineStage.COMET_QUALITY: self._comet_quality_filter,
                 }
                 
                 # In dry-run mode, skip stages that require network and heavy I/O or heavy optional deps
@@ -422,41 +441,46 @@ class UnifiedDataPipeline:
             span.set_attribute("sampled.total", total_sampled)
     
     async def _augment_data(self):
-        """Augment with synthetic data"""
+        """Augment with synthetic data — false friends, idioms, tone, backtranslation"""
         with tracer.start_as_current_span("augment_data") as span:
             self.logger.info("🤖 Augmenting with synthetic data...")
-            
-            # Augment major language pairs
+
             augmented_total = 0
 
-            # If augmenter is unavailable or we're in dry-run without heavy deps, skip
             if self.augmenter is None or getattr(self, 'dry_run', False):
                 self.logger.info("🧪 Dry-run or augmenter unavailable: Skipping augmentation")
-                # Still ensure expected directories for later stages
                 self.dirs['final'].mkdir(parents=True, exist_ok=True)
                 (self.dirs['final'] / 'pivot_pairs').mkdir(parents=True, exist_ok=True)
                 span.set_attribute("augmented.total", 0)
                 return
-            
+
+            # 1) False friends + idioms (template and dynamic)
+            from data.synthetic_augmentation import run_all_augmentations
+            try:
+                aug_results = run_all_augmentations(self.config, self.config.data.active_languages)
+                for k, v in aug_results.items():
+                    if isinstance(v, dict):
+                        augmented_total += int(v.get('generated', 0))
+            except Exception as e:
+                self.logger.warning(f"False friend/idiom generation skipped: {e}")
+
+            # 2) Backtranslation for each augmentation pair
             for pair in self.config.data.augmentation_pairs:
                 source, target = pair.split('-')
-                
-                # Backtranslation
+
                 mono_file = self.dirs['raw'] / f"mono_{source}.txt"
                 if mono_file.exists():
                     output_file = self.dirs['final'] / f"augmented_{pair}.txt"
-                    
                     stats = self.augmenter.augment_with_backtranslation(
                         monolingual_file=str(mono_file),
                         source_lang=source,
                         target_lang=target,
                         output_file=str(output_file)
                     )
-                    # stats is a dict; count augmented lines
                     if isinstance(stats, dict):
                         augmented_total += int(stats.get('augmented', 0))
-            
-            # Pivot translations
+
+            # 3) Pivot translations
             try:
                 pivot_stats = self.augmenter.generate_pivot_translations(
                     english_pairs_dir=str(self.dirs['sampled'])
@@ -465,7 +489,7 @@ class UnifiedDataPipeline:
                     augmented_total += int(pivot_stats.get('total_pivot_pairs', 0))
             except Exception as e:
                 self.logger.warning(f"Pivot generation skipped: {e}")
-            
+
             span.set_attribute("augmented.total", augmented_total)
             self.logger.info(f"✅ Generated {augmented_total:,} synthetic samples")
     
@@ -587,6 +611,70 @@ class UnifiedDataPipeline:
             span.set_attribute("vocabulary.packs_created", len(created_packs))
             self.logger.info(f"✅ Created {len(created_packs)} vocabulary packs")
     
+    # ============= COMET QUALITY FILTER =============
+
+    async def _comet_quality_filter(self):
+        """Filter training-ready data by COMET quality score.
+
+        Reads the final training file, scores each pair with COMET,
+        and writes a filtered version keeping only pairs above the threshold.
+        """
+        with tracer.start_as_current_span("comet_quality_filter") as span:
+            from evaluation.evaluator import COMET_AVAILABLE
+
+            if getattr(self, 'dry_run', False) or not COMET_AVAILABLE:
+                self.logger.info("COMET not available — skipping quality filter")
+                span.set_attribute("skipped", True)
+                return
+
+            final_path = Path(self.config.data.processed_dir) / 'train_final.txt'
+            filtered_path = Path(self.config.data.processed_dir) / 'train_final_filtered.txt'
+            if not final_path.exists():
+                self.logger.warning(f"Final training file not found: {final_path}")
+                return
+
+            threshold = 0.7
+            if hasattr(self.config, 'pipeline') and self.config.pipeline:
+                threshold = self.config.pipeline.comet_quality_threshold
+
+            try:
+                from comet import download_model, load_from_checkpoint
+                self.logger.info("Loading COMET model for quality filtering...")
+                model_path = download_model("Unbabel/wmt22-comet-da")
+                comet_model = load_from_checkpoint(model_path)
+
+                pairs = []
+                with open(final_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        parts = line.strip().split('\t')
+                        if len(parts) >= 2:
+                            pairs.append((parts[0], parts[1]))
+
+                self.logger.info(f"Scoring {len(pairs):,} pairs with COMET...")
+                comet_data = [{"src": s, "mt": t, "ref": t} for s, t in pairs]
+                scores = comet_model.predict(comet_data, batch_size=64, gpus=1)
+
+                kept = 0
+                with open(filtered_path, 'w', encoding='utf-8') as f:
+                    for (src, tgt), score in zip(pairs, scores.scores):
+                        if score >= threshold:
+                            f.write(f"{src}\t{tgt}\n")
+                            kept += 1
+
+                # Replace original with filtered
+                filtered_path.replace(final_path)
+
+                self.logger.info(
+                    f"COMET filter: kept {kept:,}/{len(pairs):,} pairs "
+                    f"(threshold={threshold:.2f})"
+                )
+                span.set_attribute("comet.total", len(pairs))
+                span.set_attribute("comet.kept", kept)
+
+            except Exception as e:
+                self.logger.warning(f"COMET filtering failed: {e}")
+                span.set_attribute("error", str(e))
+
     # ============= VALIDATION METHODS =============
     
     def _validate_size(self) -> bool:

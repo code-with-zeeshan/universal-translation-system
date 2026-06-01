@@ -158,6 +158,22 @@ class MonitoringConfig(BaseModel):
         extra = "allow"
 
 
+class PipelineConfig(BaseModel):
+    """Schema for the 'pipeline' section."""
+    enabled_stages: List[str] = Field(
+        default_factory=lambda: [
+            "download_evaluation", "download_training", "sample_filter",
+            "augment", "create_ready", "validate", "vocabulary"
+        ]
+    )
+    comet_quality_threshold: float = Field(0.7, ge=0.0, le=1.0)
+    max_dynamic_ff_per_pair: int = 5000
+    max_idiom_per_lang: int = 2000
+
+    class Config:
+        extra = "allow"
+
+
 class RootConfig(BaseModel):
     """The root configuration model loaded from base.yaml for the training pipeline."""
     data: DataConfig
@@ -166,6 +182,7 @@ class RootConfig(BaseModel):
     memory: MemoryConfig
     vocabulary: VocabularyConfig
     monitoring: Optional[MonitoringConfig] = None
+    pipeline: Optional[PipelineConfig] = None
     tier_metadata: Optional[dict] = None
 
     class Config:
