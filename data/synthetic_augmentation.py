@@ -333,13 +333,16 @@ class SyntheticDataAugmenter:
     @property
     def translator(self):
         if self._translator is None:
-            self._translator = pipeline(
-                "translation",
+            use_cuda = hasattr(torch, 'cuda') and torch.cuda.is_available()
+            pipe_kwargs = dict(
+                task="translation",
                 model=self.model,
                 tokenizer=self.tokenizer,
-                device=(0 if hasattr(torch, 'cuda') and torch.cuda.is_available() else -1),
-                batch_size=(8 if hasattr(torch, 'cuda') and torch.cuda.is_available() else 1)
+                batch_size=(8 if use_cuda else 1),
             )
+            if not use_cuda:
+                pipe_kwargs['device'] = -1
+            self._translator = pipeline(**pipe_kwargs)
         return self._translator
 
     @property
