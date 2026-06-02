@@ -1,5 +1,5 @@
 # monitoring/metrics_collector.py
-from prometheus_client import Counter, Histogram, Gauge
+from prometheus_client import Counter, Histogram, Gauge, REGISTRY
 import logging
 import sys
 import os
@@ -18,24 +18,71 @@ except ImportError:
     HAS_VOCAB_MANAGER = False
     logging.warning("VocabularyManager not available - vocabulary metrics disabled")
 
+def _safe_counter(name, documentation, labels=None, registry=REGISTRY):
+    try:
+        return Counter(name, documentation, labels, registry=registry)
+    except ValueError:
+        return registry._names_to_collectors[name]
+
+def _safe_histogram(name, documentation, labels=None, registry=REGISTRY):
+    try:
+        return Histogram(name, documentation, labels, registry=registry)
+    except ValueError:
+        return registry._names_to_collectors[name]
+
+def _safe_gauge(name, documentation, labels=None, registry=REGISTRY):
+    try:
+        return Gauge(name, documentation, labels, registry=registry)
+    except ValueError:
+        return registry._names_to_collectors[name]
+
 # Metrics
-translation_requests = Counter(
+translation_requests = _safe_counter(
     'translation_requests_total',
     'Total translation requests',
     ['source_lang', 'target_lang', 'status']
 )
 
-translation_latency = Histogram(
+translation_latency = _safe_histogram(
     'translation_latency_seconds',
     'Translation latency',
     ['source_lang', 'target_lang'],
     buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
 )
 
-gpu_utilization = Gauge(
+gpu_utilization = _safe_gauge(
     'gpu_utilization_percent',
-    'GPU utilization percentage',
-    ['gpu_id']
+    'GPU utilization percentage'
+)
+
+active_connections = _safe_gauge(
+    'active_connections',
+    'Number of active connections'
+)
+
+# Vocabulary metrics
+vocabulary_pack_info = _safe_gauge(
+    'vocabulary_pack_info',
+    'Vocabulary pack version information',
+    ['pack_name', 'version', 'status']  # status: available, loaded, error
+)
+
+vocabulary_packs_total = _safe_gauge(
+    'vocabulary_packs_total',
+    'Total number of vocabulary packs',
+    ['type']  # type: available, loaded
+)
+
+vocabulary_pack_size_mb = _safe_gauge(
+    'vocabulary_pack_size_mb',
+    'Size of vocabulary pack in MB',
+    ['pack_name', 'version']
+)
+
+vocabulary_pack_tokens = _safe_gauge(
+    'vocabulary_pack_tokens',
+    'Number of tokens in vocabulary pack',
+    ['pack_name', 'version', 'token_type']  # token_type: regular, subword, special
 )
 
 active_connections = Gauge(
