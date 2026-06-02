@@ -2,12 +2,14 @@
 coremltools>=7.0
 onnx>=1.14.0
 onnx-simplifier>=0.4.35
-onnx-tf>=1.10.0
+# onnx-tf requires tensorflow-addons (removed from PyPI); install manually if needed
+# onnx-tf>=1.10.0
 # Align with C++ core and Web
 onnxruntime>=1.17.0,<1.27.0
 # Optional backends
 tensorflow>=2.13.0
 tf2onnx>=1.13.0
+# onnx-tf requires tensorflow-addons (removed from PyPI); install manually if needed
 # tflite-runtime is platform-specific (ARM/mobile); install manually on target device
 torch-tensorrt>=1.3.0
 tritonclient>=2.36.0
