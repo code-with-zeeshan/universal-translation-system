@@ -34,8 +34,14 @@ extras = {
     "dev": read_reqs("requirements/dev.txt"),
 }
 
-# Convenience bundle
-extras["all"] = sorted(set(sum(extras.values(), [])))
+# Convenience bundles
+extras["pipeline"] = sorted(set(
+    extras["serve"] + extras["train"] + extras["dev"]
+))
+extras["all"] = sorted(set(
+    extras["serve"] + extras["train"] + extras["decoder"] +
+    extras["coordinator"] + extras["dev"] + extras["tui"]
+))
 
 setup(
     name="universal-translation-system",
