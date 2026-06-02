@@ -30,6 +30,7 @@ extras = {
     "decoder": read_reqs("requirements/decoder.txt"),
     "coordinator": read_reqs("requirements/coordinator.txt"),
     "export": read_reqs("requirements/export.txt"),
+    "tui": ["textual>=0.52.0", "pynvml>=11.5.0"],
     "dev": read_reqs("requirements/dev.txt"),
 }
 
@@ -51,6 +52,7 @@ setup(
         "console_scripts": [
             "uts-train=scripts.build_and_upload_pipeline:main",
             "uts-pipeline=scripts.pipeline:main",
+            "uts-tui=tui.app:main",
         ],
     },
     include_package_data=True,
