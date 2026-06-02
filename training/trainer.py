@@ -464,8 +464,8 @@ class IntelligentTrainer(BaseTrainer):
                     max_split_size=256,  # l4: 256
                     empty_cache_freq=100
                 ),
-                batch_size=32,  # l4: 32 (balanced GPU utilization)
-                accumulation_steps=4,  # l4: 4 (effective batch 128)
+                batch_size=16,  # l4: 16 (avoids 2GB log_softmax in fp32)
+                accumulation_steps=8,  # l4: 8 (effective batch 128)
                 compile_mode="default",
                 mixed_precision_dtype=torch.bfloat16,
                 num_workers=4,
@@ -1171,7 +1171,13 @@ class IntelligentTrainer(BaseTrainer):
         num_batches = 0
         start_time = time.time()
         
+        # Hide GPU before DataLoader workers fork (prevents 186MB CUDA context per worker).
+        # CUDA is already initialized in this process, so operations continue normally.
+        _prep_cuda = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
         for batch_idx, batch in enumerate(train_loader):
+            if batch_idx == 0:
+                os.environ['CUDA_VISIBLE_DEVICES'] = _prep_cuda
             step_start = time.time()
             
             # Move batch to device
@@ -1308,7 +1314,11 @@ class IntelligentTrainer(BaseTrainer):
         num_batches = 0
         start_time = time.time()
         
-        for batch in val_loader:
+        _prep_cuda = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
+        for batch_idx, batch in enumerate(val_loader):
+            if batch_idx == 0:
+                os.environ['CUDA_VISIBLE_DEVICES'] = _prep_cuda
             batch = self._prepare_batch(batch)
             
             if self.strategy.memory_config.mixed_precision:
@@ -1381,7 +1391,6 @@ class IntelligentTrainer(BaseTrainer):
             sampler = None
             shuffle = True
         
-        # Create loader
         train_loader = DataLoader(
             self.train_dataset,
             batch_size=self.batch_sizer.current_batch_size,
