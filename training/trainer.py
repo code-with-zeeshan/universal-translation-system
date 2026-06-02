@@ -28,6 +28,12 @@ from collections import defaultdict
 import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
+
+
+def _worker_init_fn(worker_id):
+    """Prevent DataLoader workers from creating CUDA context (~186MB per worker)."""
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
 from contextlib import contextmanager, nullcontext
 
 # Import existing modules
@@ -458,8 +464,8 @@ class IntelligentTrainer(BaseTrainer):
                     max_split_size=256,  # l4: 256
                     empty_cache_freq=100
                 ),
-                batch_size=64,  # l4: 64 (uses more of the 22GB)
-                accumulation_steps=2,  # l4: 2 (effective batch stays 128)
+                batch_size=32,  # l4: 32 (balanced GPU utilization)
+                accumulation_steps=4,  # l4: 4 (effective batch 128)
                 compile_mode="default",
                 mixed_precision_dtype=torch.bfloat16,
                 num_workers=4,
@@ -1385,7 +1391,8 @@ class IntelligentTrainer(BaseTrainer):
             pin_memory=self.strategy.pin_memory,
             prefetch_factor=self.strategy.prefetch_factor if self.strategy.num_workers > 0 else None,
             persistent_workers=self.strategy.num_workers > 0,
-            drop_last=True
+            drop_last=True,
+            worker_init_fn=_worker_init_fn
         )
         
         return train_loader
@@ -1412,7 +1419,8 @@ class IntelligentTrainer(BaseTrainer):
             sampler=sampler,
             num_workers=self.strategy.num_workers,
             pin_memory=self.strategy.pin_memory,
-            drop_last=False
+            drop_last=False,
+            worker_init_fn=_worker_init_fn
         )
         
         return val_loader
