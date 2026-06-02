@@ -70,6 +70,31 @@ class BaseTrainer(ABC):
         """Logic for a single validation epoch."""
         pass
 
+    @staticmethod
+    def _chunked_cross_entropy(
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+        ignore_index: int = -100,
+        label_smoothing: float = 0.0,
+        chunk_size: int = 1024,
+    ) -> torch.Tensor:
+        """Cross-entropy computed in chunks to avoid materializing full log_softmax.
+        Peak memory: chunk_size × vocab × 4 bytes instead of batch×seq × vocab × 4."""
+        n = logits.size(0)
+        total_loss = 0.0
+        total_valid = 0
+        for i in range(0, n, chunk_size):
+            l = logits[i:i+chunk_size]
+            t = targets[i:i+chunk_size]
+            loss = torch.nn.functional.cross_entropy(
+                l, t, ignore_index=ignore_index,
+                label_smoothing=label_smoothing, reduction='sum',
+            )
+            valid = (t != ignore_index).sum()
+            total_loss = total_loss + loss
+            total_valid = total_valid + valid
+        return total_loss / total_valid.clamp(min=1)
+
     def _forward_pass(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Forward pass to compute the loss."""
         source_ids = batch['source_ids'].to(self.device, non_blocking=True)
@@ -85,11 +110,12 @@ class BaseTrainer(ABC):
             encoder_attention_mask=source_mask,
         )
         
-        loss = torch.nn.functional.cross_entropy(
+        loss = self._chunked_cross_entropy(
             decoder_output.reshape(-1, decoder_output.size(-1)),
             target_ids[:, 1:].reshape(-1),
             ignore_index=pad_token_id,
-            label_smoothing=0.1
+            label_smoothing=0.1,
+            chunk_size=1024,
         )
         return loss
 
