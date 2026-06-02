@@ -4,12 +4,8 @@ Production-ready quantization pipeline with quality testing
 """
 
 import torch
-from torch.ao.quantization import (
-    get_default_qconfig,
-    prepare_fx,
-    convert_fx,
-    QConfigMapping,
-)
+from torch.ao.quantization import get_default_qconfig, QConfigMapping
+from torch.ao.quantization.quantize_fx import prepare_fx, convert_fx
 from typing import Dict, Any, Optional, List, Tuple
 import logging
 from pathlib import Path
