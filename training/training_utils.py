@@ -78,7 +78,12 @@ class BaseTrainer(ABC):
         pad_token_id = batch.get('pad_token_id', 0)
 
         encoder_output = self.encoder(source_ids, source_mask)
-        decoder_output = self.decoder(target_ids[:, :-1], encoder_output, encoder_attention_mask=source_mask)
+        # Use keyword args so PEFT's forward wrapper passes them through **kwargs
+        decoder_output = self.decoder(
+            decoder_input_ids=target_ids[:, :-1],
+            encoder_hidden_states=encoder_output,
+            encoder_attention_mask=source_mask,
+        )
         
         loss = torch.nn.functional.cross_entropy(
             decoder_output.reshape(-1, decoder_output.size(-1)),
