@@ -152,14 +152,7 @@ class PretrainedModelBootstrapper:
                 except Exception as e:
                     logger.warning(f"⚠️  Could not transfer transformer weights: {e}")  
         
-        # Apply torch.compile for better performance (PyTorch 2.0+)
-        if hasattr(torch, 'compile'):
-            logger.info("🚀 Applying torch.compile optimization...")
-            our_encoder = torch.compile(our_encoder)
-        
-        logger.info("✅ Encoder initialized with modern practices")
-        
-        # Save with comprehensive metadata
+        # Save state_dict BEFORE torch.compile so keys don't get _orig_mod prefix
         checkpoint = {
             'model_state_dict': our_encoder.state_dict(),
             'config': {
@@ -175,6 +168,13 @@ class PretrainedModelBootstrapper:
             },
             'tokenizer_config': tokenizer.init_kwargs if hasattr(tokenizer, 'init_kwargs') else {}
         }
+
+        # Apply torch.compile for better performance (PyTorch 2.0+)
+        if hasattr(torch, 'compile'):
+            logger.info("🚀 Applying torch.compile optimization...")
+            our_encoder = torch.compile(our_encoder)
+        
+        logger.info("✅ Encoder initialized with modern practices")
 
         # --- ADDED: Ensure output directory exists ---
         output_dir = Path(output_path).parent
@@ -212,7 +212,8 @@ class PretrainedModelBootstrapper:
             logger.info("Using PCA-inspired dimension reduction")
         
             # Option 1: Linear projection (most common)
-            projection = nn.Linear(source_dim, target_dim, bias=False).to(device)
+            projection = nn.Linear(source_dim, target_dim, bias=False)
+            projection = projection.to(device=device, dtype=dtype)
         
             # Initialize with PCA-like weights if possible
             if vocab_size >= source_dim:
@@ -232,7 +233,7 @@ class PretrainedModelBootstrapper:
                     eigenvalues, eigenvectors = torch.linalg.eigh(cov)
                     # Select top target_dim eigenvectors
                     top_eigenvectors = eigenvectors[:, -target_dim:]
-                    projection.weight.data = top_eigenvectors.t().to(dtype)
+                    projection.weight.data = top_eigenvectors.t().contiguous().to(device=device, dtype=dtype)
                 except Exception as e:
                     logger.warning(f"PCA initialization failed: {e}, using Xavier init")
                     nn.init.xavier_uniform_(projection.weight)
@@ -242,7 +243,7 @@ class PretrainedModelBootstrapper:
         
             # Project embeddings
             with torch.no_grad():
-                adapted = projection(pretrained_embeddings.float()).to(dtype)
+                adapted = projection(pretrained_embeddings.to(dtype=dtype))
             
                 # Preserve relative norms
                 original_norms = pretrained_embeddings.norm(dim=1, keepdim=True)
@@ -372,14 +373,7 @@ class PretrainedModelBootstrapper:
                 except Exception as e:
                     logger.warning(f"Could not transfer layer {i}: {e}")
         
-        # Apply modern optimizations
-        if hasattr(torch, 'compile'):
-            logger.info("🚀 Applying torch.compile optimization...")
-            our_decoder = torch.compile(our_decoder)
-        
-        logger.info("✅ Decoder initialized with modern practices")
-        
-        # Save with comprehensive metadata
+        # Save state_dict BEFORE torch.compile
         checkpoint = {
             'model_state_dict': our_decoder.state_dict(),
             'config': {
@@ -392,6 +386,13 @@ class PretrainedModelBootstrapper:
                 'transformers_version': __import__('transformers').__version__
             }
         }
+
+        # Apply modern optimizations
+        if hasattr(torch, 'compile'):
+            logger.info("🚀 Applying torch.compile optimization...")
+            our_decoder = torch.compile(our_decoder)
+        
+        logger.info("✅ Decoder initialized with modern practices")
         
         # --- ADDED: Ensure output directory exists ---
         output_dir = Path(output_path).parent
