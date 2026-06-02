@@ -135,7 +135,7 @@ def _save_pack(self, pack: Dict[str, Any], pack_name: str):
     msgpack_path = self.output_dir / f'{pack_name}_v{version}.msgpack'
     with open(msgpack_path, 'wb') as f:
         f.write(msgpack.packb(pack))
-    logger.info("Saved pack v%s to %s and %s", version, json_path, msgpack_path)
+    logger.info("Saved pack v%s to %s and %s", version, str(json_path), str(msgpack_path))
     _update_manifest(self.output_dir, pack_name, version)
 
 
@@ -161,7 +161,7 @@ def _cleanup_temp_files(self, *files):
         try:
             if Path(file_path).exists():
                 os.remove(file_path)
-                logger.debug("Cleaned up %s", file_path)
+                logger.debug("Cleaned up %s", str(file_path))
         except OSError as e:
             logger.warning("Could not clean up %s: %s", file_path, e)
 
