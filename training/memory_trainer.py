@@ -57,7 +57,7 @@ class MemoryOptimizedTrainer:
             torch.cuda.empty_cache() # Clear cache after GPU optimization
             
             # Set memory allocator backend if available
-            if hasattr(torch.cuda, 'CUDAPluggableAllocator'):
+            if hasattr(torch.cuda, 'set_allocator_settings'):
                 torch.cuda.set_allocator_settings('expandable_segments:True')
         
         # 2. Enable gradient checkpointing
