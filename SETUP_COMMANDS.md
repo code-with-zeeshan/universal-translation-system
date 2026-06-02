@@ -25,7 +25,7 @@ cd universal-translation-system
 ## Step 2 — Install deps
 
 ```bash
-pip install -e . 2>&1 | tail -20
+pip install -e ".[all]" 2>&1 | tail -20
 ```
 
 **Troubleshoot:**
@@ -33,6 +33,7 @@ pip install -e . 2>&1 | tail -20
 - `error: externally-managed-environment` → Run `conda install pip -y` to get conda's pip
 - `ERROR: Could not find a version that satisfies ...` → Single dep issue. Run `pip install <pkg>` separately
 - Takes ~5 min. Ignore dependency conflicts (they're non-fatal)
+- `pip install -e .` (without `[all]`) only installs base deps — will crash on `opentelemetry` import
 
 ---
 
@@ -158,7 +159,7 @@ python main.py --mode evaluate
 cd /teamspace/studios/this_studio && \
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git && \
 cd universal-translation-system && \
-pip install -e . && \
+pip install -e ".[all]" && \
 export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc" && \
 python -m data.unified_data_pipeline --config config/base.yaml
 

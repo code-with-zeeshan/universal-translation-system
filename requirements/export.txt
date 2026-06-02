@@ -3,8 +3,8 @@ coremltools>=7.0
 onnx>=1.14.0
 onnx-simplifier>=0.4.35
 onnx-tf>=1.10.0
-# Align with C++ core (1.16.3) and Web (1.16.x)
-onnxruntime>=1.16.0,<1.17.0
+# Align with C++ core and Web
+onnxruntime>=1.17.0,<1.27.0
 # Optional backends
 tensorflow>=2.13.0
 tf2onnx>=1.13.0
