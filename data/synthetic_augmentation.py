@@ -1201,14 +1201,16 @@ class SyntheticDataAugmenter:
         src_templates = FF_TEMPLATES.get(source_lang, FF_TEMPLATES.get("en", []))
         count = 0
         batch_src = []
-        with open(output_path, 'w', encoding='utf-8') as f:
-            for ff_word, correct_meaning in ff_dict.items():
-                for tmpl in src_templates:
-                    src_sentence = tmpl.replace("{word}", ff_word)
-                    batch_src.append(src_sentence)
+        for ff_word, correct_meaning in ff_dict.items():
+            for tmpl in src_templates:
+                src_sentence = tmpl.replace("{word}", ff_word)
+                batch_src.append(src_sentence)
 
-        if batch_src:
-            translations = self._translate_batch(batch_src, source_lang, target_lang)
+        if not batch_src:
+            return {"generated": 0, "pair": pair}
+
+        translations = self._translate_batch(batch_src, source_lang, target_lang)
+        with open(output_path, 'w', encoding='utf-8') as f:
             for src_sentence, tgt in zip(batch_src, translations):
                 if tgt:
                     f.write(f"{src_sentence}\t{tgt}\n")
@@ -1637,7 +1639,7 @@ class SyntheticDataAugmenter:
                 if i >= max_pairs:
                     break
                 parts = line.strip().split('\t')
-                if len(parts) == 2:
+                if len(parts) >= 2:
                     pairs.append((parts[0], parts[1]))
         return pairs
 
