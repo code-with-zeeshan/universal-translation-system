@@ -464,8 +464,8 @@ class IntelligentTrainer(BaseTrainer):
                     max_split_size=256,  # l4: 256
                     empty_cache_freq=100
                 ),
-                batch_size=16,  # l4: 16 (avoids 2GB log_softmax in fp32)
-                accumulation_steps=8,  # l4: 8 (effective batch 128)
+                batch_size=32,  # l4: 32 (chunked loss keeps peak 128MB)
+                accumulation_steps=4,  # l4: 4 (effective batch 128)
                 compile_mode="default",
                 mixed_precision_dtype=torch.bfloat16,
                 num_workers=4,
