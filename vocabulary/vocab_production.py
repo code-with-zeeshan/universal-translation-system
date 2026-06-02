@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -42,10 +43,12 @@ def _train_sentencepiece_model(self, corpus_file: str, pack_name: str) -> str:
     """Train SentencePiece model"""
     model_prefix = str(self.output_dir / f"temp_{pack_name}")
 
+    vocab_size = self.config.vocab_size
+
     train_args = [
         f'--input={corpus_file}',
         f'--model_prefix={model_prefix}',
-        f'--vocab_size={self.config.vocab_size}',
+        f'--vocab_size={vocab_size}',
         f'--model_type={self.config.model_type}',
         f'--character_coverage={self.config.character_coverage}',
         f'--pad_id={self.config.pad_id}',
@@ -65,8 +68,19 @@ def _train_sentencepiece_model(self, corpus_file: str, pack_name: str) -> str:
         except Exception as e:
             raise VocabularyError("sentencepiece not installed; required for PRODUCTION mode. Install with: pip install sentencepiece") from e
 
-    logger.info("Training SentencePiece model...")
-    spm.SentencePieceTrainer.train(' '.join(train_args))
+    logger.info(f"Training SentencePiece model with vocab_size={vocab_size}...")
+    try:
+        spm.SentencePieceTrainer.train(' '.join(train_args))
+    except RuntimeError as e:
+        # Auto-reduce vocab_size if it exceeds unique tokens in corpus
+        match = re.search(r'value <= (\d+)', str(e))
+        if match and vocab_size > 1000:
+            max_allowed = int(match.group(1))
+            reduced = min(max_allowed, max(1000, vocab_size // 2))
+            logger.warning(f"vocab_size {vocab_size} too large for this corpus (max {max_allowed}), retrying with {reduced}")
+            self.config.vocab_size = reduced
+            return self._train_sentencepiece_model(corpus_file, pack_name)
+        raise
 
     model_path = f"{model_prefix}.model"
     if not Path(model_path).exists():
