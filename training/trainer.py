@@ -459,14 +459,14 @@ class IntelligentTrainer(BaseTrainer):
                     activation_offload=False,  # l4: false
                     compile_model=True,
                     dtype="bfloat16",  # l4: bfloat16
-                    compile_mode="default",  # l4: default
+                    compile_mode="reduce-overhead",  # l4: reduce-overhead
                     use_flash_attention=True,
                     max_split_size=256,  # l4: 256
                     empty_cache_freq=100
                 ),
-                batch_size=32,  # l4: 32 (chunked loss keeps peak 128MB)
-                accumulation_steps=4,  # l4: 4 (effective batch 128)
-                compile_mode="default",
+                batch_size=24,  # l4: 24 (batch 32 OOM; 24 fits with headroom)
+                accumulation_steps=5,  # l4: 5 (effective batch 120)
+                compile_mode="reduce-overhead",
                 mixed_precision_dtype=torch.bfloat16,
                 num_workers=4,
                 pin_memory=True,
