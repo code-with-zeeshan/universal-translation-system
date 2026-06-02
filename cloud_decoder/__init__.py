@@ -5,7 +5,7 @@ Provides optimized decoder implementation for cloud deployment with
 continuous batching and GPU optimization.
 """
 
-from .optimized_decoder import (
+from .decoder_core import (
     OptimizedUniversalDecoder,
     OptimizedDecoderLayer,
     ContinuousBatcher,
