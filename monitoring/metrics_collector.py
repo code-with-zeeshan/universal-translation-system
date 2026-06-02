@@ -10,9 +10,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 try:
     from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
-    
-    # Use OPTIMIZED mode for monitoring
-    VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
     HAS_VOCAB_MANAGER = True
 except ImportError:
     HAS_VOCAB_MANAGER = False
@@ -102,7 +99,7 @@ class VocabularyMetricsCollector:
     
     def __init__(self, vocab_dir: str = 'vocabs'):
         self.vocab_dir = Path(vocab_dir)
-        self.vocab_manager = VocabularyManager(vocab_dir) if HAS_VOCAB_MANAGER else None
+        self.vocab_manager = None
         
     def collect_vocabulary_metrics(self):
         """Collect and update vocabulary metrics."""

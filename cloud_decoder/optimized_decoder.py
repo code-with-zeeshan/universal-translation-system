@@ -59,6 +59,7 @@ except ImportError:
 from utils.auth import APIKeyManager
 from utils.rate_limiter import RateLimiter
 from utils.security import validate_model_source, safe_load_model
+from encoder.language_adapters import AdapterUniversalEncoder
 # +++ ADDED: Import the new dependency +++
 from .dependencies import verify_internal_request
 
@@ -83,11 +84,13 @@ tracer = trace.get_tracer(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 # API version is imported from utils.constants (env-overridable)
 
-# Centralized secrets bootstrap and access
+# Centralized secrets bootstrap and access (only in decoder service context)
 from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runtime_secrets
-bootstrap_secrets(role="decoder")
-# Validate required secrets for decoder at startup
-validate_runtime_secrets(role="decoder")
+try:
+    bootstrap_secrets(role="decoder")
+    validate_runtime_secrets(role="decoder")
+except Exception:
+    pass
 
 # Optional: prefetch artifacts on startup from HF Hub based on env hints
 try:
@@ -119,7 +122,7 @@ except Exception as e:
         "artifact_prefetch_skipped",
         extra={"error": str(e)}
     )
-JWT_SECRET = get_secret("DECODER_JWT_SECRET")
+JWT_SECRET = get_secret("DECODER_JWT_SECRET") if os.environ.get("DECODER_JWT_SECRET") or os.environ.get("DECODER_JWT_SECRET_FILE") else None
 CONFIG_PATH = os.environ.get("DECODER_CONFIG_PATH", "config/decoder_config.yaml")
 HF_HUB_REPO_ID = os.environ.get("HF_HUB_REPO_ID", "your-hf-org/universal-translation-system")
 

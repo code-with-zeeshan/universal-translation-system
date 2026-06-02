@@ -24,7 +24,10 @@ from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, Vocabular
 VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.FULL, **kwargs)
 
 # Initialize GPU optimization
-optimize_gpu_memory()
+try:
+    optimize_gpu_memory()
+except Exception:
+    pass
 
 logger = logging.getLogger(__name__)
 
