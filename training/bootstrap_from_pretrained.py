@@ -294,7 +294,8 @@ class PretrainedModelBootstrapper:
                                 model_name: str = 'facebook/mbart-large-50',
                                 output_path: str = 'models/decoder/universal_decoder_initial.pt',
                                 encoder_dim: int = 512,
-                                decoder_dim: int = 768) -> nn.Module:
+                                decoder_dim: int = 768,
+                                max_seq_length: int = 512) -> nn.Module:
         """Create decoder using modern AutoModel patterns"""
         
         logger.info(f"🔄 Loading {model_name} with AutoModel...")
@@ -337,7 +338,7 @@ class PretrainedModelBootstrapper:
             num_layers=8,
             num_heads=12,
             vocab_size=min(32000, tokenizer.vocab_size),
-            max_length=256,
+            max_length=max_seq_length,
             device=self.device
         )
         

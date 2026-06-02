@@ -111,8 +111,8 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
             item['target_lang']
         )
         
-        # Pad or truncate to max length (e.g., 512)
-        max_length = 512
+        # Pad or truncate to max sequence length
+        max_length = self.config.model.max_seq_length if hasattr(self.config, 'model') else 512
         source_tokens = self._pad_or_truncate(source_tokens, max_length)
         target_tokens = self._pad_or_truncate(target_tokens, max_length)
         

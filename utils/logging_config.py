@@ -123,14 +123,22 @@ def get_logger(name: str, context: dict | None = None) -> StructuredLoggerAdapte
 
 _logging_initialized = False
 
+def _is_worker_process() -> bool:
+    """Detect if running in a child process (DataLoader worker, etc.)"""
+    try:
+        import multiprocessing
+        return multiprocessing.parent_process() is not None
+    except Exception:
+        return False
+
 def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
     """Setup comprehensive logging configuration (idempotent, skips DataLoader workers)"""
     global _logging_initialized
     if _logging_initialized:
         return
-    # Skip in DataLoader worker processes — inherits parent logging
-    import torch.utils.data
-    if torch.utils.data.get_worker_info() is not None:
+    # Skip in worker processes — inherits parent logging
+    if _is_worker_process():
+        _logging_initialized = True  # Prevent repeated checks
         return
     _logging_initialized = True
     # Create log directory and standard sections

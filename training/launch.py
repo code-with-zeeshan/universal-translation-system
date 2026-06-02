@@ -108,6 +108,7 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
                     output_path=str(decoder_path),
                     encoder_dim=config.model.hidden_dim,
                     decoder_dim=config.model.decoder_dim,
+                    max_seq_length=config.model.max_seq_length,
                 )
         except Exception as e:
             logger.warning(f"Bootstrap failed ({e}), training from random initialization")
@@ -126,7 +127,8 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
         vocab_size=config.model.vocab_size,
         num_layers=config.model.decoder_layers,
         num_heads=config.model.decoder_heads,
-        dropout=config.model.dropout
+        dropout=config.model.dropout,
+        max_length=config.model.max_seq_length
     )
     
     # Load pretrained weights if available
