@@ -1200,14 +1200,19 @@ class SyntheticDataAugmenter:
 
         src_templates = FF_TEMPLATES.get(source_lang, FF_TEMPLATES.get("en", []))
         count = 0
+        batch_src = []
         with open(output_path, 'w', encoding='utf-8') as f:
             for ff_word, correct_meaning in ff_dict.items():
                 for tmpl in src_templates:
                     src_sentence = tmpl.replace("{word}", ff_word)
-                    tgt_sentences = self._translate_batch([src_sentence], source_lang, target_lang)
-                    if tgt_sentences[0]:
-                        f.write(f"{src_sentence}\t{tgt_sentences[0]}\n")
-                        count += 1
+                    batch_src.append(src_sentence)
+
+        if batch_src:
+            translations = self._translate_batch(batch_src, source_lang, target_lang)
+            for src_sentence, tgt in zip(batch_src, translations):
+                if tgt:
+                    f.write(f"{src_sentence}\t{tgt}\n")
+                    count += 1
 
         self.logger.info(f"Generated {count} false-friend examples for {pair}")
         return {"generated": count, "pair": pair}
@@ -1462,13 +1467,13 @@ class SyntheticDataAugmenter:
                     batch = eng_sentences[i:i + batch_size]
                     try:
                         src_sentences = self._translate_batch(batch, "en", source_lang)
-                        for src_s in src_sentences:
-                            if not src_s:
-                                continue
-                            # Translate source (with ff_word) → target (correct)
-                            tgt_results = self._translate_batch([src_s], source_lang, target_lang)
-                            if tgt_results[0]:
-                                f.write(f"{src_s}\t{tgt_results[0]}\n")
+                        valid_src = [s for s in src_sentences if s]
+                        if not valid_src:
+                            continue
+                        tgt_results = self._translate_batch(valid_src, source_lang, target_lang)
+                        for src_s, tgt in zip(valid_src, tgt_results):
+                            if tgt:
+                                f.write(f"{src_s}\t{tgt}\n")
                                 count += 1
                     except Exception as e:
                         self.logger.error(f"Dynamic FF batch failed: {e}")
