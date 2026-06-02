@@ -332,7 +332,7 @@ class PretrainedModelBootstrapper:
         
         logger.info("📦 Creating decoder with modern architecture...")
         
-        from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
+        from cloud_decoder import OptimizedUniversalDecoder
         
         our_decoder = OptimizedUniversalDecoder(
             encoder_dim=768,

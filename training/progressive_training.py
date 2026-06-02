@@ -16,7 +16,7 @@ from utils.constants import MODELS_ENCODER_DIR, MODELS_DECODER_DIR, TRAIN_FINAL_
 from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
 from encoder.universal_encoder import UniversalEncoder
-from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
+from cloud_decoder import OptimizedUniversalDecoder
 from utils.dataset_classes import ModernParallelDataset
 from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
 

@@ -22,7 +22,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from training.intelligent_trainer import IntelligentTrainer, train_intelligent
 from encoder.universal_encoder import UniversalEncoder
-from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
+from cloud_decoder import OptimizedUniversalDecoder
 from data.dataset_classes import ModernParallelDataset
 from utils.shutdown_handler import GracefulShutdown
 from utils.model_versioning import ModelVersion
