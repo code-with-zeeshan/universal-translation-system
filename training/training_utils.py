@@ -14,7 +14,10 @@ from utils.exceptions import TrainingError
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 import time
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from config.schemas import RootConfig
 from collections import defaultdict
 
