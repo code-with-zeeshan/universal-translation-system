@@ -122,14 +122,13 @@ def get_logger(name: str, context: dict | None = None) -> StructuredLoggerAdapte
     return StructuredLoggerAdapter(logging.getLogger(name), context or {})
 
 _logging_initialized = False
+_MAIN_PID = os.getpid()
 
 def _is_worker_process() -> bool:
-    """Detect if running in a child process (DataLoader worker, etc.)"""
-    try:
-        import multiprocessing
-        return multiprocessing.parent_process() is not None
-    except Exception:
-        return False
+    """Detect if running in a forked child process (DataLoader worker, etc.).
+    Uses PID comparison because PyTorch uses os.fork() directly (not multiprocessing.Process),
+    so multiprocessing.parent_process() returns None even in workers."""
+    return os.getpid() != _MAIN_PID
 
 def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
     """Setup comprehensive logging configuration (idempotent, skips DataLoader workers)"""

@@ -42,8 +42,15 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
             self._build_token_cache(vocab_dir)
 
     def _load_token_cache(self):
-        with open(self._cache_path('metadata.json'), 'r') as f:
-            self._metadata = json.load(f)
+        if not hasattr(self, '_metadata'):
+            import pickle
+            pkl_path = self._cache_path('metadata.pkl')
+            if Path(pkl_path).exists():
+                with open(pkl_path, 'rb') as f:
+                    self._metadata = pickle.load(f)
+            else:
+                with open(self._cache_path('metadata.json'), 'r') as f:
+                    self._metadata = json.load(f)
         N = len(self._metadata)
         self._num_samples = N
 
@@ -105,8 +112,9 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         src_ids.flush()
         del src_ids, tgt_ids, src_mask, tgt_mask, items, vocab_mgr
 
-        with open(self._cache_path('metadata.json'), 'w') as f:
-            json.dump(metadata, f)
+        import pickle
+        with open(self._cache_path('metadata.pkl'), 'wb') as f:
+            pickle.dump(metadata, f)
 
         self._load_token_cache()
 
@@ -149,10 +157,10 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
 
     def __getitem__(self, idx):
         return {
-            'source_ids': torch.from_numpy(self._src_ids[idx].astype(np.int64)),
-            'target_ids': torch.from_numpy(self._tgt_ids[idx].astype(np.int64)),
-            'source_mask': torch.from_numpy(self._src_mask[idx]),
-            'target_mask': torch.from_numpy(self._tgt_mask[idx]),
+            'source_ids': torch.as_tensor(self._src_ids[idx].astype(np.int64)),
+            'target_ids': torch.as_tensor(self._tgt_ids[idx].astype(np.int64)),
+            'source_mask': torch.as_tensor(self._src_mask[idx], dtype=torch.bool),
+            'target_mask': torch.as_tensor(self._tgt_mask[idx], dtype=torch.bool),
             'vocab_pack_name': self._metadata[idx]['target_lang'],
             'vocab_size': self.config.model.vocab_size,
             'pad_token_id': 0,
@@ -162,7 +170,7 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        for key in ('_src_ids', '_tgt_ids', '_src_mask', '_tgt_mask', '_metadata'):
+        for key in ('_src_ids', '_tgt_ids', '_src_mask', '_tgt_mask'):
             state.pop(key, None)
         return state
 

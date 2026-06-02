@@ -75,7 +75,7 @@ class BaseTrainer(ABC):
         source_ids = batch['source_ids'].to(self.device, non_blocking=True)
         target_ids = batch['target_ids'].to(self.device, non_blocking=True)
         source_mask = batch['source_mask'].to(self.device, non_blocking=True)
-        pad_token_id = batch.get('pad_token_id', 0)
+        pad_token_id = int(batch.get('pad_token_id', 0))
 
         encoder_output = self.encoder(source_ids, source_mask)
         # Use keyword args so PEFT's forward wrapper passes them through **kwargs
