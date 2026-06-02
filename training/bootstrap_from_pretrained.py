@@ -292,7 +292,9 @@ class PretrainedModelBootstrapper:
 
     def create_decoder_from_mbart(self, 
                                 model_name: str = 'facebook/mbart-large-50',
-                                output_path: str = 'models/decoder/universal_decoder_initial.pt') -> nn.Module:
+                                output_path: str = 'models/decoder/universal_decoder_initial.pt',
+                                encoder_dim: int = 512,
+                                decoder_dim: int = 768) -> nn.Module:
         """Create decoder using modern AutoModel patterns"""
         
         logger.info(f"🔄 Loading {model_name} with AutoModel...")
@@ -330,8 +332,8 @@ class PretrainedModelBootstrapper:
         from cloud_decoder import OptimizedUniversalDecoder
         
         our_decoder = OptimizedUniversalDecoder(
-            encoder_dim=384,
-            decoder_dim=768,
+            encoder_dim=encoder_dim,
+            decoder_dim=decoder_dim,
             num_layers=8,
             num_heads=12,
             vocab_size=min(32000, tokenizer.vocab_size),
@@ -371,7 +373,8 @@ class PretrainedModelBootstrapper:
             'model_state_dict': our_decoder.state_dict(),
             'config': {
                 'base_model': model_name,
-                'decoder_dim': 768,
+                'encoder_dim': encoder_dim,
+                'decoder_dim': decoder_dim,
                 'num_layers': 8,
                 'vocab_size': min(50000, tokenizer.vocab_size),
                 'device': str(self.device),

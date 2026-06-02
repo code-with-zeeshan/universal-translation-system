@@ -105,7 +105,9 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
             if not decoder_path.exists():
                 logger.info("Bootstrapping decoder from facebook/mbart-large-50...")
                 bootstrapper.create_decoder_from_mbart(
-                    output_path=str(decoder_path)
+                    output_path=str(decoder_path),
+                    encoder_dim=config.model.hidden_dim,
+                    decoder_dim=config.model.decoder_dim,
                 )
         except Exception as e:
             logger.warning(f"Bootstrap failed ({e}), training from random initialization")
