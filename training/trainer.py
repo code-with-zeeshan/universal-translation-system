@@ -458,8 +458,8 @@ class IntelligentTrainer(BaseTrainer):
                     max_split_size=256,  # l4: 256
                     empty_cache_freq=100
                 ),
-                batch_size=16,  # l4: 16
-                accumulation_steps=8,  # l4: 8
+                batch_size=64,  # l4: 64 (uses more of the 22GB)
+                accumulation_steps=2,  # l4: 2 (effective batch stays 128)
                 compile_mode="default",
                 mixed_precision_dtype=torch.bfloat16,
                 num_workers=4,

@@ -17,6 +17,9 @@ from enum import Enum
 
 import torch
 
+# Mark this process for worker detection
+os.environ['OP_MAIN_PID'] = str(os.getpid())
+
 from utils.logging_config import setup_logging
 from integration.system import UniversalTranslationSystem as IntegrationSystem
 from integration.system_config import SystemConfig as IntegrationConfig

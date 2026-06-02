@@ -157,10 +157,10 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
 
     def __getitem__(self, idx):
         return {
-            'source_ids': torch.as_tensor(self._src_ids[idx].astype(np.int64)),
-            'target_ids': torch.as_tensor(self._tgt_ids[idx].astype(np.int64)),
-            'source_mask': torch.as_tensor(self._src_mask[idx], dtype=torch.bool),
-            'target_mask': torch.as_tensor(self._tgt_mask[idx], dtype=torch.bool),
+            'source_ids': torch.from_numpy(self._src_ids[idx].astype(np.int64).copy()),
+            'target_ids': torch.from_numpy(self._tgt_ids[idx].astype(np.int64).copy()),
+            'source_mask': torch.from_numpy(self._src_mask[idx].copy()),
+            'target_mask': torch.from_numpy(self._tgt_mask[idx].copy()),
             'vocab_pack_name': self._metadata[idx]['target_lang'],
             'vocab_size': self.config.model.vocab_size,
             'pad_token_id': 0,

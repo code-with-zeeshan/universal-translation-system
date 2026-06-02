@@ -125,19 +125,21 @@ _logging_initialized = False
 _MAIN_PID = os.getpid()
 
 def _is_worker_process() -> bool:
-    """Detect if running in a forked child process (DataLoader worker, etc.).
-    Uses PID comparison because PyTorch uses os.fork() directly (not multiprocessing.Process),
-    so multiprocessing.parent_process() returns None even in workers."""
-    return os.getpid() != _MAIN_PID
+    """Detect DataLoader worker processes (works with fork and spawn).
+    
+    For fork workers: PID comparison catches child processes.
+    For spawn workers: the OP_MAIN_PID env var (set in launch.py) won't match os.getpid()."""
+    if os.getpid() != _MAIN_PID:
+        return True
+    main_pid = os.environ.get('OP_MAIN_PID')
+    if main_pid and os.getpid() != int(main_pid):
+        return True
+    return False
 
 def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
     """Setup comprehensive logging configuration (idempotent, skips DataLoader workers)"""
     global _logging_initialized
-    if _logging_initialized:
-        return
-    # Skip in worker processes — inherits parent logging
-    if _is_worker_process():
-        _logging_initialized = True  # Prevent repeated checks
+    if _logging_initialized or _is_worker_process():
         return
     _logging_initialized = True
     # Create log directory and standard sections

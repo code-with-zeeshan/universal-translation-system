@@ -7,6 +7,10 @@ Handles CLI, distributed setup, and orchestration
 import argparse
 import sys
 import os
+
+# Set main PID before any imports, so spawned DataLoader workers can detect they
+# are not the main process and suppress duplicated logging.
+os.environ['OP_MAIN_PID'] = str(os.getpid())
 import torch
 import torch.multiprocessing as mp
 from pathlib import Path
