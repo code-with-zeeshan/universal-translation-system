@@ -91,36 +91,6 @@ vocabulary_pack_tokens = _safe_gauge(
     ['pack_name', 'version', 'token_type']  # token_type: regular, subword, special
 )
 
-active_connections = Gauge(
-    'active_connections',
-    'Number of active connections'
-)
-
-# Vocabulary metrics
-vocabulary_pack_info = Gauge(
-    'vocabulary_pack_info',
-    'Vocabulary pack version information',
-    ['pack_name', 'version', 'status']  # status: available, loaded, error
-)
-
-vocabulary_packs_total = Gauge(
-    'vocabulary_packs_total',
-    'Total number of vocabulary packs',
-    ['type']  # type: available, loaded
-)
-
-vocabulary_pack_size_mb = Gauge(
-    'vocabulary_pack_size_mb',
-    'Size of vocabulary pack in MB',
-    ['pack_name', 'version']
-)
-
-vocabulary_pack_tokens = Gauge(
-    'vocabulary_pack_tokens',
-    'Number of tokens in vocabulary pack',
-    ['pack_name', 'version', 'token_type']  # token_type: regular, subword, special
-)
-
 # Logging setup (centralized)
 from utils.logging_config import setup_logging
 setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
