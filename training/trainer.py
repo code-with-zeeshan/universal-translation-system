@@ -1184,7 +1184,7 @@ class IntelligentTrainer(BaseTrainer):
             batch = self._prepare_batch(batch)
             
             # Forward and backward pass
-            loss = self._training_step(batch)
+            loss = self._training_step(batch, step_start)
             
             # Accumulate loss
             epoch_loss += loss
@@ -1224,7 +1224,7 @@ class IntelligentTrainer(BaseTrainer):
             return tensor
         return fake_quantize_tensor(tensor, self.qat_bits)
     
-    def _training_step(self, batch: Dict[str, torch.Tensor]) -> float:
+    def _training_step(self, batch: Dict[str, torch.Tensor], step_start: float = 0.0) -> float:
         """Single training step with accumulation
            Enhanced training step with QAT support
         """
@@ -1291,7 +1291,7 @@ class IntelligentTrainer(BaseTrainer):
         if hasattr(self, 'analytics'):
             grad_norm = calculate_gradient_norm([self.encoder, self.decoder])
             memory_gb = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
-            tokens_per_sec = self.batch_sizer.current_batch_size * 512 / step_time  # Approximate
+            tokens_per_sec = self.batch_sizer.current_batch_size * 512 / (time.time() - step_start + 1e-8)
             
             self.analytics.log_step(
                 loss=loss.item(),
