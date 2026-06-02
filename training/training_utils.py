@@ -151,7 +151,7 @@ def create_optimizer_with_param_groups(
                 other_params.append(param)
         
         # Create parameter groups with different learning rates
-        base_lr = config.training.learning_rate
+        base_lr = config.training.lr
         
         if embedding_params:
             param_groups.append({

@@ -247,7 +247,7 @@ class TrainingBridge:
             self._on_event(TrainingStartEvent(
                 total_epochs=config.training.num_epochs,
                 batch_size=config.training.batch_size,
-                effective_batch_size=config.training.effective_batch_size,
+                effective_batch_size=config.training.batch_size * config.training.accumulation_steps,
                 learning_rate=config.training.lr,
             ))
 

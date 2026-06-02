@@ -115,6 +115,7 @@ class TrainingConfig(BaseModel):
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     use_rslora: bool = True
+    optimizer_type: str = "AdamW"
 
     class Config:
         extra = "allow"

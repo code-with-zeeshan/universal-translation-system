@@ -209,7 +209,7 @@ def launch_training(args: argparse.Namespace):
     if args.batch_size:
         config.training.batch_size = args.batch_size
     if args.learning_rate:
-        config.training.learning_rate = args.learning_rate
+        config.training.lr = args.learning_rate
     if args.num_epochs:
         config.training.num_epochs = args.num_epochs
     
@@ -270,7 +270,7 @@ def launch_training(args: argparse.Namespace):
     logger.info("="*60)
     
     # Register final model
-    final_model_path = Path(config.training.checkpoint_dir) / experiment_name / BEST_MODEL_FILENAME
+    final_model_path = Path(config.data.checkpoint_dir) / experiment_name / BEST_MODEL_FILENAME
     if final_model_path.exists():
         version = versioning.register_model(
             model_path=str(final_model_path),
