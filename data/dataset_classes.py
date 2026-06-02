@@ -116,15 +116,15 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         source_tokens = self._pad_or_truncate(source_tokens, max_length)
         target_tokens = self._pad_or_truncate(target_tokens, max_length)
         
-        # Create attention masks
+        # Create attention masks (MultiheadAttention requires bool or float dtype)
         source_mask = [1 if tok != 0 else 0 for tok in source_tokens]
         target_mask = [1 if tok != 0 else 0 for tok in target_tokens]
         
         return {
             'source_ids': torch.tensor(source_tokens, dtype=torch.long),
             'target_ids': torch.tensor(target_tokens, dtype=torch.long),
-            'source_mask': torch.tensor(source_mask, dtype=torch.long),
-            'target_mask': torch.tensor(target_mask, dtype=torch.long),
+            'source_mask': torch.tensor(source_mask, dtype=torch.bool),
+            'target_mask': torch.tensor(target_mask, dtype=torch.bool),
             # Add vocab_pack info
             'vocab_pack_name': vocab_pack.name if hasattr(vocab_pack, 'name') else 'default',
             'vocab_size': vocab_pack.size if hasattr(vocab_pack, 'size') else len(vocab_pack.tokens),

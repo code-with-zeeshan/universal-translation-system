@@ -48,7 +48,10 @@ class OptimizedDecoderLayer(nn.Module):
 
         residual = x
         x = self.cross_attn_norm(x)
-        x, _ = self.cross_attn(x, encoder_hidden, encoder_hidden, key_padding_mask=encoder_mask)
+        x, _ = self.cross_attn(
+            x, encoder_hidden, encoder_hidden,
+            key_padding_mask=~encoder_mask if encoder_mask is not None else None
+        )
         x = residual + self.dropout(x)
 
         residual = x
