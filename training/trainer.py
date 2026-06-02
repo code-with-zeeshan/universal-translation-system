@@ -20,7 +20,10 @@ import time
 from datetime import timedelta
 import json
 import logging
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from collections import defaultdict
 import numpy as np
 from pathlib import Path
@@ -938,6 +941,17 @@ class IntelligentTrainer(BaseTrainer):
         
         # Create scheduler
         self.scheduler = self._create_scheduler()
+
+        # Plateau scheduler for automatic LR reduction on validation loss plateau
+        self.plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',
+            factor=0.5,
+            patience=2,
+            threshold=1e-4,
+            min_lr=1e-7,
+            verbose=True
+        )
     
     def _create_optimizer(self) -> torch.optim.Optimizer:
         """Create optimizer with hardware-specific configuration"""
@@ -1409,6 +1423,9 @@ class IntelligentTrainer(BaseTrainer):
     def _adaptive_adjustments(self, train_metrics: Dict, val_metrics: Dict):
         """Make adaptive adjustments based on metrics"""
         
+        # Plateau scheduler: reduce LR when validation loss stagnates
+        self.plateau_scheduler.step(val_metrics['loss'])
+        
         # Check for memory pressure
         if torch.cuda.is_available():
             memory_used = torch.cuda.memory_allocated() / torch.cuda.max_memory_allocated()
@@ -1510,6 +1527,13 @@ class IntelligentTrainer(BaseTrainer):
             },
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
+            'plateau_scheduler_state': {
+                'best': self.plateau_scheduler.best,
+                'num_bad_epochs': self.plateau_scheduler.num_bad_epochs,
+                'cooldown_counter': self.plateau_scheduler.cooldown_counter,
+                'mode_worse': self.plateau_scheduler.mode_worse,
+                'last_epoch': self.plateau_scheduler.last_epoch,
+            },
             'training_history': self.training_history,
             'batch_sizer_state': {
                 'current_batch_size': self.batch_sizer.current_batch_size,
@@ -1563,6 +1587,15 @@ class IntelligentTrainer(BaseTrainer):
         # Load optimizer and scheduler
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        # Load plateau scheduler state
+        if 'plateau_scheduler_state' in checkpoint:
+            ps = checkpoint['plateau_scheduler_state']
+            self.plateau_scheduler.best = ps['best']
+            self.plateau_scheduler.num_bad_epochs = ps['num_bad_epochs']
+            self.plateau_scheduler.cooldown_counter = ps['cooldown_counter']
+            self.plateau_scheduler.mode_worse = ps['mode_worse']
+            self.plateau_scheduler.last_epoch = ps['last_epoch']
         
         # Load scaler if available
         if self.scaler and 'scaler_state_dict' in checkpoint:
