@@ -113,7 +113,7 @@ def wrap_decoder_with_lora(
         target_modules=target_modules,
         lora_dropout=lora_dropout,
         bias="none",
-        task_type=TaskType.SEQ_2_SEQ_LM,
+        task_type=TaskType.FEATURE_EXTRACTION,
         use_rslora=use_rslora,
     )
 

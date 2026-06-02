@@ -1056,7 +1056,7 @@ class IntelligentTrainer(BaseTrainer):
             )
             
         # Setup checkpoint directory
-        self.checkpoint_dir = Path(self.config.training.checkpoint_dir) / self.experiment_name
+        self.checkpoint_dir = Path(self.config.data.checkpoint_dir) / self.experiment_name
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     def _log_initialization(self):

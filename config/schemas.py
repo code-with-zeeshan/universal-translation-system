@@ -107,6 +107,10 @@ class TrainingConfig(BaseModel):
     language_to_pack_mapping: Optional[Dict[str, str]] = None
     use_lora: bool = True
     use_param_groups: bool = False
+    use_temperature_sampling: bool = False
+    temperature: float = 1.0
+    force_batch_size: Optional[int] = None
+    force_learning_rate: Optional[float] = None
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
