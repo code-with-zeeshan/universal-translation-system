@@ -37,7 +37,7 @@ class ModelConfig(BaseModel):
     decoder_heads: int = 8
     dropout: float = Field(0.1, ge=0.0, le=1.0)
     max_vocab_size: int = 32000
-    max_seq_length: int = 512
+    max_seq_length: int = 150
 
     class Config:
         extra = "allow"

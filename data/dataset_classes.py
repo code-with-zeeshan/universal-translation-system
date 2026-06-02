@@ -32,7 +32,7 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         self._load_or_build_token_cache(vocab_dir)
 
     def _cache_path(self, suffix: str) -> str:
-        return str(self.cache_dir / f"{self.data_path.stem}_tokens_{suffix}")
+        return str(self.cache_dir / f"{self.data_path.stem}_tokens_ml{self.max_length}_{suffix}")
 
     def _load_or_build_token_cache(self, vocab_dir: str):
         src_path = self._cache_path('source_ids.npy')
