@@ -73,6 +73,7 @@ class OptimizedUniversalDecoder(nn.Module):
         num_heads: int = 8,
         vocab_size: int = 50000,
         max_length: int = 256,
+        dropout: float = 0.1,
         device: torch.device = None,
     ):
         super().__init__()
@@ -80,6 +81,7 @@ class OptimizedUniversalDecoder(nn.Module):
         self.decoder_dim = decoder_dim
         self.vocab_size = vocab_size
         self.device = device or torch.device('cpu')
+        self.dropout = dropout
 
         self.embedding = nn.Embedding(vocab_size, decoder_dim)
         self.positional_embedding = nn.Embedding(max_length, decoder_dim)
@@ -87,7 +89,7 @@ class OptimizedUniversalDecoder(nn.Module):
         self.encoder_adapter = nn.Linear(encoder_dim, decoder_dim, bias=False)
 
         self.layers = nn.ModuleList([
-            OptimizedDecoderLayer(decoder_dim=decoder_dim, num_heads=num_heads, dropout=0.1)
+            OptimizedDecoderLayer(decoder_dim=decoder_dim, num_heads=num_heads, dropout=dropout)
             for _ in range(num_layers)
         ])
 
