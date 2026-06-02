@@ -21,9 +21,9 @@ from utils.constants import LOG_DIR, DATA_PROCESSED_DIR, VOCAB_DIR
 from utils.exceptions import VocabularyError
 from utils.logging_config import setup_logging
 
-from vocab_config import UnifiedVocabConfig, VocabStats, LanguageGroup, CreationMode
-from vocab_production import _create_sentencepiece_vocab, _train_sentencepiece_model
-from vocab_research import (
+from vocabulary.vocab_config import UnifiedVocabConfig, VocabStats, LanguageGroup, CreationMode
+from vocabulary.vocab_production import _create_sentencepiece_vocab, _train_sentencepiece_model
+from vocabulary.vocab_research import (
     _create_frequency_vocab,
     _analyze_corpus,
     _select_vocabulary,
@@ -33,7 +33,7 @@ from vocab_research import (
     _merge_corpora,
     _create_vocabulary_mappings,
 )
-from vocab_validation import validate_pack, compare_packs, _get_pack_version, _save_pack, _cleanup_temp_files
+from vocabulary.vocab_validation import validate_pack, compare_packs, _get_pack_version, _save_pack, _cleanup_temp_files
 
 
 setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
