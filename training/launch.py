@@ -82,8 +82,33 @@ def load_configuration_dynamic_or_yaml(config_path: str, dynamic: bool) -> RootC
 
 
 def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Module]:
-    """Initialize encoder and decoder models"""
+    """Initialize encoder and decoder models, bootstrapping from pretrained if needed"""
     logger.info("🔧 Initializing models...")
+    
+    encoder_path = Path(f"{MODELS_ENCODER_DIR}/universal_encoder_initial.pt")
+    decoder_path = Path(f"{MODELS_DECODER_DIR}/universal_decoder_initial.pt")
+    
+    # Bootstrap from pretrained if weight files don't exist
+    if not encoder_path.exists() or not decoder_path.exists():
+        logger.info("No pretrained weights found. Bootstrapping from HuggingFace...")
+        try:
+            from training.bootstrap_from_pretrained import PretrainedModelBootstrapper
+            bootstrapper = PretrainedModelBootstrapper(device="auto")
+            
+            if not encoder_path.exists():
+                logger.info("Bootstrapping encoder from xlm-roberta-base...")
+                bootstrapper.create_encoder_from_pretrained(
+                    output_path=str(encoder_path),
+                    target_hidden_dim=config.model.hidden_dim
+                )
+            
+            if not decoder_path.exists():
+                logger.info("Bootstrapping decoder from facebook/mbart-large-50...")
+                bootstrapper.create_decoder_from_mbart(
+                    output_path=str(decoder_path)
+                )
+        except Exception as e:
+            logger.warning(f"Bootstrap failed ({e}), training from random initialization")
     
     encoder = UniversalEncoder(
         max_vocab_size=config.model.vocab_size,
@@ -103,9 +128,6 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
     )
     
     # Load pretrained weights if available
-    encoder_path = Path(f"{MODELS_ENCODER_DIR}/universal_encoder_initial.pt")
-    decoder_path = Path(f"{MODELS_DECODER_DIR}/universal_decoder_initial.pt")
-    
     if encoder_path.exists():
         try:
             checkpoint = torch.load(encoder_path, map_location='cpu')
