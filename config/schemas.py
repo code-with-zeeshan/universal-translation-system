@@ -106,6 +106,7 @@ class TrainingConfig(BaseModel):
     vocab_switch_penalty: float = 0.001
     language_to_pack_mapping: Optional[Dict[str, str]] = None
     use_lora: bool = True
+    use_param_groups: bool = False
     lora_r: int = 8
     lora_alpha: int = 16
     lora_dropout: float = 0.05
