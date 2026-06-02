@@ -32,8 +32,13 @@ pip install -e ".[all]" 2>&1 | tail -20
 - `pip: command not found` → Run `conda install pip -y`
 - `error: externally-managed-environment` → Run `conda install pip -y` to get conda's pip
 - `ERROR: Could not find a version that satisfies ...` → Single dep issue. Run `pip install <pkg>` separately
+- `No matching distribution found for tflite-runtime` or `tensorflow-addons` → Already fixed in latest. Run `git pull` first
+- If `[all]` still fails, install minimal required extras instead:
+  ```bash
+  pip install -e ".[serve,train,dev]" 2>&1 | tail -20
+  ```
 - Takes ~5 min. Ignore dependency conflicts (they're non-fatal)
-- `pip install -e .` (without `[all]`) only installs base deps — will crash on `opentelemetry` import
+- `pip install -e .` (without any extra) only installs base deps — will crash on `opentelemetry` import
 
 ---
 
