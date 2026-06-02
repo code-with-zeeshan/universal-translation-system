@@ -340,7 +340,7 @@ class PretrainedModelBootstrapper:
             num_layers=6,
             num_heads=8,
             vocab_size=min(32000, tokenizer.vocab_size),
-            max_positions=64,
+            max_length=64,
             device=self.device
         )
         
@@ -348,11 +348,11 @@ class PretrainedModelBootstrapper:
         logger.info("💉 Transferring knowledge with dimension adaptation...")
         
         with torch.no_grad():
-            # Transfer embeddings
-            if hasattr(decoder, 'embed_tokens') and hasattr(our_decoder, 'embed_tokens'):
+            # Transfer embeddings (our_decoder uses self.embedding)
+            if hasattr(decoder, 'embed_tokens') and hasattr(our_decoder, 'embedding'):
                 pretrained_embeddings = decoder.embed_tokens.weight
-                our_vocab_size = min(our_decoder.embed_tokens.num_embeddings, pretrained_embeddings.size(0))
-                our_decoder.embed_tokens.weight.data[:our_vocab_size] = pretrained_embeddings[:our_vocab_size]
+                our_vocab_size = min(our_decoder.embedding.num_embeddings, pretrained_embeddings.size(0))
+                our_decoder.embedding.weight.data[:our_vocab_size] = pretrained_embeddings[:our_vocab_size]
     
             # Transfer decoder layers
             for i in range(min(len(decoder.layers), len(our_decoder.layers))):
