@@ -6,6 +6,7 @@ import torch
 from torch.utils.data import Dataset
 import json
 import logging
+import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from utils.base_classes import TokenizerMixin
@@ -16,59 +17,116 @@ logger = logging.getLogger(__name__)
 
 class ModernParallelDataset(Dataset, TokenizerMixin):
     """
-    Modern parallel dataset with caching and preprocessing.
-    Extracted from train_universal_system.py
+    Modern parallel dataset with pre-tokenized cache via memmap.
+    Tokenizes all samples once on first run; subsequent runs and DataLoader
+    workers share the OS page cache via mmap, eliminating per-process copies.
     """
-    
-    def __init__(self, data_path: str, cache_dir: Optional[str] = None, vocab_dir: str = 'vocabs', config: Optional[RootConfig] = None):
+
+    def __init__(self, data_path: str, cache_dir: Optional[str] = None, vocab_dir: str = 'vocabulary/vocab', config: Optional[RootConfig] = None):
         self.data_path = Path(data_path)
+        self.config = config or load_pydantic_config()
+        self.max_length = self.config.model.max_seq_length
         self.cache_dir = Path(cache_dir) if cache_dir else self.data_path.parent / "cache"
         self.cache_dir.mkdir(exist_ok=True)
-        
-        # Load or create cached data
-        self.data = self._load_or_create_cache()
-        
-        # Initialize VocabularyManager
+
+        self._load_or_build_token_cache(vocab_dir)
+
+    def _cache_path(self, suffix: str) -> str:
+        return str(self.cache_dir / f"{self.data_path.stem}_tokens_{suffix}")
+
+    def _load_or_build_token_cache(self, vocab_dir: str):
+        src_path = self._cache_path('source_ids.npy')
+        if Path(src_path).exists():
+            self._load_token_cache()
+        else:
+            self._build_token_cache(vocab_dir)
+
+    def _load_token_cache(self):
+        with open(self._cache_path('metadata.json'), 'r') as f:
+            self._metadata = json.load(f)
+        N = len(self._metadata)
+        self._num_samples = N
+
+        self._src_ids = np.memmap(self._cache_path('source_ids.npy'), dtype=np.uint16, mode='r', shape=(N, self.max_length))
+        self._tgt_ids = np.memmap(self._cache_path('target_ids.npy'), dtype=np.uint16, mode='r', shape=(N, self.max_length))
+        self._src_mask = np.memmap(self._cache_path('source_mask.npy'), dtype=np.bool_, mode='r', shape=(N, self.max_length))
+        self._tgt_mask = np.memmap(self._cache_path('target_mask.npy'), dtype=np.bool_, mode='r', shape=(N, self.max_length))
+
+        logger.info(f"📚 Pre-tokenized cache loaded: {N} samples ({self._cache_size_gb():.1f}GB shared via mmap)")
+
+    def _cache_size_gb(self) -> float:
+        total = 0
+        for suffix in ('source_ids.npy', 'target_ids.npy', 'source_mask.npy', 'target_mask.npy'):
+            p = Path(self._cache_path(suffix))
+            if p.exists():
+                total += p.stat().st_size
+        return total / (1024**3)
+
+    def _build_token_cache(self, vocab_dir: str):
+        items = self._load_or_create_cache()
+        N = len(items)
+        logger.info(f"🔄 Pre-tokenizing {N} samples (first run, ~10-20 min)...")
+
         from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
-        
-        # Ensure we have a valid config for the vocab manager
-        self.config = config or load_pydantic_config()
-        
-        # Use OPTIMIZED mode for dataset processing
-        self.vocab_manager = UnifiedVocabularyManager(config=self.config, vocab_dir=vocab_dir, mode=VocabularyMode.OPTIMIZED)
-        
-        # Preload all vocabulary packs (maps to 7 pack files) so workers share COW pages
+        vocab_mgr = UnifiedVocabularyManager(config=self.config, vocab_dir=vocab_dir, mode=VocabularyMode.OPTIMIZED)
         if self.config:
-            self.vocab_manager.preload_for_languages(list(self.config.data.active_languages))
-        
-        logger.info(f"📚 Dataset loaded: {len(self.data)} samples")
-    
+            vocab_mgr.preload_for_languages(list(self.config.data.active_languages))
+
+        src_ids = np.memmap(self._cache_path('source_ids.npy'), dtype=np.uint16, mode='w+', shape=(N, self.max_length))
+        tgt_ids = np.memmap(self._cache_path('target_ids.npy'), dtype=np.uint16, mode='w+', shape=(N, self.max_length))
+        src_mask = np.memmap(self._cache_path('source_mask.npy'), dtype=np.bool_, mode='w+', shape=(N, self.max_length))
+        tgt_mask = np.memmap(self._cache_path('target_mask.npy'), dtype=np.bool_, mode='w+', shape=(N, self.max_length))
+        metadata = []
+
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(items, desc="Tokenizing")
+        except ImportError:
+            iterator = items
+
+        for i, item in enumerate(iterator):
+            vocab_pack = vocab_mgr.get_vocab_for_pair(item['source_lang'], item['target_lang'])
+            src_tokens = self.tokenize_with_subwords(item['source'], vocab_pack, item['source_lang'])
+            tgt_tokens = self.tokenize_with_subwords(item['target'], vocab_pack, item['target_lang'])
+
+            src = self._pad_or_truncate(src_tokens, self.max_length)
+            tgt = self._pad_or_truncate(tgt_tokens, self.max_length)
+
+            src_ids[i] = src
+            tgt_ids[i] = tgt
+            src_mask[i] = [t != 0 for t in src]
+            tgt_mask[i] = [t != 0 for t in tgt]
+            metadata.append({
+                'source_lang': item['source_lang'],
+                'target_lang': item['target_lang'],
+                'line_no': item.get('line_no', i),
+            })
+
+        src_ids.flush()
+        del src_ids, tgt_ids, src_mask, tgt_mask, items, vocab_mgr
+
+        with open(self._cache_path('metadata.json'), 'w') as f:
+            json.dump(metadata, f)
+
+        self._load_token_cache()
+
     def _load_or_create_cache(self):
-        """Load cached data or create cache from raw data"""
-        
         cache_file = self.cache_dir / f"{self.data_path.stem}_cache.json"
-        
         if cache_file.exists():
-            logger.info(f"📦 Loading cached data from {cache_file}")
+            logger.info(f"📦 Loading raw data from {cache_file}")
             try:
                 with open(cache_file, 'r', encoding='utf-8') as f:
                     return json.load(f)
             except (json.JSONDecodeError, ValueError) as e:
                 logger.warning(f"Cache corrupted ({e}), regenerating...")
                 cache_file.unlink(missing_ok=True)
-        
-        logger.info(f"🔄 Creating cache from {self.data_path}")
+        logger.info(f"🔄 Creating raw data cache from {self.data_path}")
         data = self._load_raw_data()
-        
-        # Save cache
         with open(cache_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        
         return data
-    
+
     def _load_raw_data(self):
-        """Load and preprocess raw parallel data"""
-        
         data = []
         with open(self.data_path, 'r', encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
@@ -84,62 +142,35 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
                         })
                 except Exception as e:
                     logger.warning(f"⚠️ Error processing line {line_no}: {e}")
-        
         return data
-    
+
     def __len__(self):
-        return len(self.data)
-    
+        return self._num_samples
+
     def __getitem__(self, idx):
-        item = self.data[idx]
-        
-        # Get vocabulary pack for this language pair
-        vocab_pack = self.vocab_manager.get_vocab_for_pair(
-            item['source_lang'], 
-            item['target_lang']
-        )
-        
-        # Tokenize with modern preprocessing (using inherited TokenizerMixin method)
-        source_tokens = self.tokenize_with_subwords(
-            item['source'], 
-            vocab_pack,
-            item['source_lang']
-        )
-        target_tokens = self.tokenize_with_subwords(
-            item['target'], 
-            vocab_pack,
-            item['target_lang']
-        )
-        
-        # Pad or truncate to max sequence length
-        max_length = self.config.model.max_seq_length if hasattr(self.config, 'model') else 512
-        source_tokens = self._pad_or_truncate(source_tokens, max_length)
-        target_tokens = self._pad_or_truncate(target_tokens, max_length)
-        
-        # Create attention masks (MultiheadAttention requires bool or float dtype)
-        source_mask = [1 if tok != 0 else 0 for tok in source_tokens]
-        target_mask = [1 if tok != 0 else 0 for tok in target_tokens]
-        
         return {
-            'source_ids': torch.tensor(source_tokens, dtype=torch.long),
-            'target_ids': torch.tensor(target_tokens, dtype=torch.long),
-            'source_mask': torch.tensor(source_mask, dtype=torch.bool),
-            'target_mask': torch.tensor(target_mask, dtype=torch.bool),
-            # Add vocab_pack info
-            'vocab_pack_name': vocab_pack.name if hasattr(vocab_pack, 'name') else 'default',
-            'vocab_size': vocab_pack.size if hasattr(vocab_pack, 'size') else len(vocab_pack.tokens),
-            'pad_token_id': vocab_pack.special_tokens.get('<pad>', 0), 
-            'unk_token_id': vocab_pack.special_tokens.get('<unk>', 1),
-            'metadata': {
-                'source_lang': item['source_lang'],
-                'target_lang': item['target_lang'],
-                'line_no': item.get('line_no', idx)
-            }
+            'source_ids': torch.from_numpy(self._src_ids[idx].astype(np.int64)),
+            'target_ids': torch.from_numpy(self._tgt_ids[idx].astype(np.int64)),
+            'source_mask': torch.from_numpy(self._src_mask[idx]),
+            'target_mask': torch.from_numpy(self._tgt_mask[idx]),
+            'vocab_pack_name': self._metadata[idx]['target_lang'],
+            'vocab_size': self.config.model.vocab_size,
+            'pad_token_id': 0,
+            'unk_token_id': 1,
+            'metadata': self._metadata[idx],
         }
-    
-    def _pad_or_truncate(self, tokens: List[int], max_length: int) -> List[int]:
-        """Pad or truncate tokens to max_length"""
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        for key in ('_src_ids', '_tgt_ids', '_src_mask', '_tgt_mask', '_metadata'):
+            state.pop(key, None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._load_token_cache()
+
+    def _pad_or_truncate(self, tokens, max_length):
         if len(tokens) > max_length:
             return tokens[:max_length]
-        else:
-            return tokens + [0] * (max_length - len(tokens))
+        return tokens + [0] * (max_length - len(tokens))
