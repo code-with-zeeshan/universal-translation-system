@@ -28,7 +28,7 @@ from collections import defaultdict
 import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 # Import existing modules
 from training.memory_efficient_training import (
@@ -1225,7 +1225,7 @@ class IntelligentTrainer(BaseTrainer):
             # Disable gradient sync for accumulation steps
             sync_context = self._no_sync_context()
         else:
-            sync_context = contextmanager(lambda: iter([None]))()
+            sync_context = nullcontext()
         
         with sync_context:
             # Forward pass
