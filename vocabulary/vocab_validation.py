@@ -84,7 +84,7 @@ def validate_pack(self, pack_path: str) -> Tuple[bool, List[str]]:
             meta = pack['metadata']
             if 'compatible_decoder' in meta:
                 req = meta['compatible_decoder']
-                logger.info("Pack %s requires decoder %s", pack.get('name'), req)
+                logger.info(f"Pack {pack.get('name')} requires decoder {req}")
 
         return len(errors) == 0, errors
 
@@ -135,7 +135,7 @@ def _save_pack(self, pack: Dict[str, Any], pack_name: str):
     msgpack_path = self.output_dir / f'{pack_name}_v{version}.msgpack'
     with open(msgpack_path, 'wb') as f:
         f.write(msgpack.packb(pack))
-    logger.info("Saved pack v%s to %s and %s", version, str(json_path), str(msgpack_path))
+    logger.info(f"Saved pack v{version} to {json_path} and {msgpack_path}")
     _update_manifest(self.output_dir, pack_name, version)
 
 
@@ -161,9 +161,9 @@ def _cleanup_temp_files(self, *files):
         try:
             if Path(file_path).exists():
                 os.remove(file_path)
-                logger.debug("Cleaned up %s", str(file_path))
+                logger.debug(f"Cleaned up {file_path}")
         except OSError as e:
-            logger.warning("Could not clean up %s: %s", file_path, e)
+            logger.warning(f"Could not clean up {file_path}: {e}")
 
 
 def _get_pack_version(self, pack_name: str, bump: str = "minor") -> str:
