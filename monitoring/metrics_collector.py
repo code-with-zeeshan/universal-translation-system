@@ -20,19 +20,25 @@ except ImportError:
 
 def _safe_counter(name, documentation, labels=None, registry=REGISTRY, **kwargs):
     try:
-        return Counter(name, documentation, labels, registry=registry, **kwargs)
+        if labels is not None:
+            return Counter(name, documentation, labels, registry=registry, **kwargs)
+        return Counter(name, documentation, registry=registry, **kwargs)
     except ValueError:
         return registry._names_to_collectors[name]
 
 def _safe_histogram(name, documentation, labels=None, registry=REGISTRY, **kwargs):
     try:
-        return Histogram(name, documentation, labels, registry=registry, **kwargs)
+        if labels is not None:
+            return Histogram(name, documentation, labels, registry=registry, **kwargs)
+        return Histogram(name, documentation, registry=registry, **kwargs)
     except ValueError:
         return registry._names_to_collectors[name]
 
 def _safe_gauge(name, documentation, labels=None, registry=REGISTRY, **kwargs):
     try:
-        return Gauge(name, documentation, labels, registry=registry, **kwargs)
+        if labels is not None:
+            return Gauge(name, documentation, labels, registry=registry, **kwargs)
+        return Gauge(name, documentation, registry=registry, **kwargs)
     except ValueError:
         return registry._names_to_collectors[name]
 
