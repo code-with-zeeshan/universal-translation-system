@@ -950,7 +950,6 @@ class IntelligentTrainer(BaseTrainer):
             patience=2,
             threshold=1e-4,
             min_lr=1e-7,
-            verbose=True
         )
     
     def _create_optimizer(self) -> torch.optim.Optimizer:

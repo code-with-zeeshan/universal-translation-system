@@ -71,6 +71,9 @@ def wrap_decoder_with_lora(
 ) -> nn.Module:
     """Wrap decoder with LoRA adapters using PEFT.
     
+    Uses explicit target modules for OptimizedUniversalDecoder to avoid
+    ambiguous leaf names like "0" and "2" that prevent PEFT from wrapping.
+    
     Args:
         decoder: The decoder model to wrap
         r: LoRA rank
@@ -89,7 +92,20 @@ def wrap_decoder_with_lora(
         return decoder
 
     if target_modules is None:
-        target_modules = _detect_linear_modules(decoder)
+        # Use explicit targets for OptimizedUniversalDecoder — auto-detect
+        # picks bare "0"/"2" which match OptimizedDecoderLayer (not a Linear).
+        from cloud_decoder.decoder_core import OptimizedUniversalDecoder
+        if isinstance(decoder, OptimizedUniversalDecoder):
+            target_modules = [
+                "self_attn.out_proj",
+                "cross_attn.out_proj",
+                "ffn.0",
+                "ffn.2",
+                "encoder_adapter",
+            ]
+            logger.info(f"Using explicit decoder LoRA targets: {target_modules}")
+        else:
+            target_modules = _detect_linear_modules(decoder)
 
     lora_config = LoraConfig(
         r=r,

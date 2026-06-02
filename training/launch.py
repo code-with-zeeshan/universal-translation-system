@@ -131,16 +131,22 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
     if encoder_path.exists():
         try:
             checkpoint = torch.load(encoder_path, map_location='cpu', weights_only=False)
-            encoder.load_state_dict(checkpoint['model_state_dict'])
-            logger.info("✅ Loaded pretrained encoder weights")
+            missing, unexpected = encoder.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            if missing or unexpected:
+                logger.warning(f"⚠️ Encoder state_dict partial load — missing: {missing}, unexpected: {unexpected}")
+            else:
+                logger.info("✅ Loaded pretrained encoder weights")
         except Exception as e:
             logger.warning(f"⚠️ Could not load encoder weights: {e}")
     
     if decoder_path.exists():
         try:
             checkpoint = torch.load(decoder_path, map_location='cpu', weights_only=False)
-            decoder.load_state_dict(checkpoint['model_state_dict'])
-            logger.info("✅ Loaded pretrained decoder weights")
+            missing, unexpected = decoder.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            if missing or unexpected:
+                logger.warning(f"⚠️ Decoder state_dict partial load — missing: {missing}, unexpected: {unexpected}")
+            else:
+                logger.info("✅ Loaded pretrained decoder weights")
         except Exception as e:
             logger.warning(f"⚠️ Could not load decoder weights: {e}")
     
