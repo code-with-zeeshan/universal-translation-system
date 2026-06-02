@@ -127,6 +127,10 @@ class VocabularyPack:
             for char in token:
                 if char not in node:
                     node[char] = {}
+                elif not isinstance(node[char], dict):
+                    # Collision: a shorter token's leaf (int) is at this path.
+                    # Wrap it in a dict so longer tokens can continue building.
+                    node[char] = {'$': node[char]}
                 node = node[char]
             node['$'] = self.tokens[token]
     
