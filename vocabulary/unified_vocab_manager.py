@@ -224,6 +224,9 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
         state.pop('_lock', None)
         state.pop('_vocabulary_cache', None)
         state.pop('_cache_order', None)
+        # Exclude analytics (not picklable)
+        for key in ('token_usage', 'unknown_token_usage', 'language_pair_usage'):
+            state.pop(key, None)
         return state
 
     def __setstate__(self, state):
@@ -305,11 +308,9 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
             # Load from file
             pack = self._load_pack_from_file(pack_name, version)
             
-            # Optimize based on mode
+            # Optimize based on mode (prefix tree/bloom filter only needed for EDGE tokenization path)
             if self.mode == VocabularyMode.EDGE:
                 pack.optimize_for_edge()
-            elif self.mode == VocabularyMode.OPTIMIZED:
-                pack.optimize_for_edge(max_tokens=16000)  # Keep more tokens
             
             # Add to cache
             self._vocabulary_cache[cache_key] = pack

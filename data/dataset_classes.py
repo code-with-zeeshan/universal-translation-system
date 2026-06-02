@@ -37,6 +37,10 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         # Use OPTIMIZED mode for dataset processing
         self.vocab_manager = UnifiedVocabularyManager(config=self.config, vocab_dir=vocab_dir, mode=VocabularyMode.OPTIMIZED)
         
+        # Preload all vocabulary packs (maps to 7 pack files) so workers share COW pages
+        if self.config:
+            self.vocab_manager.preload_for_languages(list(self.config.active_languages))
+        
         logger.info(f"📚 Dataset loaded: {len(self.data)} samples")
     
     def _load_or_create_cache(self):
