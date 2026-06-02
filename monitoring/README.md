@@ -50,7 +50,7 @@ scrape_configs:
       - targets: ['decoder-service:8001']
   - job_name: 'coordinator'
     static_configs:
-      - targets: ['coordinator-service:8002']
+      - targets: ['coordinator-service:5100']
   - job_name: 'encoder'
     static_configs:
       - targets: ['encoder-service:8000']

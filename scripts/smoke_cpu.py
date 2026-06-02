@@ -76,7 +76,7 @@ def vocab_smoke():
     from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode, UnifiedVocabConfig
     creator = UnifiedVocabularyCreator(
         corpus_dir=str(REPO / "data" / "processed"),
-        output_dir=str(REPO / "vocabs"),
+        output_dir=str(REPO / "vocabulary" / "vocab"),
         default_mode=CreationMode.RESEARCH,
         config=UnifiedVocabConfig(vocab_size=200)
     )
@@ -85,7 +85,7 @@ def vocab_smoke():
     creator._save_pack(pack, "latin")
     # Validate
     from pathlib import Path as _P
-    js = sorted((REPO / "vocabs").glob("latin_v*.json"))
+    js = sorted((REPO / "vocabulary" / "vocab").glob("latin_v*.json"))
     assert js, "No vocab JSON created"
     ok, errs = creator.validate_pack(str(js[-1]))
     assert ok, f"Vocab validation failed: {errs}"

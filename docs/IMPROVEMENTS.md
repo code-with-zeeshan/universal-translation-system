@@ -20,7 +20,7 @@ This document summarizes the improvements made to the Universal Translation Syst
 - Added resource requests alongside limits
 - Added health probes (liveness and readiness)
 - Created Helm chart at `charts/uts/` with coordinator, decoder, encoder, redis
-- Created secrets template at `kubernetes/secrets.yaml`
+- Created secrets template at `kubernetes/secrets.example.yaml`
 
 ## 4. Structure Improvements
 - SDKs consolidated under `sdk/` directory

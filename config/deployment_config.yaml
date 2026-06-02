@@ -4,7 +4,7 @@
 # --- System Paths ---
 data_dir: "data"
 model_dir: "models/production" # Point to production-ready models
-vocab_dir: "vocabs"
+vocab_dir: "vocabulary/vocab"
 checkpoint_dir: "checkpoints"
 
 # --- Performance & Hardware ---

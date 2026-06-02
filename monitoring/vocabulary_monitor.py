@@ -7,7 +7,7 @@ Run this to expose vocabulary metrics on a separate port.
 import time
 import logging
 from prometheus_client import start_http_server
-from metrics_collector import vocab_collector, collect_vocabulary_metrics
+from monitoring.metrics_collector import vocab_collector, collect_vocabulary_metrics
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

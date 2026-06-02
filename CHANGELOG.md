@@ -5,6 +5,43 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
+- TUI dashboard: `tui/` package with pipeline, training, GPU, and log panels
+- COMET quality filter stage (`_comet_quality_filter`) using `Unbabel/wmt22-comet-da`
+- `PipelineConfig` schema with `enabled_stages`, `comet_quality_threshold`, `max_dynamic_ff_per_pair`, `max_idiom_per_lang`
+- Dynamic false friend generation (50 English context sentences)
+- Domain data auto-merge (`_merge_domain_data`) scanning `data/raw/{medical,legal,tech}/`
+- Direct OPUS.nlpl.eu download (`_download_direct_opus`) with zip file fetching
+- LitServe decoder at `universal-decoder-node/litserve_decoder.py` with auto-batching
+- Cloud decoder at `cloud_decoder/decoder_server.py` with LitServe + FastAPI compatibility
+- `EmbeddingResizeAdapter` in `training/vocabulary_model_adapter.py` for vocabulary evolution
+- `evolve_vocabulary.py` rewritten: auto-discovers packs, reads analytics, `--retrain-model` flag
+- Thai language group (`th` → `thai` pack); 12-language `latin` group (added `id`, `vi`, `tr`)
+- `rich>=13.0.0` added to `[tui]` extra; `click`, `docker` added to `requirements/decoder.txt`
+- `UTS_HMAC_KEY` env var required for pipeline execution
+- SETUP_COMMANDS.md: full 8-step Lightning Studio setup guide
+
+### Changed
+- `vocab_dir` default changed from `vocabulary` to `vocabulary/vocab` in `config/schemas.py:73`
+- SentencePiece `.model` files preserved after training (no longer deleted)
+- False friend seeds expanded: 25 entries per en_XX pair (384→1,426 total), plus 10 non-English pairs
+- Augment batch_size: 8→128 for NLLB; dynamic FF batch loop 32→128
+- `max_sentence_length`: 64→128 in both `data:` and `training:` config sections
+- `_load_pairs` fixed to accept 2-col or 4-col TSV
+- `setup.py` dependency pins relaxed: `==` → `>=`
+- Pipeline defaults skip `wikipedia_backtranslation`, `direct_opus`, `knowledge_distillation` (opt-in via `--stage`)
+- `ut` language code → `id` for Indonesian in multiple files
+- `frequency` → `frequency` dict key in `vocab_production.py` 
+
+### Fixed
+- Vocabulary import path bugs, logging TypeErrors, auto-reduce `vocab_size` on RuntimeError
+- False friend generation: closed file bug, batching all translations before NLLB call
+- `vocabulary_creator.py` evolution save bug: `_create_pack_structure` + `_save_pack` no longer short-circuits
+- `vocabulary_monitor.py`: `from metrics_collector` → `from monitoring.metrics_collector`
+- `data/essential/` directory removed (never written by any stage)
+- `pathlib2` removed from `requirements/dev.txt` (Python 3.12 stdlib)
+- `opentelemetry-instrumentation-flask` removed from `requirements/serve.txt`
+- 4 dead `.py` files deleted: `error_codes.py`, `error_handler.py`, `final_integration.py`
+- 16 dead non-`.py` files deleted: duplicate configs, orphaned requirements, `.ps1` scripts, redundant `.sh` scripts, deprecated K8s PodSecurityPolicy manifests, `.html` flow diagrams
 - Environment variable configuration for all components
 - Docker and Kubernetes deployment support
 - Comprehensive Prometheus/Grafana monitoring dashboards
@@ -25,7 +62,7 @@ All notable changes to the Universal Translation System will be documented in th
 - Mandatory secrets in `.env.example` with `*_FILE` support and RS256 key envs
 - Production scripts: `scripts/install.sh`, `scripts/build_encoder_core.sh`, `scripts/setup_redis.sh`, `scripts/setup_serving.sh`
 - Helm chart at `charts/uts/` with coordinator, decoder, encoder, redis deployments
-- Kubernetes secrets template at `kubernetes/secrets.yaml`
+- Kubernetes secrets template at `kubernetes/secrets.example.yaml`
 - Thread safety: 19 race conditions fixed across 11+ files (RLock, background thread stop, double-checked locking)
 - 285+ tests across 14 new test files covering constants, samplers, strategy, config, metrics, pipeline state, vocab config, quantizer, profiler, hardware, analytics, training utils, health, translation API
 - 60+ path constants in `utils/constants.py` with `UTS_*` env-var overrides

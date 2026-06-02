@@ -13,7 +13,7 @@ services:
       - API_WORKERS=${API_WORKERS:-1}
     volumes:
       - ./models:/app/models
-      - ./vocabs:/app/vocabs
+      - ./vocabulary/vocab:/app/vocabs
     ports:
       - "${ENCODER_PORT:-8000}:8000"
     healthcheck:
@@ -50,7 +50,7 @@ services:
     volumes:
       - ./models:/app/models
       - ./config:/app/config
-      - ./vocabs:/app/vocabs
+      - ./vocabulary/vocab:/app/vocabs
     ports:
       - "${DECODER_PORT:-8001}:8001"
     deploy:
@@ -117,7 +117,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./models:/app/models
-      - ./vocabs:/app/vocabs
+      - ./vocabulary/vocab:/app/vocabs
     ports:
       - "${COORDINATOR_PORT:-5100}:5100"
     depends_on:

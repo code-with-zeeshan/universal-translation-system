@@ -1,6 +1,0 @@
-# Extras for universal-decoder-node CLI package
-click>=8.1.0
-requests>=2.33.0
-docker>=6.1.0
-# LitServe - 2x faster inference than FastAPI
-litserve>=0.12.0

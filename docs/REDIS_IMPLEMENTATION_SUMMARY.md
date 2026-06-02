@@ -8,7 +8,7 @@ This document summarizes the Redis integration in the Universal Translation Syst
 - Accepts Redis URL parameter or uses `REDIS_URL` from environment
 - Connects via `utils.redis_manager.RedisManager` (singleton, double-checked locking)
 - Load/save decoder pool config from Redis
-- Fall back to file-based storage (`configs/decoder_pool.json`) if Redis unavailable
+- Fall back to file-based storage (`config/decoder_pool.json`) if Redis unavailable
 - Periodic disk mirroring via `mirror_redis_to_disk()`
 
 Key methods:
@@ -38,7 +38,7 @@ Coordinator background task:
 
 ## 7. Testing Considerations
 - Test with and without Redis available
-- Validate mirroring by comparing Redis keys and `configs/decoder_pool.json`
+- Validate mirroring by comparing Redis keys and `config/decoder_pool.json`
 - Test multiple coordinator instances sharing the same Redis
 
 ## 8. Future Improvements

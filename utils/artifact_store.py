@@ -55,7 +55,7 @@ class ArtifactStore:
             token = os.environ.get("HF_TOKEN")
             revision = os.environ.get("HF_HUB_REVISION", "main")
             models_dir = Path(os.environ.get("MODELS_DIR", "models"))
-            vocabs_dir = Path(os.environ.get("VOCABS_DIR", "vocabs"))
+            vocabs_dir = Path(os.environ.get("VOCABS_DIR", "vocabulary/vocab"))
             adapters_dir = Path(os.environ.get("ADAPTERS_DIR", str(models_dir / "adapters")))
             config = StoreConfig(
                 repo_id=repo_id,

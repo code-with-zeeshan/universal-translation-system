@@ -28,7 +28,7 @@ await encoder.loadVocabulary('en', 'es');
 final encoded = await encoder.encode(text: 'Hello, world!', sourceLang: 'en', targetLang: 'es');
 
 final resp = await http.post(
-  Uri.parse('http://localhost:8002/api/decode'),
+  Uri.parse('http://localhost:5100/api/decode'),
   headers: {
     'Content-Type': 'application/octet-stream',
     'X-Source-Language': 'en',

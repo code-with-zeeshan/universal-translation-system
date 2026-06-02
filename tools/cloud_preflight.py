@@ -85,7 +85,7 @@ def print_summary(cfg, data_info, vocab_info, model_info):
     # Mount guidance
     print("\nMounts required for decoder:")
     print("  - ./models -> /app/models")
-    print("  - ./vocabs -> /app/vocabs")
+    print("  - ./vocabulary/vocab -> /app/vocabs")
 
     # Exit code guidance
     exit_code = 0

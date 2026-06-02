@@ -9,7 +9,7 @@ This document lists the key environment variables used across services and SDKs.
 ## Path Constants (overridable)
 All paths in `utils/constants.py` are overridable via `UTS_*` environment variables. Key examples:
 - **UTS_MODELS_DIR**: Model directory (default: `models/`)
-- **UTS_VOCABS_DIR**: Vocabulary directory (default: `vocabs/`)
+- **UTS_VOCABS_DIR**: Vocabulary directory (default: `vocabulary/vocab/`)
 - **UTS_CHECKPOINTS_DIR**: Checkpoints directory (default: `checkpoints/`)
 - **UTS_LOGS_DIR**: Logs directory (default: `logs/`)
 - **UTS_CONFIG_DIR**: Configuration directory (default: `config/`)
@@ -34,14 +34,14 @@ RS256 (optional):
 
 ## Coordinator
 - **API_HOST**: Bind host (default: 0.0.0.0)
-- **API_PORT**: Port (default: 8002 under Compose, 5100 under Helm)
+- **API_PORT**: Port (default: 5100)
 - **API_WORKERS**: Workers (default: 1)
 - **API_TITLE**: Title (default: Universal Translation Coordinator)
 - (CRITICAL) **COORDINATOR_SECRET** or **COORDINATOR_SECRET_FILE**: Cookie/session secret
 - (CRITICAL) **COORDINATOR_JWT_SECRET** or **COORDINATOR_JWT_SECRET_FILE**: JWT secret for admin APIs
 - (CRITICAL) **COORDINATOR_TOKEN** or **COORDINATOR_TOKEN_FILE**: Admin login token (dashboard)
 - (CRITICAL) **INTERNAL_SERVICE_TOKEN** or **INTERNAL_SERVICE_TOKEN_FILE**: Token for internal calls to decoder
-- **POOL_CONFIG_PATH**: File path for decoder pool (default: configs/decoder_pool.json)
+- **POOL_CONFIG_PATH**: File path for decoder pool (default: config/decoder_pool.json)
 - **REDIS_URL**: Redis connection URL (optional, enables Redis features)
 - **COORDINATOR_MIRROR_INTERVAL**: Seconds between Redis->disk mirrors (default: 60; minimum: 5)
 - **ETCD_HOST**: etcd host (optional)
@@ -56,7 +56,7 @@ RS256 (optional):
 ## Docker Compose Ports
 - **ENCODER_PORT**: 8000 by default
 - **DECODER_PORT**: 8001 by default
-- **COORDINATOR_PORT**: 8002 by default
+- **COORDINATOR_PORT**: 5100 by default
 - **PROMETHEUS_PORT**: 9090 by default
 - **GRAFANA_PORT**: 3000 by default
 

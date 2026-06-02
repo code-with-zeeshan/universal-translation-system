@@ -225,7 +225,7 @@ flowchart LR
 ## Configuration & Versioning
 
 - **Config Sources:** `config/`, environment variables, CLI flags.
-- **Canonical Schema:** `config/schemas.py` (merged from `config_models.py`) with `load_config()` and `load_system_config()`.
+- **Canonical Schema:** `config/schemas.py` with `load_config()` and `load_system_config()`.
 - **Validation:** `scripts/validate_config.py` validates schema and consistency.
 - **Version Control:** `version-config.json` governs artifact and model versions across environments.
 - **Path Constants:** `utils/constants.py` with 60+ constants, all overridable via `UTS_*` env vars.
@@ -235,7 +235,7 @@ flowchart LR
 ## Ports & Endpoints
 
 - **Decoder Node (default):** Port `8001` -- `/decode`, `/health`, `/metrics`.
-- **Coordinator (default):** Port `8002` (Compose) / `5100` (Helm) -- `/api/decode`, `/api/status`, `/metrics`, admin endpoints.
+- **Coordinator (default):** Port `5100` -- `/api/decode`, `/api/status`, `/metrics`, admin endpoints.
 - **Encoder Core:** Port `8000`.
 - **Observability:** Prometheus scrapes `/metrics`; Grafana reads from Prometheus.
 - **Redis:** Port `6379`.

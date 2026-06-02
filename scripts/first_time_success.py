@@ -193,7 +193,7 @@ def main():
             report["metrics"][name] = {"ok": ok, "target": target, "status": status_code}
 
     # Artifacts checks
-    artifacts = verify_artifacts(Path("models"), Path("vocabs"))
+    artifacts = verify_artifacts(Path("models"), Path("vocabulary/vocab"))
     report["artifacts"] = artifacts
     art_ok = all([
         artifacts["models_dir_exists"],

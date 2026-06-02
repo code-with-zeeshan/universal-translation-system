@@ -1,7 +1,7 @@
 # Training Guide
 
 ## Prerequisites
-- Python 3.8+
+- Python 3.12+
 - CUDA-capable GPU (recommended)
 - 50GB+ free disk space
 - 16GB+ RAM
@@ -9,9 +9,9 @@
 ## 1. Data Preparation
 1. Run the unified data pipeline:
    ```bash
-   python -m data.pipeline_orchestrator
+   python -m data.unified_data_pipeline --config config/base.yaml
    ```
-   - Or using the unified pipeline CLI:
+   - Or using the pipeline CLI:
    ```bash
    python scripts/pipeline.py data --config config/base.yaml
    ```
@@ -21,19 +21,19 @@
 2. Create or update vocabulary packs:
    ```bash
    # Using the pipeline CLI
-   python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
+   python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir vocabulary/vocab
    ```
    - Configure vocabulary dir: `vocabulary.vocab_dir` in config.
    - See [Vocabulary_Guide.md](Vocabulary_Guide.md) for details.
 
 ## 2. Configuration
 - Base config: `config/base.yaml`
-- All config models defined in `config/schemas.py` (canonical hierarchy, merged from `config_models.py`).
+- All config models defined in `config/schemas.py` (canonical hierarchy).
 - Key fields used by the launcher:
   - **data.processed_dir**: path containing `train_final.txt`, `val_final.txt`, `test_final.txt`
   - **data.cache_dir**: optional dataset cache
   - **vocabulary.vocab_dir**: directory with vocabulary packs
-  - **model**: `vocab_size`, `hidden_dim`, `num_layers`, `num_heads`, `decoder_dim`, `decoder_layers`, `decoder_heads`, `dropout`
+  - **model**: `vocab_size`, `hidden_dim`, `num_layers`, `num_heads`, `decoder_dim`, `decoder_layers`, `decoder_heads`, `dropout`, `max_seq_len`
   - **training**: `batch_size`, `learning_rate`, `num_epochs`, `checkpoint_dir`
   - **monitoring**: `use_wandb` etc.
 
@@ -162,5 +162,5 @@ python -c "from training.convert_models import ModelConverter as C; C.onnx_to_tf
 
 ---
 
-- The old scripts `training/train_universal_system.py` and `training/distributed_train.py` are superseded by `python -m training.launch`.
-- Backward-compatible shims exist for the split modules: `training.intelligent_trainer` re-exports from `training.trainer`, etc.
+- The old scripts `training/train_universal_system.py` and `training/distributed_train.py` are deleted. Use `python -m training.launch` instead.
+- Backward-compatible shims exist: `training.intelligent_trainer` re-exports from `training.trainer`, etc.

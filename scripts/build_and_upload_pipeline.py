@@ -41,7 +41,7 @@ def run_py(module_path: str, args: list[str] | None = None):
 
 
 def ensure_dirs():
-    for p in [ROOT / "models/production", ROOT / "models/adapters", ROOT / "vocabs"]:
+    for p in [ROOT / "models/production", ROOT / "models/adapters", ROOT / "vocabulary/vocab"]:
         p.mkdir(parents=True, exist_ok=True)
 
 
@@ -49,7 +49,7 @@ def create_vocabs(groups: list[str] | None = None, mode: str | None = None):
     # Run vocabulary creator via a small Python call to avoid import context issues
     code = (
         "from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode;"
-        "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabs');"
+        "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab');"
         + ("mode=CreationMode.%s;" % mode.upper() if mode else "mode=None;")
         + ("groups=%s;" % groups if groups else "groups=None;")
         + "creator.create_all_packs(mode=mode, groups_to_create=groups);"

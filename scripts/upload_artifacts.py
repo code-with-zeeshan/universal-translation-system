@@ -24,7 +24,7 @@ def upload_artifacts(repo_id: str, local_base_dir: str = "."):
     dirs_to_upload = {
         "models/production": "models/production",
         "models/adapters": "adapters",
-        "vocabs": "vocabs"
+        "vocabulary/vocab": "vocabs"
     }
 
     for local_dir, repo_dir in dirs_to_upload.items():

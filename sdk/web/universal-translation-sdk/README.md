@@ -20,7 +20,7 @@ npm run build
 ```ts
 import { TranslationClient } from '@universal-translation/web-sdk';
 const client = new TranslationClient({
-  decoderUrl: 'http://localhost:8002/api/decode',
+  decoderUrl: 'http://localhost:5100/api/decode',
   useWasm: true,
 });
 const result = await client.translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });

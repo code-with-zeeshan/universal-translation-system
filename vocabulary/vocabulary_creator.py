@@ -117,7 +117,7 @@ class UnifiedVocabularyCreator:
         return {
             'latin': LanguageGroup(
                 name='latin',
-                languages=['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl'],
+                languages=['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl', 'id', 'vi', 'tr'],
                 description='Latin script languages',
                 recommended_mode=CreationMode.PRODUCTION
             ),
@@ -125,7 +125,7 @@ class UnifiedVocabularyCreator:
                 name='cjk',
                 languages=['zh', 'ja', 'ko'],
                 description='Chinese, Japanese, Korean',
-                recommended_mode=CreationMode.PRODUCTION  # SentencePiece handles CJK well
+                recommended_mode=CreationMode.PRODUCTION
             ),
             'arabic': LanguageGroup(
                 name='arabic',
@@ -145,9 +145,15 @@ class UnifiedVocabularyCreator:
                 description='Cyrillic script languages',
                 recommended_mode=CreationMode.PRODUCTION
             ),
+            'thai': LanguageGroup(
+                name='thai',
+                languages=['th'],
+                description='Thai script languages',
+                recommended_mode=CreationMode.PRODUCTION
+            ),
             'research': LanguageGroup(
                 name='research',
-                languages=['en'],  # Can be customized
+                languages=['en'],
                 description='Research and experimentation',
                 recommended_mode=CreationMode.RESEARCH
             )
@@ -239,25 +245,25 @@ class UnifiedVocabularyCreator:
         try:
             # Evolution mode
             if base_pack_path and self.config.allow_evolution:
-                return self._evolve_pack(
+                vocab_data = self._evolve_pack(
                     pack_name, base_pack_path, tokens_to_add, mode
                 )
-
-            # Route to appropriate creation method
-            if mode == CreationMode.PRODUCTION:
-                vocab_data = self._create_sentencepiece_vocab(
-                    languages, pack_name, domain
-                )
-            elif mode == CreationMode.RESEARCH:
-                vocab_data = self._create_frequency_vocab(
-                    languages, pack_name, domain
-                )
-            elif mode == CreationMode.HYBRID:
-                vocab_data = self._create_hybrid_vocab(
-                    languages, pack_name, domain
-                )
             else:
-                raise ValueError(f"Unknown mode: {mode}")
+                # Route to appropriate creation method
+                if mode == CreationMode.PRODUCTION:
+                    vocab_data = self._create_sentencepiece_vocab(
+                        languages, pack_name, domain
+                    )
+                elif mode == CreationMode.RESEARCH:
+                    vocab_data = self._create_frequency_vocab(
+                        languages, pack_name, domain
+                    )
+                elif mode == CreationMode.HYBRID:
+                    vocab_data = self._create_hybrid_vocab(
+                        languages, pack_name, domain
+                    )
+                else:
+                    raise ValueError(f"Unknown mode: {mode}")
 
             # Create pack structure
             pack = self._create_pack_structure(
@@ -272,7 +278,7 @@ class UnifiedVocabularyCreator:
             # Save pack
             self._save_pack(pack, pack_name)
 
-            logger.info(f"✅ Successfully created pack '{pack_name}'")
+            logger.info(f"Successfully created pack '{pack_name}'")
             self._log_pack_stats(pack)
 
             return pack

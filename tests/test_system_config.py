@@ -21,7 +21,7 @@ class TestSystemConfig:
         config = SystemConfig(monitoring_port=FREE_PORT)
         assert config.data_dir == "data"
         assert config.model_dir == "models"
-        assert config.vocab_dir == "vocabs"
+        assert config.vocab_dir == "vocabulary/vocab"
         assert config.checkpoint_dir == "checkpoints"
         assert isinstance(config.device, str)
         assert config.use_adapters is True

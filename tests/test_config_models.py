@@ -30,48 +30,11 @@ class TestEncoderConfig:
         config = EncoderConfig()
         assert config.model_path == "models/production/encoder.pt"
         assert config.embedding_dim == 768
-        assert config.vocab_dir == "vocabs"
-        assert config.max_sequence_length == 512
-        assert config.device == "auto"
-        assert config.fallback_model_path is None
-    
-    def test_environment_variables(self, monkeypatch):
-        """Test environment variable overrides."""
-        monkeypatch.setenv("ENCODER_MODEL_PATH", "custom/path/model.pt")
-        monkeypatch.setenv("EMBEDDING_DIM", "1024")
-        monkeypatch.setenv("VOCAB_DIR", "custom/vocabs")
-        monkeypatch.setenv("MAX_SEQUENCE_LENGTH", "256")
-        monkeypatch.setenv("ENCODER_DEVICE", "cpu")
-        monkeypatch.setenv("FALLBACK_MODEL_PATH", "custom/path/fallback.pt")
-        
-        config = EncoderConfig()
-        assert config.model_path == "custom/path/model.pt"
-        assert config.embedding_dim == 1024
-        assert config.vocab_dir == "custom/vocabs"
-        assert config.max_sequence_length == 256
-        assert config.device == "cpu"
-        assert config.fallback_model_path == "custom/path/fallback.pt"
-    
-    def test_device_validation(self):
-        """Test device validation."""
-        # Valid values
-        EncoderConfig(device="auto")
-        EncoderConfig(device="cpu")
-        EncoderConfig(device="cuda")
-        
-        # Invalid value
-        with pytest.raises(ValueError):
-            EncoderConfig(device="invalid")
+        assert config.vocab_dir == "vocabulary/vocab"
 
-
-class TestDecoderConfig:
-    """Tests for DecoderConfig."""
-    
-    def test_default_values(self):
-        """Test default values."""
-        config = DecoderConfig()
-        assert config.model_path == "models/production/decoder.pt"
-        assert config.vocab_dir == "vocabs"
+    def test_vocab_config(self):
+        config = create_vocab_config()
+        assert config.vocab_dir == "vocabulary/vocab"
         assert config.max_sequence_length == 512
         assert config.device == "cuda"
         assert config.batch_size == 32

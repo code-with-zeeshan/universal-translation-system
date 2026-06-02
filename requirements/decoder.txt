@@ -9,3 +9,6 @@ uvloop>=0.19.0; platform_system != 'Windows'
 orjson>=3.9.10
 # Retry helpers used in node/HTTP ops
 tenacity>=8.2.3
+# Decoder CLI
+click>=8.1.0
+docker>=6.1.0

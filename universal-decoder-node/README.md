@@ -83,7 +83,7 @@ docker run -d \
   --gpus all \
   -p 8001:8001 \
   -v ./models:/app/models \
-  -v ./vocabs:/app/vocabs \
+   -v ./vocabulary/vocab:/app/vocabs \
   universal-decoder:latest
 ```
 

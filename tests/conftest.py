@@ -863,7 +863,7 @@ _PROJECT_SUBMODULE_MOCKS = {
         'MODELS_PRODUCTION_DIR': 'models/production',
         'ENCODER_MODEL_FILENAME': 'encoder.pt',
         'DECODER_MODEL_FILENAME': 'decoder.pt',
-        'VOCAB_DIR': 'vocabs',
+        'VOCAB_DIR': 'vocabulary/vocab',
         'LOG_DIR': 'logs',
         'TRAINING_REPORT_FILENAME': 'training_report.json',
         'CONFIG_DIR': 'config',
@@ -949,7 +949,6 @@ _PROJECT_SUBMODULE_MOCKS = {
     'utils.dataset_classes': _make_mock_module('dataset_classes', {'ModernParallelDataset': MagicMock()}),
     'utils.unified_validation': _make_mock_module('unified_validation', {'InputValidator': MagicMock()}),
     'utils.logging_config': _make_mock_module('logging_config', {'setup_logging': MagicMock()}),
-    'utils.final_integration': _make_mock_module('final_integration', {'SystemIntegrator': MagicMock()}),
     'utils.gpu_utils': _make_mock_module('gpu_utils', {
         'optimize_gpu_memory': MagicMock(),
         'get_gpu_memory_info': MagicMock(return_value={}),
@@ -1028,9 +1027,6 @@ _PROJECT_SUBMODULE_MOCKS = {
     'utils.logging_config': _make_mock_module('logging_config', {
         'setup_logging': MagicMock(),
         'LoggingSensitiveDataFilter': MagicMock(),
-    }),
-    'utils.final_integration': _make_mock_module('final_integration', {
-        'SystemIntegrator': MagicMock(),
     }),
     'data.custom_samplers': _make_mock_module('custom_samplers', {
         'TemperatureSampler': MagicMock(),

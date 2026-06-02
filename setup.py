@@ -30,7 +30,7 @@ extras = {
     "decoder": read_reqs("requirements/decoder.txt"),
     "coordinator": read_reqs("requirements/coordinator.txt"),
     "export": read_reqs("requirements/export.txt"),
-    "tui": ["textual>=0.52.0", "pynvml>=11.5.0"],
+    "tui": ["textual>=0.52.0", "pynvml>=11.5.0", "rich>=13.0.0"],
     "dev": read_reqs("requirements/dev.txt"),
 }
 

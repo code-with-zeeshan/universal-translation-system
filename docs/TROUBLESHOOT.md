@@ -81,7 +81,7 @@ python scripts/check_dependencies.py
 1. Check decoder health:
 ```bash
 curl -v http://localhost:8001/health
-curl -v http://localhost:8002/api/status
+curl -v http://localhost:5100/api/status
 ```
 2. Implement retry logic:
 ```python
@@ -104,7 +104,7 @@ async def translate_with_retry(client, text, source_lang, target_lang):
 ### Missing Vocabulary
 **Symptoms**: VOCABULARY_NOT_LOADED errors
 **Solutions**:
-1. Check `vocabs/` directory
+1. Check `vocabulary/vocab/` directory
 2. Verify language code correctness
 3. Create vocabulary packs:
 ```python

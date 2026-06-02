@@ -36,7 +36,7 @@ services:
       dockerfile: docker/encoder.Dockerfile
     volumes:
       - ../models/encoder:/models/encoder
-      - ../vocabs:/vocabs
+      - ../vocabulary/vocab:/vocabs
     container_name: encoder_service
     restart: unless-stopped
     # Add ports or command as needed
@@ -47,7 +47,7 @@ services:
       dockerfile: docker/decoder.Dockerfile
     volumes:
       - ../models/decoder:/models/decoder:ro
-      - ../vocabs:/vocabs:ro
+      - ../vocabulary/vocab:/vocabs:ro
       - ../logs:/app/logs
       - decoder_cache:/app/.cache
     container_name: decoder_service

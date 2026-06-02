@@ -11,7 +11,7 @@ Use binary `/decode` for highest performance.
 
 ## Base URLs
 - Decoder Node: http(s)://<decoder-host>:<port> (default 8001)
-- Coordinator: http(s)://<coordinator-host>:<port> (default 8002 Compose, 5100 Helm)
+- Coordinator: http(s)://<coordinator-host>:<port> (default 5100)
 
 ---
 

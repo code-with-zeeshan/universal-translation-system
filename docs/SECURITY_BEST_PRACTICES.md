@@ -43,7 +43,7 @@ data:
   coordinator-token: <base64>
   internal-service-token: <base64>
 ```
-- See `kubernetes/secrets.yaml` for the full template.
+- See `kubernetes/secrets.example.yaml` for the full template.
 
 ## Authentication and Authorization
 

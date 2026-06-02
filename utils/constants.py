@@ -156,9 +156,9 @@ MODELS_ENCODER_DIR = _as_str("MODELS_ENCODER_DIR", "models/encoder")
 MODELS_DECODER_DIR = _as_str("MODELS_DECODER_DIR", "models/decoder")
 MODELS_ADAPTERS_DIR = _as_str("MODELS_ADAPTERS_DIR", "models/adapters")
 CHECKPOINT_DIR = _as_str("CHECKPOINT_DIR", "checkpoints")
-VOCAB_DIR = _as_str("VOCAB_DIR", "vocabs")
+VOCAB_DIR = _as_str("VOCAB_DIR", "vocabulary/vocab")
 CONFIG_DIR = _as_str("CONFIG_DIR", "config")
-CONFIGS_DIR = _as_str("CONFIGS_DIR", "configs")
+CONFIGS_DIR = _as_str("CONFIGS_DIR", "config")
 
 # Common filenames
 ENCODER_MODEL_FILENAME = _as_str("ENCODER_MODEL_FILENAME", "encoder.pt")

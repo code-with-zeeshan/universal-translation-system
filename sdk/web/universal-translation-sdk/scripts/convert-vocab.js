@@ -45,7 +45,7 @@ function convertVocabToJSON(inputPath, outputPath) {
 }
 
 // Main conversion
-const vocabDir = path.join(__dirname, '../../vocabs');
+const vocabDir = path.join(__dirname, '../../vocabulary/vocab');
 const outputDir = path.join(__dirname, '../public/vocabs');
 
 // Create output directory if it doesn't exist

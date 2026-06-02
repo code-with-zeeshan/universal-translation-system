@@ -77,7 +77,7 @@ For K8s, Redis is configured via the Helm chart at `charts/uts/` or the `kuberne
 
 ## Fallback Mechanisms
 
-1. **Coordinator**: Falls back to file-based storage (`configs/decoder_pool.json`)
+1. **Coordinator**: Falls back to file-based storage (`config/decoder_pool.json`)
 2. **Rate Limiter**: Falls back to in-memory storage
 3. **Disk Mirroring**: `COORDINATOR_MIRROR_INTERVAL` controls periodic mirroring
 
@@ -96,5 +96,5 @@ docker logs translation_redis
 # Check Redis data
 redis-cli get decoder_pool:nodes
 # Compare with file
-cat configs/decoder_pool.json
+cat config/decoder_pool.json
 ```

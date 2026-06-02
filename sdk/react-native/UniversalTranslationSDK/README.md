@@ -24,7 +24,7 @@ cd ios && pod install && cd ..
 import { TranslationClient } from '@universal-translation/react-native-sdk';
 
 const client = new TranslationClient({
-  decoderUrl: 'http://localhost:8002/api/decode',
+  decoderUrl: 'http://localhost:5100/api/decode',
   apiKey: process.env.API_KEY,
 });
 

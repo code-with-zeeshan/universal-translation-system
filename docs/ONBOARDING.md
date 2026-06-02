@@ -20,7 +20,7 @@ Welcome to the Universal Translation System! This guide helps both contributors 
 ## Getting Started
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.12+
 - Git
 - Docker + Docker Compose (for full local stack)
 - CUDA GPU (optional for training; required for decoder GPU images)
@@ -119,7 +119,7 @@ python tools/prefetch_artifacts.py \
 docker compose --env-file .env up -d --build encoder decoder redis coordinator prometheus grafana
 # Encoder:     http://localhost:8000
 # Decoder:     http://localhost:8001
-# Coordinator: http://localhost:8002
+# Coordinator: http://localhost:5100
 # Prometheus:  http://localhost:9090
 # Grafana:     http://localhost:3000
 ```
@@ -128,7 +128,7 @@ docker compose --env-file .env up -d --build encoder decoder redis coordinator p
 ```bash
 curl http://localhost:8000/health
 curl http://localhost:8001/health
-curl http://localhost:8002/health
+curl http://localhost:5100/health
 ```
 
 ### Model Artifacts & Paths
@@ -136,7 +136,7 @@ curl http://localhost:8002/health
   - `models/production/decoder.pt` (default expected by decoder)
   - `models/production/encoder.pt` (default expected by encoder)
   - `models/model_registry.json` (optional)
-- **Vocabulary (local)**: `./vocabs` (mounted to `/app/vocabs` in containers)
+- **Vocabulary (local)**: `vocabulary/vocab/` (mounted to `/app/vocabs` in containers)
   - Contains vocabulary packs and optional `manifest.json`
 - **Checkpoints**: `./checkpoints/<experiment_name>/`
 - All paths overridable via `UTS_*` env vars in `utils/constants.py`
@@ -163,7 +163,7 @@ python -m training.launch evaluate --config config/base.yaml --checkpoint checkp
 # Export for deployment
 python scripts/pipeline.py convert --task pytorch-to-onnx --model-path models/encoder/universal_encoder_initial.pt --output-path models/encoder/universal_encoder.onnx
 ```
-- After exporting, copy artifacts to `models/production/` and `vocabs/`, or publish to HF Hub.
+- After exporting, copy artifacts to `models/production/` and `vocabulary/vocab/`, or publish to HF Hub.
 
 #### Optional: Warm-start (Bootstrap) initial weights
 ```bash
@@ -178,7 +178,7 @@ python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstr
 - **Secrets**: set strong values for `DECODER_JWT_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN`.
 - **Artifacts**: publish models/vocabulary/adapters to HF Hub; ensure access tokens configured.
 - **GPU**: GPU nodes provisioned; NVIDIA runtime installed.
-- **Persistence**: volumes/PVCs for `models/`, `vocabs/`, Redis data.
+- **Persistence**: volumes/PVCs for `models/`, `vocabulary/vocab/`, Redis data.
 - **Networking**: TLS termination, auth on public endpoints, proper CORS.
 - **Monitoring**: Prometheus + Grafana dashboards and alerts.
 - See: `docs/DEPLOYMENT.md`, `docs/DECODER_POOL.md`, `charts/uts/`.
@@ -267,7 +267,7 @@ python -m training.launch profile --config config/base.yaml --profile-steps 20 -
 
 ## Coordinator and Redis
 - Set `REDIS_URL` for Redis-backed pool.
-- File fallback at `configs/decoder_pool.json` is auto-mirrored (default `COORDINATOR_MIRROR_INTERVAL`=60s).
+- File fallback at `config/decoder_pool.json` is auto-mirrored (default `COORDINATOR_MIRROR_INTERVAL`=60s).
 - See also `scripts/setup_redis.sh` for Redis installation with Docker fallback.
 
 ## Troubleshooting

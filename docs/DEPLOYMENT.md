@@ -25,7 +25,7 @@ docker compose logs -f decoder
 ### Default ports
 - **Encoder**: http://localhost:8000
 - **Decoder**: http://localhost:8001
-- **Coordinator**: http://localhost:8002
+- **Coordinator**: http://localhost:5100
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:3000
 
@@ -42,14 +42,14 @@ docker compose logs -f decoder
 ### Configuration via environment variables
 See `docs/environment-variables.md` and `.env.example`.
 - **Ports**: `ENCODER_PORT`, `DECODER_PORT`, `COORDINATOR_PORT`
-- **Coordinator**: `POOL_CONFIG_PATH` (default: `configs/decoder_pool.json`), `REDIS_URL`
+- **Coordinator**: `POOL_CONFIG_PATH` (default: `config/decoder_pool.json`), `REDIS_URL`
 - **Secrets**: `DECODER_JWT_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN`
 
 ### Volumes and artifacts
 - **Models**: `./models` mounted to `/app/models`
   - Expected: `/app/models/production/decoder.pt`
   - Optional: `/app/models/model_registry.json`
-- **Vocabulary**: `./vocabs` mounted to `/app/vocabs`
+- **Vocabulary**: `./vocabulary/vocab` mounted to `/app/vocabs`
   - Contents: vocabulary packs; optional `manifest.json`
 - Ensure directories exist locally before starting containers.
 
@@ -94,7 +94,7 @@ The Helm chart configures:
 - Decoder service (port 8001)
 - Encoder service (port 8000)
 - Redis with healthchecks
-- Secrets via `secrets.yaml` template
+- Secrets via `kubernetes/secrets.example.yaml` template
 - Configurable resource requests/limits
 
 ## 4) Kubernetes Deployment (Manifest-based)
@@ -102,7 +102,7 @@ The Helm chart configures:
 Manifests live in `kubernetes/`.
 ```bash
 # Apply secrets first
-kubectl apply -f kubernetes/secrets.yaml
+kubectl apply -f kubernetes/secrets.example.yaml
 
 # Then deployments
 kubectl apply -f kubernetes/namespace.yaml

@@ -72,10 +72,9 @@ source ~/.bashrc
 python -m data.unified_data_pipeline --config config/base.yaml
 ```
 
-**Expected output last line:**
+**Expected output last lines:**
 ```
 Pipeline completed in 0.XX hours
-Total data: XXX,XXX sentences (X.XX GB)
 ```
 
 **Troubleshoot:**
@@ -121,20 +120,20 @@ wc -l data/processed/train_final.txt
 ls data/processed/ready/*_corpus.txt
 
 # Check vocabulary files
-ls -la vocabulary/*.model
+ls -la vocabulary/vocab/
 ```
 
 **Expected:**
-- `train_final.txt`: ~4-5 million lines
+- `train_final.txt`: ~2-5 million lines (depends on stages enabled)
 - `*_corpus.txt`: one per language (20 files)
-- `vocabulary/*.model`: 6 SentencePiece models (latin, cjk, arabic, devanagari, cyrillic, thai)
+- `vocabulary/vocab/`: 6 pack dirs with `.model`, `.json`, `.msgpack` files (latin, cjk, arabic, devanagari, cyrillic, thai)
 
 ---
 
 ## Step 7 — Train (~2-4 hours on T4)
 
 ```bash
-python -m training.intelligent_trainer --config config/base.yaml
+python -m training.launch train --config config/base.yaml
 ```
 
 **Troubleshoot:**
@@ -164,7 +163,7 @@ export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc" && \
 python -m data.unified_data_pipeline --config config/base.yaml
 
 # After that, train:
-python -m training.intelligent_trainer --config config/base.yaml
+python -m training.launch train --config config/base.yaml
 ```
 
 ---

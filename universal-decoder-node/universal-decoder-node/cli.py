@@ -18,7 +18,7 @@ DEFAULT_COORDINATOR_URL = os.environ.get("COORDINATOR_URL", "http://localhost:51
 DEFAULT_HOST = os.environ.get("DECODER_HOST", "0.0.0.0")
 DEFAULT_PORT = int(os.environ.get("DECODER_PORT", "8000"))
 DEFAULT_WORKERS = int(os.environ.get("DECODER_WORKERS", "1"))
-DEFAULT_VOCAB_DIR = os.environ.get("VOCAB_DIR", "vocabs")
+DEFAULT_VOCAB_DIR = os.environ.get("VOCAB_DIR", "vocabulary/vocab")
 
 
 @click.group()
@@ -405,7 +405,7 @@ CMD ["universal-decoder-node", "start"]
                     '--gpus', 'all',
                     '-p', '8000:8000',
                     '-v', './models:/app/models',
-                    '-v', './vocabs:/app/vocabs',
+                    '-v', './vocabulary/vocab:/app/vocabs',
                     tag
                 ])
         else:

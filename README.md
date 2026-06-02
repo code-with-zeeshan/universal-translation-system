@@ -148,7 +148,7 @@ python ./scripts/pipeline.py data --config ./config/base.yaml
 python ./scripts/pipeline.py data --config ./config/base.yaml --stages download_training create_ready
 
 # Vocabulary creation
-python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
+python ./scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir vocabulary/vocab
 
 # Bootstrap pretrained encoder/decoder
 python ./scripts/pipeline.py bootstrap --encoder-model xlm-roberta-base --decoder-model facebook/mbart-large-50
@@ -205,7 +205,7 @@ python "$PWD\scripts\pipeline.py" all --config "$PWD\config\base.yaml"
 - **Models (local):** `./models`
   - Defaults: `./models/production/encoder.pt`, `./models/production/decoder.pt`
   - Artifact registry: `./models/model_registry.json`
-- **Vocabulary (local):** `./vocabs` (mounted to `/app/vocabs` in containers)
+- **Vocabulary (local):** `vocabulary/vocab/` (mounted to `/app/vocabs` in containers)
   - Packs and optional `manifest.json`
 - **Checkpoints:** `./checkpoints/<experiment_name>/`
 
@@ -233,7 +233,7 @@ The `ModelVersion` class in `utils/model_versioning.py` handles:
 - Model registration with SHA-256 hashes and HMAC signing
 - Automatic HF Hub upload on `register_model()`
 - Version pinning for serving, rollback, and canary→production promotion
-- Vocabulary packs are uploaded separately via `upload_artifacts.py` under `vocabs/`
+- Vocabulary packs are uploaded separately via `upload_artifacts.py` under `vocabulary/vocab/`
 
 See also: [docs/ONBOARDING.md](docs/ONBOARDING.md) and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -352,10 +352,10 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
     - `JWT_PUBLIC_KEY_PATH=/run/secrets/jwt_public_key` (supports `||`-separated paths for rotation)
 
 ### Kubernetes
-- Create/update `kubernetes/secrets.yaml` with base64-encoded values.
+- Create/update `kubernetes/secrets.example.yaml` with base64-encoded values.
 - Apply secrets and deployments:
 ```bash
-kubectl apply -f kubernetes/secrets.yaml
+kubectl apply -f kubernetes/secrets.example.yaml
 kubectl apply -f kubernetes/coordinator-deployment.yaml
 kubectl apply -f kubernetes/decoder-deployment.yaml
 ```
@@ -396,21 +396,22 @@ This is a research project in active development. Core components are implemente
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Encoder | Production-Ready | Core functionality complete and tested |
-| Decoder | Production-Ready | Core functionality complete and tested |
-| Vocabulary System | Production-Ready | Supports all planned languages |
-| Coordinator | Production-Ready | Load balancing and health monitoring implemented |
-| Android SDK | Production-Ready | Native implementation with JNI bindings |
-| iOS SDK | Production-Ready | Swift implementation with C++ interoperability |
-| Flutter SDK | Production-Ready | FFI bindings to native encoder |
-| React Native SDK | Production-Ready | Core functionality implemented with config support |
-| Web SDK | Production-Ready | Core functionality implemented with environment variable support |
-| Monitoring | Production-Ready | Prometheus metrics and health checks implemented |
-| Docker Support | Production-Ready | Docker Compose, Kubernetes, and Helm chart available |
-| Environment Config | Production-Ready | All components configurable via environment variables |
-| Production Scripts | Production-Ready | Role-based install, Redis setup, serving setup, encoder build |
-| Helm Chart | Production-Ready | `charts/uts/` with coordinator, decoder, encoder, redis |
-| Tests | Production-Ready | 285+ tests across 14 test files covering all core modules |
+| Data Pipeline | ✅ Stable | Download, sample, augment, create_ready, quality filter, validate |
+| Vocabulary System | ✅ Stable | 6 language packs (latin, cjk, arabic, devanagari, cyrillic, thai) |
+| Vocabulary Evolution | ✅ Implemented | Unknown-token promotion with model embedding retraining |
+| Coordinator | ✅ Stable | Load balancing, Redis pool, health monitoring |
+| Intelligent Training | ✅ Implementated | Hardware-aware FSDP/DDP/single, LoRA, progressive tiers |
+| Encoder | Implemented | Pure Python, needs trained weights |
+| Decoder | Implemented | Pure Python, needs trained weights |
+| Android SDK | Scaffolded | Needs encoder binary |
+| iOS SDK | Scaffolded | Needs encoder binary |
+| Flutter SDK | Scaffolded | Needs encoder binary |
+| React Native SDK | Scaffolded | Needs encoder binary |
+| Web SDK | Scaffolded | WASM encoder is stub |
+| Docker Support | ✅ Stable | Docker Compose, Kubernetes, and Helm chart |
+| Monitoring | ✅ Stable | Prometheus/Grafana dashboards |
+| C++/FFI Encoder Core | ⬜ Planned | For edge/on-device deployment |
+| Voice/TTS Translation | ⬜ Planned | For future release |
 
 ## License
 

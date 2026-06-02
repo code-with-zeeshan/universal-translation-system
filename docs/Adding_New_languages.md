@@ -13,12 +13,12 @@ python scripts/pipeline.py data --config ./config/base.yaml --stages download_tr
 
 ## 3. Create/Update Vocabulary Packs
 ```bash
-python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir ./vocabs
+python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir vocabulary/vocab
 ```
 - Programmatic alternative:
 ```python
 from vocabulary.vocabulary_creator import UnifiedVocabularyCreator, CreationMode
-creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabs')
+creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab')
 creator.create_pack(pack_name='latin', languages=['en','es','fr','de','new_lang'], mode=CreationMode.PRODUCTION)
 ```
 
@@ -50,7 +50,7 @@ pytest tests/test_translation.py -k "<new_language_code>"
 
 ## 10. Coordinator and Redis Notes
 - If using Redis, the coordinator keeps a shared decoder pool.
-- Pool is mirrored to `configs/decoder_pool.json` periodically (`COORDINATOR_MIRROR_INTERVAL`).
+- Pool is mirrored to `config/decoder_pool.json` periodically (`COORDINATOR_MIRROR_INTERVAL`).
 - See `scripts/setup_redis.sh` for Redis setup.
 
 ---

@@ -22,7 +22,7 @@ encoder.loadVocabulary("en", "es")
 val encoded = encoder.encode("Hello world", "en", "es")
 
 val req = okhttp3.Request.Builder()
-  .url("http://localhost:8002/api/decode")
+  .url("http://localhost:5100/api/decode")
   .addHeader("Content-Type", "application/octet-stream")
   .addHeader("X-Source-Language", "en")
   .addHeader("X-Target-Language", "es")

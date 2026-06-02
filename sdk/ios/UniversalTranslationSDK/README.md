@@ -25,7 +25,7 @@ let encoder = TranslationEncoder()
 try encoder.loadVocabulary(source: "en", target: "es")
 let encoded = try encoder.encode(text: "Hello world", source: "en", target: "es")
 
-let url = URL(string: "http://localhost:8002/api/decode")!
+let url = URL(string: "http://localhost:5100/api/decode")!
 var req = URLRequest(url: url)
 req.httpMethod = "POST"
 req.addValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
