@@ -115,8 +115,8 @@ python -m data.unified_data_pipeline --config config/base.yaml --stage sample_fi
 # Count total training sentences
 wc -l data/processed/train_final.txt
 
-# Check language coverage
-ls data/processed/ready/*_corpus.txt
+# Check language coverage (corpus files are in data/processed/, not data/processed/ready/)
+ls data/processed/*_corpus.txt
 
 # Check vocabulary files
 ls -la vocabulary/vocab/
@@ -124,8 +124,8 @@ ls -la vocabulary/vocab/
 
 **Expected:**
 - `train_final.txt`: ~2-5 million lines (depends on stages enabled)
-- `*_corpus.txt`: one per language (20 files)
-- `vocabulary/vocab/`: 6 pack dirs with `.model`, `.json`, `.msgpack` files (latin, cjk, arabic, devanagari, cyrillic, thai)
+- `*_corpus.txt`: one per language (20 files) in `data/processed/`
+- `vocabulary/vocab/`: 6-7 pack dirs with `.model`, `.json`, `.msgpack` files (latin, cjk, arabic, devanagari, cyrillic, thai, research)
 
 ---
 
