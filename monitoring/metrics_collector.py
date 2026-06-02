@@ -18,21 +18,21 @@ except ImportError:
     HAS_VOCAB_MANAGER = False
     logging.warning("VocabularyManager not available - vocabulary metrics disabled")
 
-def _safe_counter(name, documentation, labels=None, registry=REGISTRY):
+def _safe_counter(name, documentation, labels=None, registry=REGISTRY, **kwargs):
     try:
-        return Counter(name, documentation, labels, registry=registry)
+        return Counter(name, documentation, labels, registry=registry, **kwargs)
     except ValueError:
         return registry._names_to_collectors[name]
 
-def _safe_histogram(name, documentation, labels=None, registry=REGISTRY):
+def _safe_histogram(name, documentation, labels=None, registry=REGISTRY, **kwargs):
     try:
-        return Histogram(name, documentation, labels, registry=registry)
+        return Histogram(name, documentation, labels, registry=registry, **kwargs)
     except ValueError:
         return registry._names_to_collectors[name]
 
-def _safe_gauge(name, documentation, labels=None, registry=REGISTRY):
+def _safe_gauge(name, documentation, labels=None, registry=REGISTRY, **kwargs):
     try:
-        return Gauge(name, documentation, labels, registry=registry)
+        return Gauge(name, documentation, labels, registry=registry, **kwargs)
     except ValueError:
         return registry._names_to_collectors[name]
 
