@@ -46,8 +46,12 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         
         if cache_file.exists():
             logger.info(f"📦 Loading cached data from {cache_file}")
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Cache corrupted ({e}), regenerating...")
+                cache_file.unlink(missing_ok=True)
         
         logger.info(f"🔄 Creating cache from {self.data_path}")
         data = self._load_raw_data()

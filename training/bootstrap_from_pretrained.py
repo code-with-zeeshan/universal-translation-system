@@ -123,17 +123,11 @@ class PretrainedModelBootstrapper:
         logger.info("💉 Transferring pretrained weights...")
         
         with torch.no_grad():
-            # Copy embeddings with dimension validation
-            num_tokens_to_copy = min(50000, pretrained_embeddings.size(0))
-            
+            # Copy embeddings — keep original encoder's vocab size, copy what fits
             if hasattr(our_encoder, 'embedding_layer'):
-                our_encoder.embedding_layer = nn.Embedding(
-                    num_tokens_to_copy, 
-                    target_hidden_dim,
-                    device=self.device
-                )
-                our_encoder.embedding_layer.weight.data[:num_tokens_to_copy] = \
-                    pretrained_embeddings[:num_tokens_to_copy].to(self.device)
+                n_copy = min(our_encoder.embedding_layer.weight.size(0), pretrained_embeddings.size(0))
+                our_encoder.embedding_layer.weight.data[:n_copy] = \
+                    pretrained_embeddings[:n_copy].to(self.device)
 
             # Also try to copy transformer weights if dimensions match
             if source_hidden_size == target_hidden_dim and hasattr(model, 'encoder'):
@@ -160,7 +154,7 @@ class PretrainedModelBootstrapper:
                 'source_hidden_dim': source_hidden_size,
                 'target_hidden_dim': target_hidden_dim,
                 'num_layers': 6,
-                'vocab_size': num_tokens_to_copy,
+                'vocab_size': our_encoder.embedding_layer.weight.size(0),
                 'device': str(self.device),
                 'torch_version': torch.__version__,
                 'transformers_version': __import__('transformers').__version__,
@@ -341,7 +335,7 @@ class PretrainedModelBootstrapper:
             num_layers=6,
             num_heads=8,
             vocab_size=min(32000, tokenizer.vocab_size),
-            max_length=64,
+            max_length=256,
             device=self.device
         )
         
@@ -349,12 +343,11 @@ class PretrainedModelBootstrapper:
         logger.info("💉 Transferring knowledge with dimension adaptation...")
         
         with torch.no_grad():
-            # Transfer embeddings with dimension adaptation if needed
+            # Transfer embeddings — copy what fits, adapt dims if needed
             if hasattr(decoder, 'embed_tokens') and hasattr(our_decoder, 'embedding'):
-                pretrained_embeddings = decoder.embed_tokens.weight.data  # shape: [vocab, 1024]
+                pretrained_embeddings = decoder.embed_tokens.weight.data
                 our_vocab_size = min(our_decoder.embedding.num_embeddings, pretrained_embeddings.size(0))
                 
-                # mBART decoder dim is 1024, ours may differ
                 if pretrained_embeddings.size(1) != our_decoder.decoder_dim:
                     logger.info(f"Adapting decoder embeddings from {pretrained_embeddings.size(1)} to {our_decoder.decoder_dim}")
                     adapted = self._adapt_pretrained_embeddings(
