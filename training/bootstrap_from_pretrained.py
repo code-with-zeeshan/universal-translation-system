@@ -171,7 +171,7 @@ class PretrainedModelBootstrapper:
                 'device': str(self.device),
                 'torch_version': torch.__version__,
                 'transformers_version': __import__('transformers').__version__,
-                'adaptation_applied': source_hidden_dim != target_hidden_dim
+                'adaptation_applied': source_hidden_size != target_hidden_dim
             },
             'tokenizer_config': tokenizer.init_kwargs if hasattr(tokenizer, 'init_kwargs') else {}
         }
