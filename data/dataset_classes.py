@@ -39,7 +39,7 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
         
         # Preload all vocabulary packs (maps to 7 pack files) so workers share COW pages
         if self.config:
-            self.vocab_manager.preload_for_languages(list(self.config.active_languages))
+            self.vocab_manager.preload_for_languages(list(self.config.data.active_languages))
         
         logger.info(f"📚 Dataset loaded: {len(self.data)} samples")
     
