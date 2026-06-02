@@ -273,20 +273,20 @@ class UniversalTranslationSystem:
                 else:
                     self.encoder = AdapterUniversalEncoder()
             else:
-                # Standard encoder
+                # Standard encoder (edge-optimized: small encoder, large cloud decoder)
                 self.encoder = UniversalEncoder(
                     max_vocab_size=50000,
-                    hidden_dim=1024,
+                    hidden_dim=512,
                     num_layers=6,
-                    num_heads=16
+                    num_heads=8
                 )
 
-            # Create decoder
+            # Create decoder (heavier lifting on cloud)
             self.decoder = OptimizedUniversalDecoder(
-                encoder_dim=1024,
-                decoder_dim=512,
-                num_layers=6,
-                num_heads=8,
+                encoder_dim=384,
+                decoder_dim=768,
+                num_layers=8,
+                num_heads=12,
                 vocab_size=50000,
                 device=self.device
             )

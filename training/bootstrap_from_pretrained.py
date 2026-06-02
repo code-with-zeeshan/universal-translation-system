@@ -330,10 +330,10 @@ class PretrainedModelBootstrapper:
         from cloud_decoder import OptimizedUniversalDecoder
         
         our_decoder = OptimizedUniversalDecoder(
-            encoder_dim=768,
-            decoder_dim=512,
-            num_layers=6,
-            num_heads=8,
+            encoder_dim=384,
+            decoder_dim=768,
+            num_layers=8,
+            num_heads=12,
             vocab_size=min(32000, tokenizer.vocab_size),
             max_length=256,
             device=self.device
@@ -371,8 +371,8 @@ class PretrainedModelBootstrapper:
             'model_state_dict': our_decoder.state_dict(),
             'config': {
                 'base_model': model_name,
-                'decoder_dim': 512,
-                'num_layers': 6,
+                'decoder_dim': 768,
+                'num_layers': 8,
                 'vocab_size': min(50000, tokenizer.vocab_size),
                 'device': str(self.device),
                 'torch_version': torch.__version__,

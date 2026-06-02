@@ -254,17 +254,17 @@ if __name__ == "__main__":
 
         encoder = UniversalEncoder(
             max_vocab_size=50000,
-            hidden_dim=768,
+            hidden_dim=512,
             num_layers=6,
             num_heads=8,
             dropout=0.1,
         )
         decoder = OptimizedUniversalDecoder(
-            encoder_dim=768,
-            decoder_dim=512,
+            encoder_dim=384,
+            decoder_dim=768,
             vocab_size=50000,
-            num_layers=6,
-            num_heads=8,
+            num_layers=8,
+            num_heads=12,
             dropout=0.1,
         )
 

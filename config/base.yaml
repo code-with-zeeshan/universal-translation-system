@@ -122,12 +122,12 @@ data_strategy:
 
 # Model architecture (compact ~40MB target)
 model:
-  hidden_dim: 768
+  hidden_dim: 512
   num_layers: 6
   num_heads: 8
-  decoder_dim: 512
-  decoder_layers: 6
-  decoder_heads: 8
+  decoder_dim: 768
+  decoder_layers: 8
+  decoder_heads: 12
   dropout: 0.1
   max_vocab_size: 32000
 

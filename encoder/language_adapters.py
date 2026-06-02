@@ -52,12 +52,11 @@ class AdapterUniversalEncoder(nn.Module):
 
         from encoder.universal_encoder import UniversalEncoder
 
-        # Create full-size encoder (will be quantized later for edge)
         self.base_encoder = UniversalEncoder(
             max_vocab_size=50000,
-            hidden_dim=1024,  # Full size as per your architecture
+            hidden_dim=512,
             num_layers=6,
-            num_heads=16,
+            num_heads=8,
             max_positions=128
         )
 
