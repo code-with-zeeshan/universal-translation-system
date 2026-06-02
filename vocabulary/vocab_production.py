@@ -28,15 +28,18 @@ def _create_sentencepiece_vocab(
     # Create vocabulary mappings
     vocab_data = self._create_vocabulary_mappings(model_path, languages)
 
-    # Save model permanently (don't delete)
+    # Save model permanently
     model_path = self._model_path
     permanent_model = str(Path(model_path).parent / f"{pack_name}.model")
     if Path(model_path).exists() and not Path(permanent_model).exists():
         import shutil
         shutil.copy2(model_path, permanent_model)
         logger.info(f"Saved SentencePiece model to {permanent_model}")
+    # Clean up temp model + vocab files
+    for p in [model_path, model_path.replace('.model', '.vocab')]:
+        Path(p).unlink(missing_ok=True)
 
-    # Cleanup temp files only
+    # Cleanup temp corpus only
     self._cleanup_temp_files(merged_corpus)
 
     return vocab_data
