@@ -14,8 +14,8 @@ Usage (preferred):
     from vocabulary.vocab_config import UnifiedVocabConfig, VocabStats, CreationMode, LanguageGroup
 """
 
-from vocabulary_creator import UnifiedVocabularyCreator
-from vocab_config import UnifiedVocabConfig, VocabStats, CreationMode, LanguageGroup
+from vocabulary.vocabulary_creator import UnifiedVocabularyCreator
+from vocabulary.vocab_config import UnifiedVocabConfig, VocabStats, CreationMode, LanguageGroup
 
 __all__ = [
     "UnifiedVocabularyCreator",
