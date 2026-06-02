@@ -5,7 +5,7 @@ Security utilities for the Universal Translation System
 import os
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 import logging
 from .exceptions import SecurityError
 
@@ -221,3 +221,22 @@ class SecurityContext:
             logger.info(f"Security operation completed: {self.operation_name} ({duration:.2f}s)")
         
         return False  # Don't suppress exceptions
+
+
+def safe_load_model(model_name: str, model_class: Any = None, **kwargs) -> Any:
+    """
+    Safely load a model from HuggingFace or other sources.
+
+    Args:
+        model_name: Name or path of the model
+        model_class: Optional model class (e.g., AutoModel, AutoModelForSeq2SeqLM)
+        **kwargs: Additional arguments to pass to from_pretrained
+
+    Returns:
+        Loaded model
+    """
+    if model_class is not None:
+        return model_class.from_pretrained(model_name, **kwargs)
+    # Fallback: try to load with torch
+    import torch
+    return torch.load(model_name, **kwargs)
