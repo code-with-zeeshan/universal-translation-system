@@ -348,11 +348,22 @@ class PretrainedModelBootstrapper:
         logger.info("💉 Transferring knowledge with dimension adaptation...")
         
         with torch.no_grad():
-            # Transfer embeddings (our_decoder uses self.embedding)
+            # Transfer embeddings with dimension adaptation if needed
             if hasattr(decoder, 'embed_tokens') and hasattr(our_decoder, 'embedding'):
-                pretrained_embeddings = decoder.embed_tokens.weight
+                pretrained_embeddings = decoder.embed_tokens.weight.data  # shape: [vocab, 1024]
                 our_vocab_size = min(our_decoder.embedding.num_embeddings, pretrained_embeddings.size(0))
-                our_decoder.embedding.weight.data[:our_vocab_size] = pretrained_embeddings[:our_vocab_size]
+                
+                # mBART decoder dim is 1024, ours may differ
+                if pretrained_embeddings.size(1) != our_decoder.decoder_dim:
+                    logger.info(f"Adapting decoder embeddings from {pretrained_embeddings.size(1)} to {our_decoder.decoder_dim}")
+                    adapted = self._adapt_pretrained_embeddings(
+                        pretrained_embeddings[:our_vocab_size],
+                        pretrained_embeddings.size(1),
+                        our_decoder.decoder_dim
+                    )
+                    our_decoder.embedding.weight.data[:our_vocab_size] = adapted.to(self.device)
+                else:
+                    our_decoder.embedding.weight.data[:our_vocab_size] = pretrained_embeddings[:our_vocab_size].to(self.device)
     
             # Transfer decoder layers
             for i in range(min(len(decoder.layers), len(our_decoder.layers))):

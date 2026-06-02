@@ -130,7 +130,7 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
     # Load pretrained weights if available
     if encoder_path.exists():
         try:
-            checkpoint = torch.load(encoder_path, map_location='cpu')
+            checkpoint = torch.load(encoder_path, map_location='cpu', weights_only=False)
             encoder.load_state_dict(checkpoint['model_state_dict'])
             logger.info("✅ Loaded pretrained encoder weights")
         except Exception as e:
@@ -138,7 +138,7 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
     
     if decoder_path.exists():
         try:
-            checkpoint = torch.load(decoder_path, map_location='cpu')
+            checkpoint = torch.load(decoder_path, map_location='cpu', weights_only=False)
             decoder.load_state_dict(checkpoint['model_state_dict'])
             logger.info("✅ Loaded pretrained decoder weights")
         except Exception as e:
