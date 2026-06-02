@@ -214,6 +214,20 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
             f"with cache_size={self.cache_size}"
         )
 
+    def __getstate__(self):
+        """Support pickling for DataLoader multiprocessing."""
+        state = self.__dict__.copy()
+        state.pop('_lock', None)
+        state.pop('_vocabulary_cache', None)
+        state.pop('_cache_order', None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._lock = threading.RLock()
+        self._vocabulary_cache = {}
+        self._cache_order = []
+
     def _load_metadata(self):
         """Load metadata for all packs (lightweight)"""
         # Load version manifest if exists
