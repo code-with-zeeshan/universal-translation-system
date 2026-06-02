@@ -108,13 +108,13 @@ class OptimizedUniversalDecoder(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0, std=0.02)
 
-    @torch.jit.script_method
     def forward(
         self,
         decoder_input_ids: torch.Tensor,
         encoder_hidden_states: torch.Tensor,
         encoder_attention_mask: Optional[torch.Tensor] = None,
         compressed_embeddings: Optional[Dict[str, Any]] = None,
+        **kwargs,
     ) -> torch.Tensor:
         batch_size, seq_len = decoder_input_ids.shape
         device = decoder_input_ids.device

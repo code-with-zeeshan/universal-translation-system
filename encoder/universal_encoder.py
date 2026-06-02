@@ -100,9 +100,11 @@ class UniversalEncoder(nn.Module):
     
     def forward(
         self,
-        input_ids: torch.Tensor,
+        input_ids: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        **kwargs,
     ):
         with tracer.start_as_current_span("UniversalEncoder.forward") as span:
             span.set_attribute("model_version", MODEL_VERSION)
@@ -117,18 +119,14 @@ class UniversalEncoder(nn.Module):
             Returns:
                 [batch_size, seq_len, 1024] matching decoder input
             """
-            batch_size, seq_len = input_ids.shape
+            if input_ids is None and inputs_embeds is not None:
+                batch_size, seq_len = inputs_embeds.shape[:2]
+                hidden_states = self.dropout(inputs_embeds)
+            else:
+                batch_size, seq_len = input_ids.shape
+                hidden_states = self.embedding_layer(input_ids)
+                hidden_states = self.dropout(hidden_states)
             
-            # Token embeddings
-            hidden_states = self.embedding_layer(input_ids)
-            
-            # --- REMOVED ---
-            # The old position embedding logic is gone.
-            
-            # Apply dropout to the token embeddings
-            hidden_states = self.dropout(hidden_states)
-            
-            # +++ ADDED +++
             # Get the rotary frequencies for the current sequence length
             freqs_cis = self.rotary_embeddings(seq_len)
             
