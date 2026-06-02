@@ -123,13 +123,6 @@ class IntelligentTrainer(BaseTrainer):
         if resume_from_checkpoint:
             self.load_checkpoint(resume_from_checkpoint)
 
-        # Add analytics tracker
-        self.analytics = TrainingAnalytics(self.training_history)
-        
-        # QAT support
-        self.qat_enabled = False
-        self.qat_bits = 8    
-        
         # Training state
         self.global_step = 0
         self.current_epoch = 0
@@ -147,6 +140,13 @@ class IntelligentTrainer(BaseTrainer):
             'memory_snapshots': [],
             'layer_wise_stats': defaultdict(list)
         }
+
+        # Add analytics tracker
+        self.analytics = TrainingAnalytics(self.training_history)
+        
+        # QAT support
+        self.qat_enabled = False
+        self.qat_bits = 8    
     
     # ==================== Hardware Detection Methods ====================
     
