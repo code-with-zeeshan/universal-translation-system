@@ -121,8 +121,18 @@ def get_logger(name: str, context: dict | None = None) -> StructuredLoggerAdapte
     """Return a structured logger adapter bound with optional context."""
     return StructuredLoggerAdapter(logging.getLogger(name), context or {})
 
+_logging_initialized = False
+
 def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
-    """Setup comprehensive logging configuration"""
+    """Setup comprehensive logging configuration (idempotent, skips DataLoader workers)"""
+    global _logging_initialized
+    if _logging_initialized:
+        return
+    # Skip in DataLoader worker processes — inherits parent logging
+    import torch.utils.data
+    if torch.utils.data.get_worker_info() is not None:
+        return
+    _logging_initialized = True
     # Create log directory and standard sections
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     try:

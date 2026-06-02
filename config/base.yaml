@@ -12,7 +12,7 @@ data:
   output_dir: "data/processed"
   total_size_gb: 2
   processed_dir: data/processed
-  checkpoint_dir: "checkpoints/default_run" # Added for better organization
+  checkpoint_dir: "checkpoints"
   model_dir: "models/production"
   languages:
     - en

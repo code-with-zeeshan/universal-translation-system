@@ -5,9 +5,19 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Track whether we've already optimized in this process
+_gpu_optimized = False
+
 # Setup comprehensive memory optimizations
 def optimize_gpu_memory():
-    """Optimize GPU memory settings"""
+    """Optimize GPU memory settings (idempotent, guarded against DataLoader workers)"""
+    global _gpu_optimized
+    if _gpu_optimized:
+        return
+    # Skip in DataLoader worker processes — GPU settings are inherited from parent
+    import torch.utils.data
+    if torch.utils.data.get_worker_info() is not None:
+        return
     if torch.cuda.is_available():
         # Set memory fraction
         torch.cuda.set_per_process_memory_fraction(0.95)
@@ -23,6 +33,7 @@ def optimize_gpu_memory():
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
         
+        _gpu_optimized = True
         logger.info("✅ GPU memory optimized")
 
 def get_gpu_memory_info():
