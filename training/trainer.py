@@ -836,6 +836,8 @@ class IntelligentTrainer(BaseTrainer):
             _decoder.add_target_language_adapter(lang)
             for param in _decoder.target_language_adapters[lang].parameters():
                 param.requires_grad = True
+        # Adapters were created on CPU after .to(device); move them to GPU
+        _decoder.target_language_adapters.to(self.device)
         
         # Apply memory optimizations
         if self.strategy.memory_config.gradient_checkpointing:
