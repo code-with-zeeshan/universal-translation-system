@@ -129,16 +129,32 @@ ls -la vocabulary/vocab/
 
 ---
 
-## Step 7 — Train (~2-4 hours on T4)
+## Step 7 — Train (~5-6 hours on L4)
 
 ```bash
 python -m training.launch train --config config/base.yaml
 ```
 
+**What's new in this version:**
+| Improvement | Effect |
+|---|---|
+| Decoder gradient checkpointing | Saves ~10GB → batch_size 64 viable → **~1h/epoch** |
+| Decoder LoRA r=64 (vs encoder r=16) | 5.6M trainable params in decoder (was 1.4M) |
+| Per-language decoder adapters | Each of 20 target languages gets a dedicated `768→96→768` bottleneck after all 8 decoder layers |
+| 2-layer encoder_adapter MLP | `Linear(512→1024)→GELU→Linear(1024→768)` replaces single `Linear(512→768)` for a more expressive encoder→decoder bridge |
+
 **Troubleshoot:**
-- `CUDA out of memory` → In `config/base.yaml`, reduce `batch_size: 16`, enable `cpu_offload: true`
+- `CUDA out of memory` → In `config/base.yaml`, reduce `batch_size: 32`, or set `gradient_checkpointing: false` (increases memory but may help if the issue is peak activation memory)
 - `ValueError: Expected input batch_size (...) to match target batch_size (...)` → Mixed sequence lengths. Re-run pipeline with `max_sentence_length: 64` in config
 - Training loss is NaN → Reduce `lr: 1e-4` in config
+
+**Config reference (training section):**
+```yaml
+training:
+  lora_r: 16              # Encoder LoRA rank (keep small for edge export)
+  lora_r_decoder: 64      # Decoder LoRA rank (cloud, can be larger)
+  gradient_checkpointing: true  # Enabled by default — saves ~10GB
+```
 
 ---
 
