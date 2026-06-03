@@ -119,6 +119,9 @@ class IntelligentTrainer(BaseTrainer):
         # Setup models with optimal configuration
         self._setup_models()
         
+        # Probe max batch size with dummy forward/backward (single GPU only)
+        self._probe_batch_size()
+        
         # Create optimizers and schedulers
         self._setup_optimization()
         
@@ -945,7 +948,23 @@ class IntelligentTrainer(BaseTrainer):
             self.decoder.gradient_checkpointing_enable()
             
         logger.info("✅ Gradient checkpointing enabled")
-    
+
+    def _probe_batch_size(self):
+        """Probe max batch size via dummy forward/backward, then update the
+        batch sizer and strategy so the dataloader and scheduler start at the
+        real capacity instead of a hardcoded guess."""
+        if self.strategy.use_distributed or not torch.cuda.is_available():
+            return
+        logger.info("📏 Probing max batch size...")
+        found = self.batch_sizer.probe(
+            self.encoder, self.decoder, self.device,
+            seq_len=getattr(self.config.model, 'max_seq_length', 150),
+            vocab_size=getattr(self.config.model, 'vocab_size', 32000),
+        )
+        # Keep the strategy in sync so scheduler estimates are reasonable
+        self.strategy.batch_size = found
+        logger.info(f"📏 Batch sizer updated: initial={found}, max={self.batch_sizer.max_batch_size}")
+
     def _setup_optimization(self):
         """Setup optimizers and schedulers"""
         

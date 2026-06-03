@@ -174,8 +174,11 @@ class OptimizedUniversalDecoder(nn.Module):
             for layer in self.layers:
                 x = layer(x, encoder_hidden, causal_mask, encoder_attention_mask)
 
-        if target_lang is not None and target_lang in self.target_language_adapters:
-            x = self.target_language_adapters[target_lang](x)
+        if target_lang is not None:
+            if isinstance(target_lang, (list, tuple)):
+                target_lang = target_lang[0]
+            if target_lang in self.target_language_adapters:
+                x = self.target_language_adapters[target_lang](x)
 
         x = self.layer_norm(x)
         logits = self.output_projection(x)
