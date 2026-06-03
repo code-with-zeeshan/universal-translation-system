@@ -101,7 +101,8 @@ def wrap_decoder_with_lora(
                 "cross_attn.out_proj",
                 "ffn.0",
                 "ffn.2",
-                "encoder_adapter",
+                "encoder_adapter.0",
+                "encoder_adapter.2",
             ]
             logger.info(f"Using explicit decoder LoRA targets: {target_modules}")
         else:

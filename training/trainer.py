@@ -820,12 +820,19 @@ class IntelligentTrainer(BaseTrainer):
             )
             self.decoder = wrap_decoder_with_lora(
                 self.decoder,
-                r=self.config.training.lora_r,
+                r=self.config.training.lora_r_decoder,
                 lora_alpha=self.config.training.lora_alpha,
                 lora_dropout=self.config.training.lora_dropout,
                 use_rslora=self.config.training.use_rslora,
             )
             print_trainable_parameter_stats(self.encoder, self.decoder)
+        
+        # Add per-target-language adapters after LoRA wrapping
+        _decoder = self.decoder.base_model if hasattr(self.decoder, 'base_model') else self.decoder
+        for lang in self.config.data.languages:
+            _decoder.add_target_language_adapter(lang)
+            for param in _decoder.target_language_adapters[lang].parameters():
+                param.requires_grad = True
         
         # Apply memory optimizations
         if self.strategy.memory_config.gradient_checkpointing:
@@ -1094,6 +1101,9 @@ class IntelligentTrainer(BaseTrainer):
         logger.info(f"   - Compile Mode: {self.strategy.compile_mode}")
         logger.info(f"   - Gradient Checkpointing: {self.strategy.memory_config.gradient_checkpointing}")
         logger.info(f"   - Flash Attention: {self.strategy.memory_config.use_flash_attention}")
+        logger.info(f"   - Encoder LoRA rank: {self.config.training.lora_r}")
+        logger.info(f"   - Decoder LoRA rank: {self.config.training.lora_r_decoder}")
+        logger.info(f"   - Per-language decoder adapters: {len(self.config.data.languages)} languages")
         logger.info("="*60)
     
     # ==================== Training Methods ====================

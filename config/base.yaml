@@ -149,6 +149,7 @@ training:
   # PEFT / LoRA (freeze backbone, train only adapters)
   use_lora: true
   lora_r: 16
+  lora_r_decoder: 64
   lora_alpha: 32
   lora_dropout: 0.05
   use_rslora: true

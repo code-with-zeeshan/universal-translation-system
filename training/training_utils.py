@@ -103,11 +103,12 @@ class BaseTrainer(ABC):
         pad_token_id = int(batch['pad_token_id'][0])
 
         encoder_output = self.encoder(source_ids, source_mask)
-        # Use keyword args so PEFT's forward wrapper passes them through **kwargs
+        target_lang = batch.get('vocab_pack_name')
         decoder_output = self.decoder(
             decoder_input_ids=target_ids[:, :-1],
             encoder_hidden_states=encoder_output,
             encoder_attention_mask=source_mask,
+            target_lang=target_lang,
         )
         
         loss = self._chunked_cross_entropy(

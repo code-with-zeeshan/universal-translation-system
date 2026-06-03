@@ -113,6 +113,7 @@ class TrainingConfig(BaseModel):
     force_batch_size: Optional[int] = None
     force_learning_rate: Optional[float] = None
     lora_r: int = 8
+    lora_r_decoder: int = 64
     lora_alpha: int = 16
     lora_dropout: float = 0.05
     use_rslora: bool = True

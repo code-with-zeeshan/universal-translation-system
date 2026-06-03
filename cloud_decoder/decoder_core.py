@@ -5,6 +5,7 @@ This file is safe to import during training.
 """
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import checkpoint
 from typing import Optional, Dict, Any, Tuple, List
 import asyncio
 import time
@@ -78,6 +79,7 @@ class OptimizedUniversalDecoder(nn.Module):
         max_length: int = 256,
         dropout: float = 0.1,
         device: torch.device = None,
+        gradient_checkpointing: bool = False,
     ):
         super().__init__()
 
@@ -85,11 +87,16 @@ class OptimizedUniversalDecoder(nn.Module):
         self.vocab_size = vocab_size
         self.device = device or torch.device('cpu')
         self.dropout = dropout
+        self._gradient_checkpointing = gradient_checkpointing
 
         self.embedding = nn.Embedding(vocab_size, decoder_dim)
         self.positional_embedding = nn.Embedding(max_length, decoder_dim)
 
-        self.encoder_adapter = nn.Linear(encoder_dim, decoder_dim, bias=False)
+        self.encoder_adapter = nn.Sequential(
+            nn.Linear(encoder_dim, decoder_dim * 2),
+            nn.GELU(),
+            nn.Linear(decoder_dim * 2, decoder_dim),
+        )
 
         self.layers = nn.ModuleList([
             OptimizedDecoderLayer(decoder_dim=decoder_dim, num_heads=num_heads, dropout=dropout)
@@ -101,7 +108,27 @@ class OptimizedUniversalDecoder(nn.Module):
         self.output_projection = nn.Linear(decoder_dim, vocab_size, bias=False)
         self.output_projection.weight = self.embedding.weight
 
+        self.target_language_adapters = nn.ModuleDict()
+
         self.apply(self._init_weights)
+
+    def gradient_checkpointing_enable(self):
+        self._gradient_checkpointing = True
+
+    def gradient_checkpointing_disable(self):
+        self._gradient_checkpointing = False
+
+    def add_target_language_adapter(self, language: str):
+        if language not in self.target_language_adapters:
+            self.target_language_adapters[language] = nn.Sequential(
+                nn.Linear(self.decoder_dim, self.decoder_dim // 8),
+                nn.GELU(),
+                nn.Linear(self.decoder_dim // 8, self.decoder_dim),
+                nn.LayerNorm(self.decoder_dim),
+            )
+
+    def get_target_languages(self) -> List[str]:
+        return list(self.target_language_adapters.keys())
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
@@ -117,6 +144,7 @@ class OptimizedUniversalDecoder(nn.Module):
         encoder_hidden_states: torch.Tensor,
         encoder_attention_mask: Optional[torch.Tensor] = None,
         compressed_embeddings: Optional[Dict[str, Any]] = None,
+        target_lang: Optional[str] = None,
         **kwargs,
     ) -> torch.Tensor:
         batch_size, seq_len = decoder_input_ids.shape
@@ -136,8 +164,18 @@ class OptimizedUniversalDecoder(nn.Module):
             diagonal=1,
         )
 
-        for layer in self.layers:
-            x = layer(x, encoder_hidden, causal_mask, encoder_attention_mask)
+        if self.training and self._gradient_checkpointing and encoder_attention_mask is not None:
+            for layer in self.layers:
+                x = checkpoint(
+                    layer, x, encoder_hidden, causal_mask, encoder_attention_mask,
+                    use_reentrant=False,
+                )
+        else:
+            for layer in self.layers:
+                x = layer(x, encoder_hidden, causal_mask, encoder_attention_mask)
+
+        if target_lang is not None and target_lang in self.target_language_adapters:
+            x = self.target_language_adapters[target_lang](x)
 
         x = self.layer_norm(x)
         logits = self.output_projection(x)
