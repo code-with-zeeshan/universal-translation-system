@@ -717,7 +717,7 @@ class TranslationEvaluator:
             "details": metrics,
             "language_pairs": metrics.get('language_pair_scores', {}),
             "metadata": {
-                "evaluation_date": str(Path.ctime(Path.cwd())),
+                "evaluation_date": str(Path.cwd().ctime()),
                 "model_info": {
                     "encoder": self.encoder.__class__.__name__,
                     "decoder": self.decoder.__class__.__name__,
