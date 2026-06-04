@@ -388,37 +388,107 @@ class TranslationEvaluator:
             raise
 
     def _process_batch(self, batch: List[TranslationPair], cache: Optional[Dict] = None) -> Dict[str, List]:
-        """Process a batch of translation pairs"""
+        """Process a batch of translation pairs with batched encoder + batched decoder inference"""
         predictions = []
         references = []
         sources = []
 
-        for pair in batch:
-            # Check cache
+        # Check cache first for all samples
+        uncached_pairs = []
+        uncached_indices = []
+        for i, pair in enumerate(batch):
             cache_key = f"{pair.source_lang}-{pair.target_lang}:{pair.source}"
-
+            sources.append(pair.source)
+            references.append(pair.target)
             if cache and cache_key in cache:
-                translation = cache[cache_key]
+                predictions.append((i, cache[cache_key]))
             else:
-                # Translate
-                translation = self.translate(
-                    pair.source,
-                    pair.source_lang,
-                    pair.target_lang
-                )
+                uncached_pairs.append(pair)
+                uncached_indices.append(i)
+                predictions.append((i, None))
 
+        if not uncached_pairs:
+            predictions_only = [p[1] for p in predictions]
+            return {'predictions': predictions_only, 'references': references, 'sources': sources}
+
+        # All uncached pairs should share source/target language from the same eval file
+        source_lang = uncached_pairs[0].source_lang
+        target_lang = uncached_pairs[0].target_lang
+        vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
+        target_lang_id = vocab_pack.special_tokens.get(f'<{target_lang}>', 2)
+
+        with torch.no_grad():
+            # Tokenize all texts and pad to max length
+            all_ids = []
+            max_len = 0
+            for pair in uncached_pairs:
+                tokens = self._tokenize(pair.source, source_lang, vocab_pack)
+                all_ids.append(tokens)
+                max_len = max(max_len, len(tokens))
+
+            batched_ids = []
+            attention_masks = []
+            for tokens in all_ids:
+                pad_len = max_len - len(tokens)
+                padded = tokens + [vocab_pack.special_tokens.get('<pad>', 0)] * pad_len
+                mask = [1] * len(tokens) + [0] * pad_len
+                batched_ids.append(padded)
+                attention_masks.append(mask)
+
+            batched_ids = torch.tensor(batched_ids, device=self.device)
+            attention_masks = torch.tensor(attention_masks, device=self.device)
+
+            encoder_output = self.encoder(batched_ids, attention_masks, language=source_lang)
+
+            batch_size = len(uncached_pairs)
+            decoder_input_ids = torch.full((batch_size, 1), target_lang_id, device=self.device)
+
+            finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
+            eos_token_id = 2
+            pad_token_id = 0
+
+            for _ in range(127):
+                logits = self.decoder(
+                    decoder_input_ids, encoder_output, attention_masks
+                )
+                next_token_logits = logits[:, -1, :] / 0.7
+
+                top_k = 50
+                if top_k > 0:
+                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
+                    next_token_logits[indices_to_remove] = float('-inf')
+
+                top_p = 0.9
+                if top_p < 1.0:
+                    sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
+                    cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                    sorted_indices_to_remove[..., 0] = 0
+                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+                    next_token_logits[indices_to_remove] = float('-inf')
+
+                probs = torch.softmax(next_token_logits, dim=-1)
+                next_tokens = torch.multinomial(probs, num_samples=1)
+
+                finished = finished | (next_tokens.squeeze(-1) == eos_token_id)
+                next_tokens[finished] = pad_token_id
+                decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=1)
+
+                if finished.all():
+                    break
+
+            for idx_in_batch, original_idx in enumerate(uncached_indices):
+                token_ids = decoder_input_ids[idx_in_batch].cpu().numpy()
+                translation = self._detokenize(token_ids, vocab_pack)
+                translation = postprocess_grammar(translation, target_lang)
+                predictions[original_idx] = (original_idx, translation)
                 if cache is not None:
+                    cache_key = f"{source_lang}-{target_lang}:{uncached_pairs[idx_in_batch].source}"
                     cache[cache_key] = translation
 
-            predictions.append(translation)
-            references.append(pair.target)
-            sources.append(pair.source)
-
-        return {
-            'predictions': predictions,
-            'references': references,
-            'sources': sources
-        }
+        predictions_only = [p[1] for p in predictions]
+        return {'predictions': predictions_only, 'references': references, 'sources': sources}
 
     def _update_streaming_metrics(self, batch_results: Dict, running_metrics: Dict):
         """Update running metrics for streaming evaluation"""
