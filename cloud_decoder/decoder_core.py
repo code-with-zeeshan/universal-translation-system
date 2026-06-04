@@ -51,7 +51,7 @@ class OptimizedDecoderLayer(nn.Module):
         x = self.cross_attn_norm(x)
         x, _ = self.cross_attn(
             x, encoder_hidden, encoder_hidden,
-            key_padding_mask=~encoder_mask if encoder_mask is not None else None
+            key_padding_mask=(~encoder_mask.bool()) if encoder_mask is not None else None
         )
         x = residual + self.dropout(x)
 
