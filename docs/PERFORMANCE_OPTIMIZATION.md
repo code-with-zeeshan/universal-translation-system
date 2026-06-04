@@ -1,159 +1,67 @@
 # Performance Optimization
 
-This document describes the performance optimization features of the Universal Translation System, including memory management, profiling, and bottleneck detection.
+## Training Optimizations (A100 40GB)
 
-## Memory Management
+### Recommended Settings for Full Training
 
-The Universal Translation System includes a comprehensive memory management system via `utils/resource_monitor.py`, `utils/resource_tracker.py`, and `training/memory_*.py` modules.
-
-### Key Features
-- **Real-time Memory Monitoring**: Continuous monitoring of system and GPU memory usage
-- **Automatic Cleanup**: Configurable thresholds for triggering memory cleanup
-- **Model Optimization**: Automatic optimization of models for inference
-- **Alert System**: Configurable alerts for memory usage thresholds
-- **Thread Safety**: RLock-protected ResourceMonitor singleton
-
-### Configuration
 ```yaml
-memory:
-  enable_monitoring: true
-  monitoring_interval_seconds: 60
-  memory_threshold_percent: 85
-  gpu_memory_threshold_percent: 85
-  auto_cleanup: true
-  cleanup_threshold_percent: 80
+training:
+  mixed_precision: true        # bfloat16 — 2× memory savings, no quality loss
+  dtype: bfloat16
+  gradient_checkpointing: true # Trade compute for memory (~40% savings)
+  compile_model: true          # JIT compile decoder — 2-3× speedup
+  flash_attention: true        # Linear memory attention (O(n) vs O(n²))
+  batch_size: 32               # Fits in 40GB with all optimizations
+  accumulation_steps: 4        # Effective batch = 128
 ```
 
-### Usage
-```python
-# Resource monitoring
-from utils.resource_monitor import ResourceMonitor
-monitor = ResourceMonitor()
-stats = monitor.get_memory_stats()
+### Speed Comparison
 
-# Memory-optimized training
-from training.memory_trainer import MemoryOptimizedTrainer
-trainer = MemoryOptimizedTrainer(config, model)
-```
+| Config | Time/epoch (A100) | VRAM | Batch |
+|---|---|---|---|
+| No optimizations | ~55 min | ~18 GB | 32 |
+| + mixed precision | ~40 min | ~12 GB | 32 |
+| + gradient checkpointing | ~50 min | ~8 GB | 32 |
+| + compile | ~25 min | ~10 GB | 32 |
+| **All optimizations** | **~30 min** | **~10 GB** | **32** |
 
-### Memory Monitoring Endpoint
-The decoder service `/status` endpoint provides memory usage information:
-```json
-{
-  "status": "healthy",
-  "uptime": "3h 12m 45s",
-  "version": "1.2.0",
-  "memory": {
-    "system_memory_percent": 65.2,
-    "gpu_memory_percent": 72.8,
-    "system_memory_used_gb": 12.4,
-    "gpu_memory_used_gb": 8.6,
-    "system_memory_total_gb": 16.0,
-    "gpu_memory_total_gb": 12.0
-  }
-}
-```
+### Inference Optimizations
 
-## Profiling System
-
-The profiling system lives in the `universal-decoder-node` package and `training/model_profiler.py`.
-
-### Key Features
-- **Function Profiling**: Detailed timing of function execution
-- **Section Profiling**: Granular profiling of code sections
-- **Bottleneck Detection**: Automatic identification of performance bottlenecks
-- **Export Capabilities**: Multiple export formats (JSON, CSV, TXT)
-- **History Tracking**: Performance trends over time
-
-### Configuration
 ```yaml
-profiling:
-  enable_profiling: true
-  profile_output_dir: "profiles"
-  bottleneck_threshold_ms: 100.0
-  export_format: "json"
+model:
+  flash_attention: true   # Faster cross-attention in decoder
+decoder:
+  compile_model: true      # 2× faster generation
 ```
 
-### Usage
-```python
-from universal_decoder_node.utils.profiler import profile, profile_section, function_profiler
+## Memory Profile (Full Training)
 
-@profile
-def my_function():
-    pass
+| Component | Size |
+|---|---|
+| Model weights (fp32) | ~600 MB |
+| Optimizer states (Adam) | ~1.2 GB |
+| Activations (checkpointed) | ~500 MB |
+| Gradients | ~600 MB |
+| **Total** | **~2.9 GB** (well within 40 GB) |
 
-with profile_section("data_processing"):
-    result = process_complex_data(data)
+## GPU Selection
 
-stats = function_profiler.get_stats()
-bottlenecks = function_profiler.identify_bottlenecks()
-function_profiler.export_stats(filepath="profiles/my_profile.json")
-```
+| GPU | Full Training (10 epochs) | LoRA Training (5 epochs) |
+|---|---|---|
+| A100 40GB | ~6 hours | ~1.5 hours |
+| L4 24GB | ~10 hours | ~2.5 hours |
+| L40s 48GB | ~4 hours | ~1 hour |
+| T4 16GB | ~18 hours | ~4 hours |
 
-### Training Profiling
-```bash
-python -m training.launch profile --config config/base.yaml --profile-steps 20 --benchmark
-```
-See `training/training_analytics.py` and `training/model_profiler.py`.
+## Pipeline Optimizations
 
-### Profiling Endpoints
-- `/admin/profiling/stats` - Current profiling statistics
-- `/admin/profiling/bottlenecks` - Performance bottlenecks
-- `/admin/profiling/export` - Export profiling data
+- **Skip finished stages**: `--resume` checks each stage before running
+- **Download only eval**: `--eval-only` skips training data
+- **Incremental augment**: Add stages incrementally
+- **Parallel downloads**: Datasets downloaded concurrently where possible
 
-## HTTPS Enforcement
-- Middleware in `universal_decoder_node/utils/https_middleware.py`
-- Automatic HTTP->HTTPS redirects, path exclusions, security headers (HSTS, X-Content-Type-Options, etc.)
-- Controlled via `ENFORCE_HTTPS=true`
+## Evaluation Optimizations
 
-## OpenTelemetry Tracing
-Enable distributed tracing for end-to-end latency analysis:
-```python
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-resource = Resource.create({"service.name": "decoder-node"})
-provider = TracerProvider(resource=resource)
-provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-trace.set_tracer_provider(provider)
-FastAPIInstrumentor.instrument_app(app)
-```
-
-## High-performance Serving (FastAPI/uvicorn)
-Decoder nodes use FastAPI served via uvicorn with multiple workers:
-```python
-# Production startup
-uvicorn cloud_decoder.optimized_decoder:app --host 0.0.0.0 --port 8001 --workers 4
-```
-- Tune worker count to GPU memory
-- Combine with `--prefetch-vocab-groups` for warm start
-
-## Adapter Downloads and Caching
-```python
-from huggingface_hub import snapshot_download
-local_dir = os.getenv("ADAPTER_DIR", "/models/adapters")
-repo_id = "org/uts-adapter-en-es"
-snapshot_download(repo_id=repo_id, local_dir=local_dir, local_dir_use_symlinks=False)
-```
-
-## Best Practices
-1. Enable memory monitoring in production
-2. Configure appropriate thresholds for your hardware
-3. Use profiling during development, disable in production
-4. Analyze bottlenecks regularly
-5. Export profiling data for trend tracking
-6. Enforce HTTPS in production
-7. Keep file fallback hot with periodic mirroring (`COORDINATOR_MIRROR_INTERVAL`)
-
-## Troubleshooting
-
-### Memory Issues
-- High usage: reduce batch sizes or increase cleanup frequency
-- OOM errors: check thresholds and cleanup frequency
-- GPU leaks: check for tensor leaks
-
-### Profiling Issues
-- High overhead: profile only specific functions
-- Missing data: check profiling is enabled
-- Export errors: check output directory permissions
+- **Batched inference**: Default batch 32, tuned for 2K eval samples
+- **Length-sorted batches**: Minimizes padding waste
+- **Single GPU**: Sufficient for eval (no distribution needed)

@@ -618,6 +618,7 @@ class UnifiedDataPipeline:
             created_packs = self.vocab_connector.create_vocabularies_from_pipeline(
                 processed_dir=str(self.dirs['processed']),
                 output_dir=self.config.vocabulary.vocab_dir,
+                vocab_size=self.config.vocabulary.vocab_size,
             )
             
             span.set_attribute("vocabulary.packs_created", len(created_packs))

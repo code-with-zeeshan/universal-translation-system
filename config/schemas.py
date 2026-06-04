@@ -72,6 +72,7 @@ class VocabularyConfig(BaseModel):
         "ru": "cyrillic", "uk": "cyrillic", "th": "thai"
     }
     vocab_dir: str = "vocabulary/vocab"
+    vocab_size: int = 32000
     dynamic_vocabulary: bool = True
     vocab_switch_penalty: float = 0.001
 

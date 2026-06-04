@@ -6,28 +6,20 @@ All notable changes to the Universal Translation System will be documented in th
 
 ### Added
 - TUI dashboard: `tui/` package with pipeline, training, GPU, and log panels
-- COMET quality filter stage (`_comet_quality_filter`) using `Unbabel/wmt22-comet-da`
-- `PipelineConfig` schema with `enabled_stages`, `comet_quality_threshold`, `max_dynamic_ff_per_pair`, `max_idiom_per_lang`
-- Dynamic false friend generation (50 English context sentences)
-- Domain data auto-merge (`_merge_domain_data`) scanning `data/raw/{medical,legal,tech}/`
-- Direct OPUS.nlpl.eu download (`_download_direct_opus`) with zip file fetching
-- LitServe decoder at `universal-decoder-node/litserve_decoder.py` with auto-batching
-- Cloud decoder at `cloud_decoder/decoder_server.py` with LitServe + FastAPI compatibility
-- `EmbeddingResizeAdapter` in `training/vocabulary_model_adapter.py` for vocabulary evolution
-- `evolve_vocabulary.py` rewritten: auto-discovers packs, reads analytics, `--retrain-model` flag
-- Thai language group (`th` → `thai` pack); 12-language `latin` group (added `id`, `vi`, `tr`)
-- `rich>=13.0.0` added to `[tui]` extra; `click`, `docker` added to `requirements/decoder.txt`
-- `UTS_HMAC_KEY` env var required for pipeline execution
-- SETUP_COMMANDS.md: full 8-step Lightning Studio setup guide
+- `uts` unified CLI (`scripts/uts.py`) — single entry point organizing all tools by workflow
+- `./uts` shell entry point at project root
+- `--eval-only` flag for data pipeline
+- `vocab_size` field in `VocabularyConfig` schema (configurable from YAML)
+- `--vocab-size` CLI flag for vocabulary rebuild
+- Architecture doc with dual-phase strategy (full training → LoRA adaptation)
 
 ### Changed
-- `vocab_dir` default changed from `vocabulary` to `vocabulary/vocab` in `config/schemas.py:73`
-- SentencePiece `.model` files preserved after training (no longer deleted)
-- False friend seeds expanded: 25 entries per en_XX pair (384→1,426 total), plus 10 non-English pairs
-- Augment batch_size: 8→128 for NLLB; dynamic FF batch loop 32→128
-- `max_sentence_length`: 64→128 in both `data:` and `training:` config sections
-- `_load_pairs` fixed to accept 2-col or 4-col TSV
-- `setup.py` dependency pins relaxed: `==` → `>=`
+- **Config: Full model training** — `use_lora: false`, `num_epochs: 10`, `lr: 3e-4`, `warmup_steps: 1000`
+- **Vocabulary size**: 32K tokens per pack (was 25K), matching embedding table
+- `UnifiedVocabConfig.vocab_size` default: 25000 → 32000
+- `VocabularyConnector.create_vocabularies_from_pipeline()` accepts `vocab_size` param
+- README.md, SETUP_COMMANDS.md, ONBOARDING.md, TRAINING.md, ARCHITECTURE.md rewritten
+- FAQ.md, TROUBLESHOOT.md updated with current state
 - Pipeline defaults skip `wikipedia_backtranslation`, `direct_opus`, `knowledge_distillation` (opt-in via `--stage`)
 - `ut` language code → `id` for Indonesian in multiple files
 - `frequency` → `frequency` dict key in `vocab_production.py` 

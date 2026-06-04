@@ -1,208 +1,116 @@
-# Comprehensive Troubleshooting Guide
+# Troubleshooting
 
-## Table of Contents
-1. [Installation Issues](#installation-issues)
-2. [SDK Integration Issues](#sdk-integration-issues)
-3. [Encoder Issues](#encoder-issues)
-4. [Decoder Issues](#decoder-issues)
-5. [Vocabulary Issues](#vocabulary-issues)
-6. [Performance Issues](#performance-issues)
-7. [Deployment Issues](#deployment-issues)
-8. [Error Recovery Strategies](#error-recovery-strategies)
-9. [Common Error Codes](#common-error-codes)
+## Setup & Installation
 
-## Installation Issues
-
-### Missing Dependencies
-**Symptoms**: Import errors, module not found errors
-**Solution**: 
-```bash
-# Use role-based install
-bash scripts/install.sh --dev
-
-# Or install modular requirements
-pip install -r requirements/base.txt -r requirements/train.txt -r requirements/serve.txt
-pip install -r requirements/decoder.txt -r requirements/coordinator.txt
-
-# Check for missing dependencies
-python scripts/check_dependencies.py
+### `pip install -e .` fails
 ```
-
-### CUDA Issues
-**Symptoms**: "CUDA not available" warnings, CPU-only operation
-**Solution**:
-1. Verify CUDA: `nvidia-smi`
-2. Check PyTorch CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
-3. Reinstall PyTorch with CUDA: `pip install torch==2.0.0+cu118 -f https://download.pytorch.org/whl/torch_stable.html`
-
-## SDK Integration Issues
-
-### Android SDK Issues
-**Symptoms**: JNI errors, crashes on initialization
-**Solutions**:
-1. Check NDK version compatibility
-2. Verify native library is properly included
-3. See `sdk/android/UniversalTranslationSDK/` for details
-
-### iOS SDK Issues
-**Symptoms**: Missing symbols, crashes
-**Solutions**:
-1. Check framework linkage
-2. See `sdk/ios/UniversalTranslationSDK/` for details
-
-### Web SDK Issues
-**Symptoms**: CORS errors, WASM loading failures
-**Solutions**:
-1. Ensure CORS properly configured
-2. Check browser WASM compatibility
-3. See `sdk/web/universal-translation-sdk/` for details
-
-## Encoder Issues
-
-### Encoding Failures
-**Symptoms**: ENCODING_FAILED errors, empty embeddings
-**Solutions**:
-1. Check vocabulary availability
-2. Verify input text format
-3. Monitor memory usage
-
-### Vocabulary Loading Failures
-**Symptoms**: VOCABULARY_NOT_LOADED errors
-**Solutions**:
-1. Check vocabulary file existence
-2. Verify format compatibility
-3. See `vocabulary/` modules for creation utilities
-
-## Decoder Issues
-
-### Decoder Connection Issues
-**Symptoms**: NETWORK_ERROR, connection timeouts
-**Solutions**:
-1. Check decoder health:
-```bash
-curl -v http://localhost:8001/health
-curl -v http://localhost:5100/api/status
+error: externally-managed-environment
 ```
-2. Implement retry logic:
-```python
-from tenacity import retry, stop_after_attempt, wait_exponential
+**Fix:** `conda install pip -y` then retry.
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
-async def translate_with_retry(client, text, source_lang, target_lang):
-    return await client.translate(text, source_lang, target_lang)
+### `git: command not found`
+**Fix:** `conda install git -y`
+
+### `No module named 'yaml'`
+**Fix:** `pip install pyyaml` or `pip install -e ".[train]"`
+
+### `HMAC key not configured`
 ```
-
-### Decoder Performance Issues
-**Symptoms**: Slow translations, timeouts
-**Solutions**:
-1. Check GPU utilization
-2. Implement request batching
-3. See `training/model_profiler.py` for profiling
-
-## Vocabulary Issues
-
-### Missing Vocabulary
-**Symptoms**: VOCABULARY_NOT_LOADED errors
-**Solutions**:
-1. Check `vocabulary/vocab/` directory
-2. Verify language code correctness
-3. Create vocabulary packs:
-```python
-from vocabulary.vocabulary_creator import UnifiedVocabularyCreator, CreationMode
-
-creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabs')
-creator.create_pack(pack_name='latin', languages=['en','es','fr','de','it','pt','nl','sv','pl'], mode=CreationMode.PRODUCTION)
-
-from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
-from config.schemas import RootConfig
-manager = UnifiedVocabularyManager(config=RootConfig(), vocab_dir='vocabs', mode=VocabularyMode.OPTIMIZED)
-pack = manager.get_vocab_for_pair(source_lang='en', target_lang='fr')
+ValueError: HMAC key not configured
 ```
+**Fix:** `export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"`
 
-## Performance Issues
+---
 
-### Slow Translation
-**Symptoms**: High latency, timeouts
-**Solutions**:
-1. Check network latency
-2. Verify GPU utilization
-3. Use profiling:
-```python
-from universal_decoder_node.utils.profiler import profile, profile_section, function_profiler
+## Data Pipeline
 
-@profile
-def my_translation_function():
-    pass
+### `HTTPError: 403 / 401` during download
+Cannot reach Hugging Face hub.
+**Fix:** Check internet: `curl -I https://huggingface.co`. If blocked, use offline mode.
 
-bottlenecks = function_profiler.identify_bottlenecks()
+### `ConnectionError` / timeout during download
+Network issue or HF hub down.
+**Fix:** Retry with `--resume`.
+
+### `*_sampled.txt not found` in later stages
+A prior stage failed silently.
+**Fix:** Check logs in `data/log/`. Re-run with `--resume`.
+
+### CUDA out of memory during pipeline
+NLLB model (used for backtranslation) is too big.
+**Fix:** Edit config: change `base_model` to `facebook/nllb-200-distilled-600M`
+
+### `ValueError: I/O operation on closed file`
+Rare race condition in logging.
+**Fix:** Re-run. If persistent, `pip install --upgrade tenacity`.
+
+---
+
+## Training
+
+### Loss stays at ~11.0 (doesn't decrease)
+The model isn't learning. Most common causes:
+- **`use_lora: true`** — 95% of params are frozen and random. Set `use_lora: false`.
+- **LR too low/high** — try `3e-4` for full training, `5e-4` for LoRA
+- **Data issue** — check `train_final.txt` has content
+
+### Loss = NaN
+Learning rate too high or data contains bad values.
+**Fix:** Reduce `lr` to `1e-4`, check data for NaN/inf.
+
+### Validation loss > training loss
+Normal sign of overfitting, but gap should be small.
+**Fix:** Add more data, reduce epochs, or increase dropout.
+
+### `CUDA out of memory`
 ```
-
-### High Memory Usage
-**Symptoms**: OOM errors, crashes
-**Solutions**:
-1. Reduce batch size
-2. Use memory-efficient vocabulary loading
-3. Use memory management system:
-```python
-from universal_decoder_node.utils.memory_manager import MemoryManager
-memory_manager = MemoryManager.get_instance()
-memory_stats = memory_manager.get_memory_stats()
-memory_manager.cleanup()
+RuntimeError: CUDA out of memory. Tried to allocate ...
 ```
+**Fix:** 
+- Reduce `batch_size` (e.g., 32 → 16)
+- Enable `gradient_checkpointing: true`
+- Reduce `accumulation_steps` (e.g., 4 → 2)
 
-## Deployment Issues
+### `Expected input batch_size (...) to match target batch_size (...)`
+Mixed sequence lengths in batch.
+**Fix:** In config, set `max_sentence_length: 64` and re-run data pipeline.
 
-### Docker Deployment Issues
-**Symptoms**: Container fails to start, crashes
-**Solutions**:
-1. Check Docker logs: `docker logs <container_id>`
-2. Verify GPU: `docker exec <container_id> nvidia-smi`
-3. Check volume mounts and permissions
-4. Verify environment variables
+### Training is very slow
+**Fix:**
+- Set `compile_model: true` (2-3× speedup)
+- Set `mixed_precision: true` and `dtype: bfloat16`
+- Set `flash_attention: true`
+- Reduce `warmup_steps` (1000 is enough)
 
-### Kubernetes Deployment Issues
-**Symptoms**: Pods fail to start, crash loops
-**Solutions**:
-1. Check pod logs: `kubectl logs <pod_name>`
-2. Verify GPU: `kubectl exec <pod_name> -- nvidia-smi`
-3. Check resource limits and requests
-4. See `charts/uts/` for Helm deployment
+### `ValueError: The specified target language adapter 'xx' not found`
+Missing target language adapter in decoder.
+**Fix:** Ensure the language code is in `active_languages` in config, and rerun training to create adapters.
 
-## Error Recovery Strategies
+---
 
-### Circuit Breaker Pattern
-The `CircuitBreaker` class in `coordinator/advanced_coordinator.py` handles failure detection:
-```yaml
-# Config
-circuit_breaker:
-  failure_threshold: 5
-  recovery_timeout: 30
-  timeout: 10
-```
+## Evaluation
 
-### Retry Logic
-```python
-from tenacity import retry, stop_after_attempt, wait_exponential
+### BLEU reported as 0.000 or N/A
+The model produces near-random output. See "Loss stays at ~11.0" above.
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
-async def translate_with_retry(client, text, source_lang, target_lang):
-    return await client.translate(text, source_lang, target_lang)
-```
+### `KeyError: 'base_model.model.encoder.embedding_layer.weight'` during eval
+Checkpoint key mismatch. The evaluator handles PEFT-wrapped models, but if the checkpoint was saved without LoRA, the keys differ.
+**Fix:** Use `./uts eval --model --checkpoint path/to/checkpoint`
 
-## Common Error Codes
+### `target_language_adapters.* keys not found in checkpoint`
+Harmless warning. These adapters are created at runtime but weren't saved in older checkpoints.
 
-| Error Code | Description | HTTP Status | Common Causes |
-|------------|-------------|-------------|--------------|
-| NETWORK_ERROR | Network connectivity issues | 503 | Connection failures, timeouts |
-| MODEL_NOT_FOUND | Model file not found | 404 | Missing model files, incorrect paths |
-| VOCABULARY_NOT_LOADED | Vocabulary not loaded | 404 | Missing vocabulary files |
-| ENCODING_FAILED | Text encoding failed | 500 | Invalid input, memory issues |
-| DECODING_FAILED | Embedding decoding failed | 500 | Invalid embeddings, model errors |
-| INVALID_LANGUAGE | Unsupported language | 400 | Typos in language codes |
-| RATE_LIMITED | Too many requests | 429 | Exceeding API limits |
-| RESOURCE_EXHAUSTED | Out of resources | 503 | OOM, GPU memory exhausted |
-| TIMEOUT | Request timed out | 504 | Slow network, overloaded servers |
-| INVALID_INPUT | Invalid input parameters | 400 | Malformed requests |
-| INTERNAL_ERROR | Unexpected internal error | 500 | Bugs, unhandled exceptions |
-| AUTHENTICATION_ERROR | Authentication failed | 401 | Invalid credentials |
-| SERVICE_UNAVAILABLE | Service unavailable | 503 | Server down, maintenance |
+---
+
+## Serving
+
+### `Address already in use`
+Port is occupied.
+**Fix:** Change port in config or kill existing process: `kill $(lsof -t -i:8000)`
+
+### Decoder returns empty translations
+The model isn't predicting EOS tokens. See "Loss stays at ~11.0" above.
+
+### Coordinator can't find decoders
+Redis is not running or decoders aren't registered.
+**Fix:** `./uts serve --redis start`

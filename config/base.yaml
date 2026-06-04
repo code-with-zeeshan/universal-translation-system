@@ -135,19 +135,21 @@ model:
 training:
   # High-level strategy
   use_fsdp: false
-  num_epochs: 1
+  num_epochs: 10
   batch_size: 32
   accumulation_steps: 4
   effective_batch_size: 128
 
   # Hyperparameters
-  lr: 5e-4
+  lr: 3e-4
   weight_decay: 0.01
-  warmup_steps: 4000
+  warmup_steps: 1000
   max_grad_norm: 1.0
   
-  # PEFT / LoRA (freeze backbone, train only adapters)
-  use_lora: true
+  # PEFT / LoRA — disabled for initial full-model training.
+  # Set use_lora: true + tune lora_r/lora_r_decoder when adding NEW languages
+  # beyond the original 20 to avoid full retraining.
+  use_lora: false
   lora_r: 16
   lora_r_decoder: 64
   lora_alpha: 32

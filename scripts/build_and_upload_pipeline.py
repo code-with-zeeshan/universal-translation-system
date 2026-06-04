@@ -45,11 +45,13 @@ def ensure_dirs():
         p.mkdir(parents=True, exist_ok=True)
 
 
-def create_vocabs(groups: list[str] | None = None, mode: str | None = None):
+def create_vocabs(groups: list[str] | None = None, mode: str | None = None, vocab_size: int = 32000):
     # Run vocabulary creator via a small Python call to avoid import context issues
     code = (
         "from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode;"
-        "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab');"
+        "from vocabulary.vocab_config import UnifiedVocabConfig;"
+        "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab',"
+        "config=UnifiedVocabConfig(vocab_size=%d));" % vocab_size
         + ("mode=CreationMode.%s;" % mode.upper() if mode else "mode=None;")
         + ("groups=%s;" % groups if groups else "groups=None;")
         + "creator.create_all_packs(mode=mode, groups_to_create=groups);"
@@ -75,13 +77,14 @@ def main():
     parser.add_argument("--convert-models", action="store_true", help="Run model conversion before upload")
     parser.add_argument("--vocab-groups", nargs='*', help="Specific vocab groups to build (latin cjk arabic devanagari cyrillic thai)")
     parser.add_argument("--vocab-mode", choices=["production", "research", "hybrid"], help="Vocabulary creation mode override")
+    parser.add_argument("--vocab-size", type=int, default=32000, help="Tokens per vocabulary pack (default: 32000)")
     args = parser.parse_args()
 
     ensure_dirs()
 
     # Optional steps
     if args.create_vocabs:
-        create_vocabs(groups=args.vocab_groups, mode=args.vocab_mode)
+        create_vocabs(groups=args.vocab_groups, mode=args.vocab_mode, vocab_size=args.vocab_size)
 
     if args.convert_models:
         convert_models()

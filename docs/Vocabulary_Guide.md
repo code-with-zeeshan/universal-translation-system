@@ -4,17 +4,20 @@
 
 The Universal Translation System uses a dynamic vocabulary system for efficient language support. Vocabulary packs are small (2-4MB each), language-specific, and can be downloaded on-demand, reducing overall app size while maintaining translation quality.
 
+**Quick command:** `./uts vocab --help`
+
 ## Vocabulary System Architecture
 
 ### Core Components
 
-1. **Universal Encoder Base (35MB)**
+1. **Universal Encoder (edge-optimized)**
    - Language-agnostic encoder working with any vocabulary pack
-   - Optimized for mobile and web deployment
+   - Optimized for mobile and web deployment via quantization
+   - Dynamically resizes embedding table to match loaded pack
 
-2. **Vocabulary Packs (2-4MB each)**
-   - Latin Pack (~3MB): English, Spanish, French, German, Italian, Portuguese, etc.
-   - CJK Pack (~4MB): Chinese, Japanese, Korean
+2. **Vocabulary Packs (2-4MB each, 32K tokens)**
+   - Latin Pack: English, Spanish, French, German, Italian, Portuguese, Dutch, Swedish, Polish, Indonesian, Vietnamese, Turkish
+   - CJK Pack: Chinese, Japanese, Korean
    - Arabic Pack: Arabic
    - Devanagari Pack: Hindi
    - Cyrillic Pack: Russian, Ukrainian
@@ -23,7 +26,7 @@ The Universal Translation System uses a dynamic vocabulary system for efficient 
 3. **Dynamic Loading System**
    - Packs loaded only when needed
    - Memory-efficient with LRU caching
-   - Versioned via semver in filename (`latin_v1.2.msgpack`)
+   - Versioned via semver in filename (`latin_v1.0.0.msgpack`)
 
 ### Implementation Modules
 

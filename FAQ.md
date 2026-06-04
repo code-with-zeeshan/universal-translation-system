@@ -1,60 +1,64 @@
-# FAQ: Universal Translation System
+# FAQ
 
-## Core Differentiation Questions
+## Training
 
-### Q1: Why not just use M2M-100 or NLLB-200 quantized?
-Our system uses an innovative edge-cloud split architecture with a universal encoder (35MB base + 2-4MB vocabulary packs) and cloud decoder infrastructure. This results in a 40MB app with 90% quality of full models. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+### Why is my BLEU score near zero after 1 epoch?
+The model needs **5-10 epochs** to converge. One epoch of LoRA on a random backbone gives ~0.001 BLEU. Either train longer or disable LoRA for full model training.
 
-### Q2: What makes your vocabulary pack system unique?
-Vocabulary packs are small (2-4MB each), dynamically loaded, and language-specific. Users download only the languages they need. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
+### Should I use LoRA?
+- **For initial training (20 languages):** No. Set `use_lora: false` and train all 150.8M params.
+- **For adding new languages:** Yes. Freeze backbone, train LoRA adapters only.
 
-### Q3: How do you maintain quality with such a small model?
-Through smart quantization, optimized vocabulary packs, and edge-cloud split architecture. Heavy lifting is done on the cloud decoder. See [docs/VISION.md](docs/VISION.md).
+### What GPU do I need?
+- **A100 40GB** (recommended) — full 150.8M model, batch 32, ~6 hours
+- **L4 24GB** — full model, smaller batch, ~10 hours
+- **L40s 48GB** — fastest but expensive
 
-## Technical Architecture Questions
+### How much data is needed?
+~2-5M sentence pairs across 20 languages from opus-100. Each language pair has 50K-200K training sentences.
 
-### Q4: Why split encoder and decoder?
-Minimizes client app size while maximizing translation quality. Encoder runs on device, decoder in the cloud. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Data Pipeline
 
-### Q5: How is privacy preserved?
-Only embeddings are sent to the cloud; original text never leaves the device. Embeddings are compressed and cannot be reversed.
+### The pipeline is stuck at "Downloading..."
+Hugging Face dataset downloads take time. Check `data/raw/*.txt` to see if files are growing. Use `--resume` if interrupted.
 
-### Q6: What about offline translation?
-We're working on a fully offline mode for limited connectivity scenarios.
+### How do I add a new dataset?
+Add to `data/unified_data_downloader.py` and register in config `data.sources`. See existing sources (opus-100, etc.) as templates.
 
-## Business/User Questions
+## Evaluation
 
-### Q7: Who is this system designed for?
-Developers, privacy-conscious users, and organizations needing scalable translation. SDKs support Android, iOS, Flutter, React Native, and Web (under `sdk/`). See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md).
+### Which metrics are reported?
+SacreBLEU (tokenized) per language pair. COMET is scaffolded but not fully integrated.
 
-### Q8: How does configuration work?
-All components configurable via environment variables. Paths overridable via `UTS_*` env vars. See [docs/environment-variables.md](docs/environment-variables.md).
+### How do I evaluate a single language pair?
+```bash
+python -m evaluation.evaluate_model \
+  --checkpoint checkpoints/*/best_model.pt \
+  --test-data data/evaluation/en-es.tsv
+```
 
-### Q9: What languages are supported?
-20 languages (en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, vi, pl, uk, nl, id, sv) with plans to expand.
+## Architecture
 
-## Developer Questions
+### Can I run the encoder on CPU?
+Yes. The 42.7M encoder is designed for edge devices. It runs on CPU at ~50 tokens/second.
 
-### Q10: How hard is it to integrate?
-SDKs designed for easy integration with minimal code. See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for examples.
+### Can I run the decoder on CPU?
+The 108.1M decoder works on CPU but is slow (~5 tokens/second). GPU recommended.
 
-### Q11: Can I use my own vocabulary/terminology?
-Yes, create custom vocabulary packs. See [docs/Vocabulary_Guide.md](docs/Vocabulary_Guide.md).
+### How do I add a new language?
+1. Add language code to `active_languages` in config
+2. Assign to a script pack in `language_to_pack_mapping`
+3. If new script, create a new pack group in `VocabularyConfig`
+4. Train with `use_lora: true` for adapter-only training
 
-### Q12: How does deployment work?
-Docker Compose, standalone Docker, Helm chart, and Kubernetes manifests. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Role-based install via `scripts/install.sh`.
+## SDK & Deployment
 
-## Future/Roadmap Questions
+### Are the SDKs ready for production?
+Android, iOS, Flutter, React Native, and Web SDKs are scaffolded but need a trained encoder binary. See `sdk/` directory.
 
-### Q13: What's the roadmap?
-See [docs/future_plan.md](docs/future_plan.md) for details on offline capabilities, more languages, and enhanced monitoring.
-
-### Q14: How do you handle model updates?
-Through environment variable configuration system and `version-config.json` for component semver management.
-
-### Q15: What makes this system unique?
-Edge-cloud split architecture, dynamic vocabulary system, environment variable configuration, centralized path management, thread-safe design, and production-ready deployment scripts.
-
----
-
-For more information, see the documentation in the `/docs` folder and explore the coordinator dashboard for real-time system status.
+### How do I deploy the decoder?
+```bash
+./uts serve --setup --all
+./uts serve --decoder
+./uts serve --coordinator
+```

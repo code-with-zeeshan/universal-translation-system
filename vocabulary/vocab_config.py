@@ -14,7 +14,7 @@ class CreationMode(Enum):
 class UnifiedVocabConfig:
     """Unified configuration for all creation modes"""
     # Common settings
-    vocab_size: int = 25000
+    vocab_size: int = 32000
     model_type: str = 'bpe'
     character_coverage: float = 0.9995
     num_threads: int = 16

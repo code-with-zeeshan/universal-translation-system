@@ -13,9 +13,11 @@ class VocabularyConnector:
         self.logger = logging.getLogger(__name__)
     
     def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed',
-                                           output_dir: str = 'vocabs'):
+                                           output_dir: str = 'vocabs',
+                                           vocab_size: int = 32000):
         """Create vocabulary packs after data pipeline completes"""
         from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+        from vocabulary.vocab_config import UnifiedVocabConfig
         
         self.logger.info(f"Creating vocabulary packs in {output_dir} from {processed_dir}...")
         
@@ -24,10 +26,11 @@ class VocabularyConnector:
         if not processed_path.exists():
             raise DataError(f"Processed data directory not found: {processed_dir}")
         
-        # Create vocabulary packs
+        # Create vocabulary packs with requested vocab size per pack
         creator = VocabularyPackCreator(
             corpus_dir=processed_dir,
             output_dir=output_dir,
+            config=UnifiedVocabConfig(vocab_size=vocab_size),
         )
         
         # Create all standard packs

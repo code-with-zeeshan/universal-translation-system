@@ -1,58 +1,64 @@
 # Adding New Languages
 
-To add a new language to the Universal Translation System, follow these steps:
+The system supports two scenarios:
 
-## 1. Update Configuration
-- Add new language code to `config/base.yaml` and/or environment variables.
-- Update language pair configurations.
+## Scenario A: Adding to the initial 20-language set (before training)
 
-## 2. Download and Prepare Data
+If you haven't trained yet, add the language to config and train the full model:
+
 ```bash
-python scripts/pipeline.py data --config ./config/base.yaml --stages download_training create_ready
+# 1. Add language to config/base.yaml:
+#    - data.active_languages
+#    - data.active_pairs
+#    - vocabulary.language_to_pack_mapping (assign to a script pack)
+#    - vocabulary_strategy.groups (add to an existing pack or create new)
+
+# 2. Run pipeline and train
+./uts data --pipeline
+./uts vocab --build
+./uts train --full
 ```
 
-## 3. Create/Update Vocabulary Packs
+## Scenario B: Adding language #21+ after backbone is trained
+
+Freeze the trained backbone and train only LoRA adapters + target language adapter:
+
+```yaml
+# config/base.yaml
+training:
+  use_lora: true
+  lora_r: 16
+  lora_r_decoder: 64
+```
+
 ```bash
-python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir vocabulary/vocab
-```
-- Programmatic alternative:
-```python
-from vocabulary.vocabulary_creator import UnifiedVocabularyCreator, CreationMode
-creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab')
-creator.create_pack(pack_name='latin', languages=['en','es','fr','de','new_lang'], mode=CreationMode.PRODUCTION)
-```
+# 1. Update config
+# 2. Download data for new language(s)
+./uts data --pipeline --stage download_training
 
-## 4. Update Model Training Configs
-- Ensure new language is included in training configuration.
-- Adjust batch size or distribution as needed.
-
-## 5. Train or Fine-tune Models
-```bash
-python -m training.launch train --config config/base.yaml
+# 3. Train adapters only (~2-3 hours)
+./uts train --full --experiment-name "lang-21-adapter"
 ```
 
-## 6. Update SDKs
-- Add the new language code to supported languages in each SDK under `sdk/`.
-- Update language pickers and UI.
+## Script Pack Assignment
 
-## 7. Register in Coordinator/Decoder Pool
-```bash
-bash scripts/setup_serving.sh --register --endpoint https://your-decoder.com
-```
+| Script | Pack | Languages |
+|---|---|---|
+| Latin | `latin` | en, es, fr, de, it, pt, nl, sv, pl, id, vi, tr |
+| CJK | `cjk` | zh, ja, ko |
+| Arabic | `arabic` | ar |
+| Devanagari | `devanagari` | hi |
+| Cyrillic | `cyrillic` | ru, uk |
+| Thai | `thai` | th |
 
-## 8. Test End-to-End
-```bash
-pytest tests/test_translation.py -k "<new_language_code>"
-```
+If your new language uses a different script, create a new pack group in `config/base.yaml` → `vocabulary_strategy.groups`.
 
-## 9. Update Documentation
-- Add the new language to all relevant docs.
+## Full Checklist
 
-## 10. Coordinator and Redis Notes
-- If using Redis, the coordinator keeps a shared decoder pool.
-- Pool is mirrored to `config/decoder_pool.json` periodically (`COORDINATOR_MIRROR_INTERVAL`).
-- See `scripts/setup_redis.sh` for Redis setup.
-
----
-
-For more details, see [SDK_INTEGRATION.md](SDK_INTEGRATION.md), [REDIS_INTEGRATION.md](REDIS_INTEGRATION.md), and [ARCHITECTURE.md](ARCHITECTURE.md).
+1. Add language code to `active_languages` in config
+2. Assign to a script pack or create new pack
+3. Add language pairs to `active_pairs`
+4. Run pipeline to download and process data
+5. Rebuild vocabulary packs
+6. Train (full model or LoRA adapters)
+7. Evaluate

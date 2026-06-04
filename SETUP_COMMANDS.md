@@ -1,14 +1,28 @@
-# UTS — Fresh Studio Setup Commands
+# UTS — Fresh Studio Setup Guide
 
-## 0. Open a terminal in Lightning AI Studio
+## Before You Start
 
-All commands run in the **terminal** (not notebook). The environment already has:
-- Python 3.12, CUDA 12.8, PyTorch 2.8.0
-- conda (default env is `base`)
+**Choose your setup path based on available GPU:**
+
+| Your GPU | Full training? | Expected time | Recommended batch | Go to |
+|---|---|---|---|---|
+| **A100 40GB / H100** | ✅ Yes | ~6 hours | 32 | [Fast Track](#fast-track-a100h100-40gb) |
+| **L40s 48GB** | ✅ Yes | ~4 hours | 48 | [Fast Track](#fast-track-a100h100-40gb) |
+| **L4 24GB** | ✅ Yes | ~10 hours | 16 | [Mid-Range L4](#mid-range-l4-24gb) |
+| **T4 16GB (Colab / low-cost)** | ⚠️ Marginal | ~18 hours | 8 | [Low-End T4](#low-end-t4-16gb) |
+| **No GPU / CPU** | ❌ No | — | — | [No GPU / LoRA only](#no-gpu--lora-only) |
 
 ---
 
-## Step 1 — Clone
+## Common Steps (All Tiers)
+
+These steps are the same regardless of GPU. Do these first.
+
+### 0. Open a terminal
+
+All commands run in the **terminal** (not notebook).
+
+### 1. Clone
 
 ```bash
 cd /teamspace/studios/this_studio
@@ -17,178 +31,251 @@ cd universal-translation-system
 ```
 
 **Troubleshoot:**
-- `git: command not found` → Studio is too bare. Run `conda install git -y`
+- `git: command not found` → `conda install git -y`
 - `Permission denied` → You're outside `/teamspace`. Use `cd /teamspace/studios/this_studio` first
 
----
-
-## Step 2 — Install deps
+### 2. Install dependencies
 
 ```bash
-pip install -e . 2>&1 | tail -20
+pip install -e ".[train]" 2>&1 | tail -10
 ```
 
-**Troubleshoot:**
-- `pip: command not found` → Run `conda install pip -y`
-- `error: externally-managed-environment` → Run `conda install pip -y` to get conda's pip
-- Takes ~2 min. Ignore dependency conflicts (they're non-fatal)
-
----
-
-## Step 3 — Install LitServe (for decoder, not needed for pipeline)
-
-```bash
-pip install "litserve>=0.12.0" 2>&1 | tail -10
-```
+This installs base + training + serving extras. Takes ~2 min.
 
 **Troubleshoot:**
-- Only needed if you run the decoder via LitServe. Pipeline doesn't need it.
+- `pip: command not found` → `conda install pip -y`
+- `error: externally-managed-environment` → Same fix
 
----
-
-## Step 4 — Export HMAC key (required!)
+### 3. Set HMAC key (required)
 
 ```bash
 export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"
-```
-
-**Must be set in the same terminal session before every `python -m` command.** Add to `~/.bashrc` to auto-set:
-
-```bash
 echo 'export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"' >> ~/.bashrc
-source ~/.bashrc
 ```
 
-**Troubleshoot:**
-- `ValueError: HMAC key not configured` → You forgot to export the variable
-- `KeyError: 'UTS_HMAC_KEY'` → Same thing
+**Must be set before every `python -m` command.** Adding to `~/.bashrc` makes it permanent.
+
+### 4. Verify environment
+
+```bash
+./uts setup --check
+```
+
+Expected: GPU detected, Python OK, core imports OK.
+
+### 5. Download & process data (~25 min, any GPU)
+
+```bash
+./uts data --pipeline
+```
+
+Downloads opus-100, samples, augments, validates. Skips already-downloaded files.
+
+**Key flags:**
+- `--resume` — pick up where it left off (default)
+- `--reset` — start from scratch
+- `--stage sample_filter` — run a single stage
+
+### 6. Build vocabulary packs (~10 min, any GPU)
+
+```bash
+./uts vocab --build --vocab-size 32000
+```
+
+Creates 6 per-script packs at `vocabulary/vocab/`.
 
 ---
 
-## Step 5 — Run core pipeline (~25 min)
+## Fast Track (A100/H100 40GB+)
+
+**Best experience.** Full model training in ~6 hours.
+
+### 7. Train full model
 
 ```bash
-python -m data.unified_data_pipeline --config config/base.yaml
+./uts train --full --num-epochs 10 --batch-size 32
 ```
 
-**Expected output last lines:**
-```
-Pipeline completed in 0.XX hours
-```
-
-**Troubleshoot:**
-
-| Error | Cause | Fix |
-|---|---|---|
-| `ModuleNotFoundError: No module named 'yaml'` | Missing PyYAML | `pip install pyyaml` |
-| `ModuleNotFoundError: No module named 'torch'` | Wrong Python env | Studio should have torch. Run `conda install pytorch -c pytorch -y` |
-| `ModuleNotFoundError: No module named 'transformers'` | Missing HF lib | `pip install transformers` |
-| `ModuleNotFoundError: No module named 'datasets'` | Missing HF datasets | `pip install datasets` |
-| `HTTPError: 403` or `HTTPError: 401` | Cannot reach Hugging Face hub | Check internet: `curl -I https://huggingface.co`. If blocked, use `--config config/offline.yaml` |
-| `ConnectionError` / timeout | Network issue or HF hub down | Retry. `--resume` picks up where it left off |
-| `CUDA out of memory` | NLLB-1.3B too big for GPU | Edit `config/base.yaml`: change `base_model` to `facebook/nllb-200-distilled-600M` |
-| `*_sampled.txt not found` in later stages | A prior stage failed | Check logs in `data/log/`. Re-run with `--resume` |
-| Pipeline seems stuck at "Downloading..." | HF dataset download in progress | Let it finish. Check `data/raw/*.txt` growing |
-| `ValueError: I/O operation on closed file` | Rare race in logging | Re-run. If persistent, `pip install --upgrade tenacity` |
-
-**To resume after a failure:**
+Or using the default config (already tuned for A100):
 ```bash
-python -m data.unified_data_pipeline --config config/base.yaml --resume
+./uts train --full
 ```
 
-**To reset pipeline state (start fresh):**
-```bash
-python -m data.unified_data_pipeline --config config/base.yaml --reset
-rm -rf data/raw data/processed
-```
-
-**To run a single stage:**
-```bash
-python -m data.unified_data_pipeline --config config/base.yaml --stage sample_filter
-```
-
----
-
-## Step 6 — Verify output
-
-```bash
-# Count total training sentences
-wc -l data/processed/train_final.txt
-
-# Check language coverage (corpus files are in data/processed/, not data/processed/ready/)
-ls data/processed/*_corpus.txt
-
-# Check vocabulary files
-ls -la vocabulary/vocab/
-```
-
-**Expected:**
-- `train_final.txt`: ~2-5 million lines (depends on stages enabled)
-- `*_corpus.txt`: one per language (20 files) in `data/processed/`
-- `vocabulary/vocab/`: 6-7 pack dirs with `.model`, `.json`, `.msgpack` files (latin, cjk, arabic, devanagari, cyrillic, thai, research)
-
----
-
-## Step 7 — Train (~5-6 hours on L4)
-
-```bash
-python -m training.launch train --config config/base.yaml
-```
-
-**What's new in this version:**
-| Improvement | Effect |
-|---|---|
-| Decoder gradient checkpointing | Saves ~10GB → batch_size 64 viable → **~1h/epoch** |
-| Decoder LoRA r=64 (vs encoder r=16) | 5.6M trainable params in decoder (was 1.4M) |
-| Per-language decoder adapters | Each of 20 target languages gets a dedicated `768→96→768` bottleneck after all 8 decoder layers |
-| 2-layer encoder_adapter MLP | `Linear(512→1024)→GELU→Linear(1024→768)` replaces single `Linear(512→768)` for a more expressive encoder→decoder bridge |
-
-**Troubleshoot:**
-- `CUDA out of memory` → In `config/base.yaml`, reduce `batch_size: 32`, or set `gradient_checkpointing: false` (increases memory but may help if the issue is peak activation memory)
-- `ValueError: Expected input batch_size (...) to match target batch_size (...)` → Mixed sequence lengths. Re-run pipeline with `max_sentence_length: 64` in config
-- Training loss is NaN → Reduce `lr: 1e-4` in config
-
-**Config reference (training section):**
+**Config already optimized for A100** (`config/base.yaml`):
 ```yaml
 training:
-  lora_r: 16              # Encoder LoRA rank (keep small for edge export)
-  lora_r_decoder: 64      # Decoder LoRA rank (cloud, can be larger)
-  gradient_checkpointing: true  # Enabled by default — saves ~10GB
+  use_lora: false           # Train all 150.8M params
+  num_epochs: 10
+  lr: 3e-4
+  batch_size: 32
+  gradient_checkpointing: true
+  mixed_precision: true
 ```
+
+**Expected loss trajectory:**
+- Epoch 1: ~8.5 → Epoch 3: ~5.5 → Epoch 5: ~4.0 → Epoch 10: ~3.0-3.5
+
+### 8. Evaluate
+
+```bash
+# Download evaluation test data
+./uts data --download-only
+
+# Evaluate trained model
+./uts eval --model --checkpoint checkpoints/*/best_model.pt
+```
+
+Results in `evaluation_reports/`.
 
 ---
 
-## Step 8 — Evaluate
+## Mid-Range (L4 24GB)
+
+Full model training is feasible with smaller batch. Expect ~10 hours.
+
+### 7. Tweak config for L4
+
+Edit `config/base.yaml`:
+```yaml
+training:
+  use_lora: false
+  num_epochs: 10
+  lr: 3e-4
+  batch_size: 16              # Reduced from 32
+  accumulation_steps: 8       # Keeps effective batch = 128
+  gradient_checkpointing: true # Critical for L4 memory
+  mixed_precision: true
+```
+
+### 8. Train
 
 ```bash
-python main.py --mode evaluate
+./uts train --full --batch-size 16
 ```
+
+### 9. Evaluate
+
+Same as Fast Track step 8.
 
 ---
 
-## Quick reference
+## Low-End (T4 16GB)
+
+Training the full model is **possible but slow** (~18 hours). You may prefer LoRA-only training for speed.
+
+### Option A: Full training (slow, ~18h)
+
+Edit `config/base.yaml`:
+```yaml
+training:
+  use_lora: false
+  num_epochs: 10
+  lr: 3e-4
+  batch_size: 8               # Must reduce for 16GB
+  accumulation_steps: 16      # Keeps effective batch = 128
+  gradient_checkpointing: true
+  mixed_precision: true
+```
 
 ```bash
-# One-shot: clone + install + export + run
+./uts train --full --batch-size 8
+```
+
+### Option B: LoRA adapter training (fast, ~4h)
+
+If you just want to test the system works:
+
+```yaml
+training:
+  use_lora: true
+  lora_r: 16
+  lora_r_decoder: 64
+  lora_alpha: 32
+  num_epochs: 5
+  lr: 5e-4
+  batch_size: 16
+```
+
+```bash
+./uts train --full --num-epochs 5
+```
+
+Note: LoRA on a randomly initialized backbone gives **poor quality** (BLEU ~0.001). Use only for testing the pipeline, not for production.
+
+---
+
+## No GPU / LoRA Only
+
+You cannot train the full model without a GPU. Your options:
+
+### Option A: Use free Colab T4
+
+1. Upload this repo to Google Drive
+2. Open in Colab with T4 runtime (Runtime → Change runtime → T4 GPU)
+3. Follow [Low-End T4](#low-end-t4-16gb) steps
+
+### Option B: Train LoRA adapters on Colab
+
+If you already have a trained backbone checkpoint, you can train LoRA adapters on Colab for new languages:
+
+```yaml
+training:
+  use_lora: true
+  lora_r: 16
+  lora_r_decoder: 64
+  freeze_backbone: true
+```
+
+```bash
+./uts train --full --checkpoint /path/to/trained_backbone.pt
+```
+
+### Option C: Use pre-trained models
+
+Once the community publishes trained checkpoints, you can:
+1. Download from Hugging Face Hub
+2. Run evaluation only: `./uts eval --model`
+
+---
+
+## Quick Reference
+
+```bash
+# Full workflow (copy-paste for A100)
 cd /teamspace/studios/this_studio && \
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git && \
 cd universal-translation-system && \
-pip install -e . && \
+pip install -e ".[train]" && \
 export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc" && \
-python -m data.unified_data_pipeline --config config/base.yaml
+./uts data --pipeline && \
+./uts vocab --build && \
+./uts train --full
 
-# After that, train:
-python -m training.launch train --config config/base.yaml
+# After training is complete:
+./uts eval --model --checkpoint checkpoints/*/best_model.pt
 ```
 
----
-
-## Where to find logs
+## File Locations
 
 | What | Where |
 |---|---|
+| Config | `config/base.yaml` |
+| Training data | `data/processed/train_final.txt` |
+| Vocabulary packs | `vocabulary/vocab/` |
+| Model checkpoints | `checkpoints/{experiment}/` |
+| Evaluation data | `data/evaluation/{pair}.tsv` |
+| Evaluation reports | `evaluation_reports/` |
 | Pipeline logs | `data/log/data.log` |
 | Training logs | `logs/training/` |
-| Config used | `config/base.yaml` |
-| Pipeline state | `data/pipeline_checkpoint.json` |
-| Model checkpoints | `checkpoints/default_run/` |
+
+## Common Issues
+
+| Error | Cause | Fix |
+|---|---|---|
+| `HMAC key not configured` | Missing `UTS_HMAC_KEY` | `export UTS_HMAC_KEY=...` |
+| `CUDA out of memory` | Batch too large for your GPU | Reduce `batch_size` or check [your tier](#before-you-start) |
+| `No module named '...'` | Missing dependency | `pip install -e ".[train]"` |
+| `ConnectionError` | Network issue | Retry with `--resume` |
+| Loss is NaN | LR too high | Reduce `lr` to `1e-4` |
+| BLEU ~0.0 after training | Only 1 epoch completed | Train 5-10 epochs for usable quality |
+| BLEU ~0.0 after 10 epochs | LoRA on random init | Set `use_lora: false` for full training |

@@ -135,6 +135,9 @@ evaluation_reports/
 # Runtime app config directory
 .universaltranslationsystem/
 
+# Profiling outputs
+profiling/
+
 # Temporary files
 *.tmp
 *.bak

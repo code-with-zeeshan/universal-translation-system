@@ -1,166 +1,139 @@
 # Training Guide
 
-## Prerequisites
-- Python 3.12+
-- CUDA-capable GPU (recommended)
-- 50GB+ free disk space
-- 16GB+ RAM
+Train a 150.8M-parameter multilingual NMT model (encoder 42.7M + decoder 108.1M).
 
-## 1. Data Preparation
-1. Run the unified data pipeline:
-   ```bash
-   python -m data.unified_data_pipeline --config config/base.yaml
-   ```
-   - Or using the pipeline CLI:
-   ```bash
-   python scripts/pipeline.py data --config config/base.yaml
-   ```
-   - Processed files are expected under `data/processed/` (e.g., `train_final.txt`, `val_final.txt`, `test_final.txt`).
-   - The dataset initializes `UnifiedVocabularyManager` using your config.
+## Quick Start
 
-2. Create or update vocabulary packs:
-   ```bash
-   # Using the pipeline CLI
-   python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir vocabulary/vocab
-   ```
-   - Configure vocabulary dir: `vocabulary.vocab_dir` in config.
-   - See [Vocabulary_Guide.md](Vocabulary_Guide.md) for details.
-
-## 2. Configuration
-- Base config: `config/base.yaml`
-- All config models defined in `config/schemas.py` (canonical hierarchy).
-- Key fields used by the launcher:
-  - **data.processed_dir**: path containing `train_final.txt`, `val_final.txt`, `test_final.txt`
-  - **data.cache_dir**: optional dataset cache
-  - **vocabulary.vocab_dir**: directory with vocabulary packs
-  - **model**: `vocab_size`, `hidden_dim`, `num_layers`, `num_heads`, `decoder_dim`, `decoder_layers`, `decoder_heads`, `dropout`, `max_seq_len`
-  - **training**: `batch_size`, `learning_rate`, `num_epochs`, `checkpoint_dir`
-  - **monitoring**: `use_wandb` etc.
-
-## 3. Training (Intelligent Trainer)
-Use the consolidated launcher with subcommands. The `IntelligentTrainer` class lives in `training/trainer.py`.
-
-- Basic single-GPU/CPU training:
-  ```bash
-  python -m training.launch train --config config/base.yaml
-  ```
-
-- Hardware-aware presets (configured via `training/hardware_profile.py`):
-  ```bash
-  # Examples (all use config/base.yaml with hardware-specific overrides)
-  python -m training.launch train --config config/base.yaml
-  ```
-
-- Override common hyperparameters from CLI:
-  ```bash
-  python -m training.launch train \
-    --config config/base.yaml \
-    --batch-size 64 \
-    --learning-rate 6e-4 \
-    --num-epochs 10 \
-    --experiment-name exp_generic_gpu
-  ```
-
-- Resume from a checkpoint:
-  ```bash
-  python -m training.launch train \
-    --config config/base.yaml \
-    --checkpoint checkpoints/exp_generic_gpu/best_model.pt
-  ```
-
-- Distributed training (DDP) on multiple GPUs:
-  ```bash
-  python -m training.launch train \
-    --config config/base.yaml \
-    --distributed \
-    --experiment-name exp_multi
-  ```
-
-- Evaluation:
-  ```bash
-  python -m training.launch evaluate --config config/base.yaml --checkpoint checkpoints/exp_generic_gpu/best_model.pt
-  ```
-
-Notes:
-- The launcher automatically sets TF32 for CUDA if available, cuDNN benchmark, etc.
-- Checkpoints are saved under `training.checkpoint_dir/<experiment_name>/`.
-- Memory optimization via `training/memory_trainer.py` (MemoryOptimizedTrainer) is activated automatically when memory mode is enabled.
-
-## 4. Evaluation
-Evaluate any trained checkpoint:
 ```bash
-python -m training.launch evaluate \
-  --config config/base.yaml \
-  --checkpoint checkpoints/exp_generic_gpu/best_model.pt \
-  --test-data data/processed/test_final.txt \
-  --batch-size 64 \
-  --output-dir results
+./uts train --full --config config/base.yaml
 ```
-- Results are saved to `<output-dir>/evaluation_results.json`.
-- See `evaluation/evaluator.py` and `evaluation/metrics.py` for details.
 
-## 5. Profiling and Benchmarking
-Profile a short training run and (optionally) benchmark common modes:
+## Training Strategy
+
+### Phase 1: Full Backbone Training (current)
+
+Train all 150.8M parameters on 20 languages. This builds strong multilingual representations.
+
+| Setting | Value | Why |
+|---|---|---|
+| `use_lora` | `false` | Train ALL params, not just adapters |
+| `num_epochs` | 10 | Enough for convergence |
+| `lr` | `3e-4` | Standard for full model training |
+| `warmup_steps` | 1000 | Quick warmup to target LR |
+| `batch_size` | 32 | Per-GPU, fits A100 40GB |
+| `accumulation_steps` | 4 | Effective batch = 128 |
+
+**Expected loss trajectory:**
+- Epoch 0: ~11.0 (random init)
+- Epoch 1: ~8.5
+- Epoch 3: ~5.5
+- Epoch 5: ~4.0
+- Epoch 10: ~3.0-3.5
+
+**Expected BLEU after 10 epochs:** 15-25 (varies by language pair)
+
+### Phase 2: LoRA Adapter Training (future languages)
+
+When adding language #21+, freeze backbone and train adapters:
+
+```yaml
+training:
+  use_lora: true
+  lora_r: 16        # Encoder LoRA rank
+  lora_r_decoder: 64 # Decoder LoRA rank (cloud can handle larger)
+  lora_alpha: 32
+  lora_dropout: 0.05
+```
+
+## CLI Flags
+
 ```bash
-python -m training.launch profile \
-  --config config/base.yaml \
-  --profile-steps 20 \
-  --benchmark \
-  --output-dir profiling
-```
-- See `training/training_analytics.py` and `training/model_profiler.py`.
-
-## 6. Progressive Training (Tiers)
-- Entry point: `training/progressive_training.py` (programmatic orchestrator).
-```python
-from training.progressive_training import ProgressiveTrainingOrchestrator
-
-orchestrator = ProgressiveTrainingOrchestrator(
-    base_config_path='config/base.yaml',
-    checkpoint_base_dir='checkpoints/progressive'
-)
+./uts train --full --config config/base.yaml \
+  --num-epochs 10 \
+  --batch-size 32 \
+  --lr 3e-4 \
+  --experiment-name my-run
 ```
 
-## 7. Bootstrapping From Pretrained (Optional)
+| Flag | Default | Description |
+|---|---|---|
+| `--full` | — | Full model training (all params) |
+| `--config` | `config/base.yaml` | Config file path |
+| `--distributed` | off | Multi-GPU distributed training |
+| `--num-epochs` | from config | Override training epochs |
+| `--batch-size` | from config | Override per-GPU batch size |
+| `--lr` | from config | Override learning rate |
+| `--experiment-name` | auto | Name for this training run |
+| `--checkpoint` | none | Resume from checkpoint path |
+
+## Config Reference
+
+Key settings in `config/base.yaml`:
+
+```yaml
+model:
+  max_vocab_size: 32000
+  hidden_dim: 512
+  num_layers: 6
+  num_heads: 8
+  decoder_dim: 768
+  decoder_layers: 8
+  decoder_heads: 12
+
+training:
+  use_lora: false
+  num_epochs: 10
+  lr: 3e-4
+  warmup_steps: 1000
+  weight_decay: 0.01
+  batch_size: 32
+  accumulation_steps: 4
+  effective_batch_size: 128
+  gradient_checkpointing: true
+  mixed_precision: true
+  dtype: bfloat16
+  compile_model: true
+```
+
+## Memory Usage (A100 40GB)
+
+| Config | VRAM | Batch | Speed |
+|---|---|---|---|
+| Full model, no optimizations | ~18 GB | 32 | baseline |
+| + gradient checkpointing | ~12 GB | 32 | ~1.2× slower |
+| + mixed precision (bf16) | ~8 GB | 32 | ~1.5× faster |
+| + compile | ~10 GB | 32 | ~2× faster |
+| **All optimizations** | **~10 GB** | **32** | **~2-3× faster** |
+
+## Monitoring
+
 ```bash
-python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_encoder_from_pretrained('xlm-roberta-base', 'models/encoder/universal_encoder_initial.pt', 1024)"
-python -c "from training.bootstrap_from_pretrained import PretrainedModelBootstrapper as B; b=B(); b.create_decoder_from_mbart('facebook/mbart-large-50', 'models/decoder/universal_decoder_initial.pt')"
-```
-- Produces: `models/encoder/universal_encoder_initial.pt`, `models/decoder/universal_decoder_initial.pt`
-- The training launcher automatically loads these if present.
+# Watch training progress
+tail -f logs/training/latest.log
 
-## 8. Quantization and Export (Post-Training)
-Produce deployment-friendly variants (INT8, FP16, mixed) and optional ONNX/CoreML/TFLite conversions.
+# Watch GPU usage
+watch -n1 nvidia-smi
 
-- Quantize encoder:
-```bash
-python -c "from training.encoder_quantizer import EncoderQuantizer; q=EncoderQuantizer(); q.create_deployment_versions('checkpoints/exp_generic_gpu/best_model.pt', test_data_path='data/processed/test_final.txt')"
-```
-- See `training/encoder_quantizer.py`, `training/quality_comparator.py`, `training/quantization_common.py`.
-
-- Convert encoder to ONNX:
-```bash
-python -c "import torch; from training.convert_models import ModelConverter as C; dummy=torch.randint(0,50000,(1,128)); C.pytorch_to_onnx('checkpoints/exp_generic_gpu/best_model.pt','models/export/encoder.onnx', dummy)"
-```
-- Convert to CoreML or TFLite:
-```bash
-python -c "from training.convert_models import ModelConverter as C; C.onnx_to_coreml('models/export/encoder.onnx','models/export/encoder.mlpackage')"
-python -c "from training.convert_models import ModelConverter as C; C.onnx_to_tflite('models/export/encoder.onnx','models/export/encoder.tflite')"
+# Compare experiments
+./uts tools --validate-config config/base.yaml
 ```
 
-## 9. Monitoring & Logs
-- Logs directory: set via `--log-dir` (default `logs/`).
-- GPU monitoring: `nvidia-smi` (Linux).
-- Optional Weights & Biases: enable in config (`monitoring.use_wandb: true`, default `false`).
-- Metrics via `monitoring/metrics.py` and `monitoring/metrics_collector.py`.
+## Checkpoint Structure
 
-## 10. Troubleshooting
-- **Missing data files**: Ensure `data/processed/train_final.txt` and `val_final.txt` exist.
-- **Out of memory**: lower `training.batch_size`; enable mixed precision; reduce sequence lengths; try `--distributed`.
-- **Slow training**: enable `torch.compile` via config; ensure latest CUDA drivers; increase DataLoader workers.
-- **Checkpoint load failures**: confirm path and integrity; use `training.training_validator.TrainingValidator.validate_checkpoint`.
+```
+checkpoints/{experiment_name}/
+├── best_model.pt           # Best validation loss
+├── checkpoint_epoch_*.pt   # Per-epoch snapshots
+├── training_state.json     # Optimizer state, epoch, step
+└── config.yaml             # Config used for this run
+```
 
----
+## Troubleshooting
 
-- The old scripts `training/train_universal_system.py` and `training/distributed_train.py` are deleted. Use `python -m training.launch` instead.
-- Backward-compatible shims exist: `training.intelligent_trainer` re-exports from `training.trainer`, etc.
+| Symptom | Cause | Fix |
+|---|---|---|
+| Loss stays high (~11) | Model not learning | Check `use_lora: false` in config |
+| Loss = NaN | LR too high | Reduce `lr` to `1e-4` |
+| CUDA OOM | Batch too large | Reduce `batch_size` or increase `accumulation_steps` |
+| Slow training | No compilation | Set `compile_model: true` |
+| Validation loss > training | Overfitting | Increase data or reduce epochs |
