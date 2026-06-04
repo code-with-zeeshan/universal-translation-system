@@ -9,6 +9,12 @@ torch-pruning>=1.3.0
 tqdm>=4.66.0
 wandb>=0.16.0
 
+# Hyperparameter optimization
+optuna>=3.4.0
+
+# TPU training support
+torch-xla>=2.1.0
+
 # Evaluation
 nltk>=3.8.0
 sacrebleu>=2.4.0
