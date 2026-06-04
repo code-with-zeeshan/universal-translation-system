@@ -339,20 +339,32 @@ class UnifiedDataPipeline:
         retry=retry_if_exception_type((ConnectionError, TimeoutError))
     )
     async def _download_evaluation_data(self):
-        """Download evaluation datasets or synthesize tiny samples in dry-run"""
+        """Download evaluation datasets or skip if already present"""
         with tracer.start_as_current_span("download_evaluation_data") as span:
             if getattr(self, 'dry_run', False):
                 self.logger.info("🧪 Dry-run: Skipping evaluation downloads and using synthesized samples")
                 span.set_attribute("dry_run", True)
                 return
+
+            # Skip if all expected eval files already exist
+            eval_dir = self.dirs['base'] / 'evaluation'
+            eval_pairs = self.downloader.get_required_pairs(DatasetType.EVALUATION)
+            if eval_dir.exists():
+                existing = sum(1 for p in eval_pairs if (eval_dir / f"{p.pair_string}.tsv").exists())
+                if existing == len(eval_pairs):
+                    self.logger.info(f"⏭️ All {existing} evaluation pair files exist, skipping download")
+                    span.set_attribute("skipped", True)
+                    return
+                elif existing > 0:
+                    self.logger.info(f"📥 {existing}/{len(eval_pairs)} eval files exist, downloading missing...")
             
             self.logger.info("📥 Downloading evaluation data...")
             stats = self.downloader.download_all(
                 output_dir=str(self.dirs['base']),
                 dataset_types=[DatasetType.EVALUATION]
             )
-            span.set_attribute("eval_data.files", stats.get('total_files', 0))
-            self.logger.info(f"✅ Downloaded {stats.get('total_files', 0)} evaluation datasets")
+            span.set_attribute("eval_data.files", stats.get('eval_files', 0))
+            self.logger.info(f"✅ Downloaded {stats.get('eval_files', 0)} evaluation datasets")
     
     async def _download_training_data(self):
         """Download training data based on strategy or synthesize in dry-run"""
@@ -824,6 +836,7 @@ def main():
     parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
     parser.add_argument('--stage', type=str, help='Run specific stage only')
     parser.add_argument('--reset', action='store_true', help='Reset pipeline state')
+    parser.add_argument('--eval-only', action='store_true', help='Download evaluation data only, skip all other stages')
     
     args = parser.parse_args()
     
@@ -844,7 +857,12 @@ def main():
         return
     
     # Run pipeline
-    if args.stage:
+    if args.eval_only:
+        print("\n🧪 Running evaluation-only download...")
+        stage = PipelineStage.DOWNLOAD_EVAL
+        asyncio.run(pipeline.run_single_stage(stage))
+        print("✅ Evaluation data download complete")
+    elif args.stage:
         # Run single stage
         stage = PipelineStage(args.stage)
         asyncio.run(pipeline.run_single_stage(stage))

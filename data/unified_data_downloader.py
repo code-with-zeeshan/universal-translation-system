@@ -321,10 +321,65 @@ class UnifiedDataDownloader:
         return stats
     
     def _download_evaluation_data(self, base_dir: str) -> Dict[str, Any]:
-        """Download evaluation datasets (from opus-100 test splits via training pipeline)"""
+        """Download evaluation datasets from opus-100 test splits"""
         output_dir = Path(base_dir) / 'evaluation'
         DirectoryManager.create_directory(output_dir)
-        return {}
+
+        if load_dataset is None:
+            self.logger.warning("datasets library not installed — skipping evaluation download")
+            return {'eval_files': 0, 'eval_pairs': 0}
+
+        stats = {'eval_files': 0, 'eval_pairs': 0}
+        eval_pairs = self.get_required_pairs(DatasetType.EVALUATION)
+
+        for pair in eval_pairs:
+            pair_str = pair.pair_string
+            output_file = output_dir / f"{pair_str}.tsv"
+
+            if output_file.exists():
+                self.logger.info(f"⏭️ {pair_str}.tsv already exists, skipping")
+                stats['eval_files'] += 1
+                stats['eval_pairs'] += 1
+                continue
+
+            self.logger.info(f"📥 Downloading opus-100 test split for {pair_str}...")
+            try:
+                dataset = self.dataset_loader.load_dataset_safely(
+                    'Helsinki-NLP/opus-100',
+                    config_name=pair_str,
+                    split='test',
+                    streaming=True,
+                )
+
+                if dataset is None:
+                    self.logger.warning(f"  No test split found for {pair_str}, skipping")
+                    continue
+
+                count = 0
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    for example in dataset:
+                        translation = example.get('translation', {})
+                        src_text = translation.get(pair.source, '')
+                        tgt_text = translation.get(pair.target, '')
+                        if src_text and tgt_text:
+                            f.write(f"{src_text}\t{tgt_text}\t{pair.source}\t{pair.target}\n")
+                            count += 1
+
+                if count > 0:
+                    self.logger.info(f"✅ Downloaded {count:,} test samples for {pair_str}")
+                    stats['eval_files'] += 1
+                    stats['eval_pairs'] += 1
+                else:
+                    self.logger.warning(f"  No samples for {pair_str}, removing empty file")
+                    output_file.unlink(missing_ok=True)
+
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to download eval data for {pair_str}: {e}")
+                output_file.unlink(missing_ok=True)
+                continue
+
+        self.logger.info(f"✅ Evaluation data: {stats['eval_files']} files, {stats['eval_pairs']} pairs")
+        return stats
     
     def _download_training_data(self, base_dir: str) -> Dict[str, Any]:
         """Download training datasets with smart strategy"""
