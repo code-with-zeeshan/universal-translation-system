@@ -115,8 +115,8 @@ class TranslationEvaluator:
             # Get target language ID
             target_lang_id = vocab_pack.special_tokens.get(f'<{target_lang}>', 2)
 
-            # Decode with beam search for quality
-            generated_ids, beam_log_probs = self.decoder.generate(
+            # Decode with nucleus sampling (beam search not supported by decoder)
+            generated_ids, _ = self.decoder.generate(
                 encoder_hidden_states=encoder_output,
                 encoder_attention_mask=attention_mask,
                 target_lang_id=target_lang_id,
@@ -124,17 +124,14 @@ class TranslationEvaluator:
                 temperature=0.7,
                 top_k=50,
                 top_p=0.9,
-                num_beams=4,
-                num_return_sequences=3 if return_candidates else 1,
             )
 
             if return_candidates:
                 candidates = []
-                for i, ids in enumerate(generated_ids):
-                    cand_text = self._detokenize(ids.cpu().numpy(), vocab_pack)
+                for i in range(min(generated_ids.size(0), 3)):
+                    cand_text = self._detokenize(generated_ids[i].cpu().numpy(), vocab_pack)
                     cand_text = postprocess_grammar(cand_text, target_lang)
-                    probs = beam_log_probs[i] if beam_log_probs is not None else None
-                    candidates.append((cand_text, probs))
+                    candidates.append((cand_text, None))
                 # Rerank by quality score
                 best = self._quality.rerank_candidates(source_text, candidates, source_lang, target_lang)
                 return best
