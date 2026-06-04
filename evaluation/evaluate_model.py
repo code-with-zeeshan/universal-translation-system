@@ -234,17 +234,22 @@ def main(
     # Load vocabulary manager
     logger.info("📚 Loading vocabulary...")
     try:
-        vocab_dir = Path(cfg.vocabulary.vocab_dir)
-        if not vocab_dir.exists() or not list(vocab_dir.glob('*_v*.msgpack')):
+        from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+        vocab_dir = cfg.vocabulary.vocab_dir
+        vocab_path = Path(vocab_dir)
+        if not vocab_path.exists() or not list(vocab_path.glob('*_v*.msgpack')):
             logger.error(f"❌ Vocabulary packs not found at {vocab_dir}")
             logger.error("   Run vocabulary creation first:")
             logger.error(f"     python -m data.pipeline_orchestrator --stage vocabulary")
-            logger.error("   Or transfer existing vocab packs from your training instance:")
+            logger.error("   Or transfer existing vocab packs:")
             logger.error(f"     cp /path/to/vocab/*.msgpack {vocab_dir}/")
             return False
 
-        from vocabulary import create_vocabulary_manager
-        vocab_manager = create_vocabulary_manager(cfg)
+        vocab_manager = UnifiedVocabularyManager(
+            cfg,
+            vocab_dir=vocab_dir,
+            mode=VocabularyMode.FULL,
+        )
         if vocab_manager is None:
             logger.error("❌ Failed to create vocabulary manager")
             return False
