@@ -1,26 +1,22 @@
-# config/training_rtx4090.yaml
-
-# RTX 4090-specific configuration (24GB memory, Ada Lovelace Architecture)
-# Inherits from base.yaml. More efficient than the 3090.
-
-_base_: base.yaml
-
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() RTX 4090 / MID_RANGE_SINGLE
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
   batch_size: 24
-  accumulation_steps: 5 # Effective batch size of 120 (close to 128)
+  accumulation_steps: 5
   effective_batch_size: 120
-  lr: 4e-4 # Can handle a slightly higher learning rate
-
-  # 24GB is still limited for large models, so keep gradient checkpointing.
-  # CPU offload is not necessary due to the fast VRAM.
-
+  lr: 4e-4
   gradient_checkpointing: true
   cpu_offload: false
   activation_offload: false
-  compile_mode: "reduce-overhead" # A good balance for high-end consumer cards.
-  dtype: bfloat16                # Excellent bfloat16 support.
+  compile_model: true
+  compile_mode: "reduce-overhead"
+  dtype: "bfloat16"
+  num_workers: 4
+  prefetch_factor: 4
+  warmup_steps: 2000
+  gradient_clipping: 1.0
+  use_flash_attention: true
+  use_channels_last: true
   max_split_size: 256
-
-distributed:
-  gradient_as_bucket_view: false
+  empty_cache_freq: 100

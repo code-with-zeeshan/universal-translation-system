@@ -1,12 +1,8 @@
-# config/training_v100_finetune.yaml
-# Inherits from the base V100 config but overrides for fine-tuning
-_base_: 'training_v100.yaml'
-
+# NOTE: Archived — NOT loaded by the trainer.
+# Fine-tune variant of the V100 config. The trainer has no separate fine-tune
+# strategy; override via CLI: --learning-rate 1e-5 --num-epochs 3
+# Base V100 settings in trainer.py "v100" strategy:
+#   batch_size=32, accumulation=4, lr=3e-4, dtype=float16
 training:
-  use_fsdp: false # DDP is often simpler and faster for smaller fine-tuning
-  mixed_precision: true
-  dtype: "float16"  
-  # Smaller learning rate for fine-tuning
   lr: 1e-5
-  # Use a higher temperature to focus on the new languages
   temperature: 3.0

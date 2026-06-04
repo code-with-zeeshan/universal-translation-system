@@ -1,24 +1,24 @@
-# config/training_h100.yaml
-
-# H100-specific configuration (80GB memory, Hopper Architecture)
-# Inherits from base.yaml and overrides for maximum performance.
-
-_base_: base.yaml
-
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() H100 / HIGH_END_SINGLE
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
   batch_size: 128
-  accumulation_steps: 1  # No accumulation needed with this batch size.
+  accumulation_steps: 1
   effective_batch_size: 128
-  lr: 6e-4 # H100 can sustain a high, stable learning rate.
+  lr: 6e-4
   gradient_checkpointing: false
   cpu_offload: false
   activation_offload: false
-  compile_mode: "max-autotune"  # H100 benefits most from aggressive compilation.
-  dtype: "bfloat16"             # Native support for bfloat16 is highly efficient.
-  # fp8 support could be added here in the future for even more performance.
-
-# Optimized distributed settings for high-speed interconnects (NVLink).
-distributed:
-  gradient_as_bucket_view: true
-  static_graph: true
+  compile_model: true
+  compile_mode: "max-autotune"
+  dtype: "bfloat16"
+  num_workers: 8
+  prefetch_factor: 8
+  warmup_steps: 4000
+  gradient_clipping: 1.0
+  use_flash_attention: true
+  use_channels_last: true
+  enable_nested_tensor: true
+  use_inductor: true
+  max_split_size: 512
+  empty_cache_freq: 100

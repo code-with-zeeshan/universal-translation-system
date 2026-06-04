@@ -1,24 +1,22 @@
-# config/training_cpu.yaml
-
-# CPU-only training configuration.
-# Inherits from base.yaml. For debugging, testing, and no-GPU environments.
-
-_base_: base.yaml
-
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() CPU_ONLY
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
   batch_size: 4
-  accumulation_steps: 1 # Accumulation is less relevant on CPU.
+  accumulation_steps: 1
   effective_batch_size: 4
-  lr: 1e-4 # Low learning rate for stable CPU training.
-  gradient_checkpointing: false # Not effective on CPU.
-  cpu_offload: false            # Irrelevant.
-  activation_offload: false     # Irrelevant.
-  compile_model: false          # torch.compile is primarily for GPUs.
-  dtype: "float32"              # CPU training must use float32.
-  flash_attention: false        # GPU-only feature.
-
-# Distributed training on CPU uses the 'gloo' backend.
-distributed:
-  backend: "gloo" # This must be changed from 'nccl' for CPU distributed training.
-  gradient_as_bucket_view: false
+  lr: 1e-4
+  gradient_checkpointing: false
+  cpu_offload: false
+  activation_offload: false
+  compile_model: false
+  compile_mode: "default"
+  dtype: "float32"
+  num_workers: 2
+  prefetch_factor: 2
+  warmup_steps: 100
+  gradient_clipping: 1.0
+  use_flash_attention: false
+  dynamic_batch_size: true
+  distributed_backend: "gloo"
+  pin_memory: false

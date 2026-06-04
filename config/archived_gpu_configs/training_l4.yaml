@@ -1,22 +1,20 @@
-# config/training_l4.yaml
-
-# L4-specific configuration (24GB memory, Ada Lovelace Architecture)
-# Inherits from base.yaml. Optimized for efficiency, not raw training speed.
-
-_base_: base.yaml
-
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() "l4"
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
-  batch_size: 16
-  accumulation_steps: 8
-  effective_batch_size: 128
-  lr: 2e-4 # Use a conservative learning rate for stability.
-  gradient_checkpointing: true
+  batch_size: 24  # subsequently overridden by probe (dynamic batch sizer)
+  accumulation_steps: 5
+  lr: 2e-4
+  gradient_checkpointing: false  # removed — let torch.compile fuse full graph
   cpu_offload: false
   activation_offload: false
-  compile_mode: "default" # A safe compilation mode for this efficiency-focused GPU.
-  dtype: "bfloat16"         # Ada architecture supports bfloat16.
+  compile_model: true
+  compile_mode: "reduce-overhead"  # decoder only; encoder exempted
+  dtype: "bfloat16"
+  num_workers: 4
+  prefetch_factor: 8
+  warmup_steps: 1500
+  gradient_clipping: 1.0
+  use_flash_attention: true
   max_split_size: 256
-
-distributed:
-  gradient_as_bucket_view: false
+  empty_cache_freq: 100

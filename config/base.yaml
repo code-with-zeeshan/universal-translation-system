@@ -135,7 +135,7 @@ model:
 training:
   # High-level strategy
   use_fsdp: false
-  num_epochs: 10
+  num_epochs: 1
   batch_size: 32
   accumulation_steps: 4
   effective_batch_size: 128

@@ -25,46 +25,50 @@ class DynamicBatchSizer:
     ) -> int:
         """Find max batch size that fits in GPU memory via dummy forward/backward.
 
-        Tries increasing batch sizes, catching OOM, and settles on the largest
-        that fits.  Runs before training so the scheduler and dataloader know
-        the real capacity from step one.
+        Compile is temporarily disabled during probe to avoid 11× re-trace
+        overhead — each probe batch size is a different tensor shape that
+        would trigger a fresh compilation.
         """
-        probe_sizes = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64]
+        import torch._dynamo
+        torch._dynamo.reset()
+
+        probe_sizes = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256]
         max_viable = self.min_batch_size
 
         encoder.train()
         decoder.train()
         dtype = next(iter(device.type == 'cuda' and [torch.bfloat16] or [torch.float32]))
 
-        for bs in probe_sizes:
-            if bs <= max_viable:
-                continue
-            try:
-                dummy_src = torch.randint(0, min(vocab_size, 1000), (bs, seq_len), device=device)
-                dummy_tgt = torch.randint(0, min(vocab_size, 1000), (bs, seq_len), device=device)
-                dummy_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
+        with torch._dynamo.config.patch(disable=True):
+            for bs in probe_sizes:
+                if bs <= max_viable:
+                    continue
+                try:
+                    dummy_src = torch.randint(0, min(vocab_size, 1000), (bs, seq_len), device=device)
+                    dummy_tgt = torch.randint(0, min(vocab_size, 1000), (bs, seq_len), device=device)
+                    dummy_mask = torch.ones(bs, seq_len, dtype=torch.bool, device=device)
 
-                with torch.amp.autocast(device_type=device.type, dtype=dtype):
-                    enc_out = encoder(dummy_src, dummy_mask)
-                    dec_out = decoder(
-                        decoder_input_ids=dummy_tgt[:, :-1],
-                        encoder_hidden_states=enc_out,
-                        encoder_attention_mask=dummy_mask,
-                    )
-                    loss = dec_out.mean()
+                    with torch.amp.autocast(device_type=device.type, dtype=dtype):
+                        enc_out = encoder(dummy_src, dummy_mask)
+                        dec_out = decoder(
+                            decoder_input_ids=dummy_tgt[:, :-1],
+                            encoder_hidden_states=enc_out,
+                            encoder_attention_mask=dummy_mask,
+                        )
+                        loss = dec_out.mean()
 
-                loss.backward()
-                encoder.zero_grad(set_to_none=True)
-                decoder.zero_grad(set_to_none=True)
-                torch.cuda.synchronize(device)
+                    loss.backward()
+                    encoder.zero_grad(set_to_none=True)
+                    decoder.zero_grad(set_to_none=True)
+                    torch.cuda.synchronize(device)
 
-                max_viable = bs
-                logger.info(f"  ✅ Probe batch_size={bs}: OK")
-            except Exception as e:
-                logger.info(f"  ❌ Probe batch_size={bs}: FAILED ({e})")
-                break
-            finally:
-                torch.cuda.empty_cache()
+                    max_viable = bs
+                    logger.info(f"  ✅ Probe batch_size={bs}: OK")
+                except Exception as e:
+                    logger.info(f"  ❌ Probe batch_size={bs}: FAILED ({e})")
+                    break
+                finally:
+                    torch.cuda.empty_cache()
 
         self.current_batch_size = max_viable
         self.max_batch_size = int(max_viable * 1.5)

@@ -245,428 +245,194 @@ class IntelligentTrainer(BaseTrainer):
             else:
                 return HardwareProfile.LOW_END_MULTI
     
+    @staticmethod
+    def _build_strategy(
+        hw_profile, *,
+        dtype="bfloat16", compile_mode="reduce-overhead",
+        num_workers=4, prefetch_factor=4,
+        gradient_checkpointing=True, cpu_offload=False, activation_offload=False,
+        max_split_size=256, empty_cache_freq=100,
+        use_flash_attention=True, use_channels_last=False, use_inductor=False,
+        enable_nested_tensor=False, use_fused_optimizer=True,
+        pin_memory=True, distributed_backend="nccl",
+        learning_rate=2e-4, warmup_steps=1500,
+    ) -> TrainingStrategy:
+        """Build a TrainingStrategy with shared defaults; batch_size and
+        accumulation_steps are placeholders overwritten by the startup probe."""
+        DTYPE_MAP = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+        mc = MemoryConfig(
+            gradient_checkpointing=gradient_checkpointing,
+            mixed_precision=True,
+            cpu_offload=cpu_offload,
+            activation_offload=activation_offload,
+            compile_model=True,
+            dtype=dtype, compile_mode=compile_mode,
+            use_flash_attention=use_flash_attention,
+            use_channels_last=use_channels_last,
+            use_inductor=use_inductor,
+            enable_nested_tensor=enable_nested_tensor,
+            empty_cache_freq=empty_cache_freq,
+            max_split_size=max_split_size,
+            use_fused_optimizer=use_fused_optimizer,
+        )
+        return TrainingStrategy(
+            hardware_profile=hw_profile,
+            use_distributed=False, distributed_backend=distributed_backend,
+            use_fsdp=False, use_ddp=False,
+            memory_config=mc,
+            batch_size=16,           # overwritten by startup probe (single GPU)
+            accumulation_steps=1,    # overwritten by startup probe
+            compile_mode=compile_mode,
+            mixed_precision_dtype=DTYPE_MAP[dtype],
+            num_workers=num_workers, pin_memory=pin_memory,
+            prefetch_factor=prefetch_factor,
+            gradient_clipping=1.0,
+            learning_rate=learning_rate, warmup_steps=warmup_steps,
+        )
+
     def _determine_optimal_strategy(self) -> TrainingStrategy:
-        """Determine optimal training strategy based on hardware - using extracted YAML values"""
-        
-        # Check for BFloat16 support
+        """Determine optimal training strategy based on hardware."""
         bf16_supported = torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False
-        
-        # Comprehensive strategy mapping based on your YAML configs
+
         strategies = {
-            # ============ HIGH-END GPUS ============
-        
-            # H100 (from training_h100.yaml)
-            HardwareProfile.HIGH_END_SINGLE: TrainingStrategy(
-                hardware_profile=HardwareProfile.HIGH_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=False,  # h100: false
-                    mixed_precision=True,
-                    cpu_offload=False,  # h100: false
-                    activation_offload=False,  # h100: false
-                    compile_model=True,
-                    dtype="bfloat16",  # h100: bfloat16
-                    compile_mode="max-autotune",  # h100: max-autotune
-                    use_flash_attention=True,
-                    use_channels_last=True,
+            # ============ HIGH-END ============
+            HardwareProfile.HIGH_END_SINGLE:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_SINGLE,
+                    compile_mode="max-autotune",
+                    num_workers=8, prefetch_factor=8,
+                    gradient_checkpointing=False,
+                    use_channels_last=True, use_inductor=True,
                     enable_nested_tensor=True,
-                    use_inductor=True,
-                    empty_cache_freq=100,
-                    max_split_size=512
+                    max_split_size=512,
+                    learning_rate=6e-4, warmup_steps=4000,
                 ),
-                batch_size=128,  # h100: 128
-                accumulation_steps=1,  # h100: 1
-                compile_mode="max-autotune",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=8,
-                pin_memory=True,
-                prefetch_factor=8,
-                gradient_clipping=1.0,
-                learning_rate=6e-4,  # h100: 6e-4
-                warmup_steps=4000  # from base.yaml
-            ),
-        
-            # A100 (from training_a100.yaml) 
-            # Also handles as HIGH_END_SINGLE alternative
-            "a100_single": TrainingStrategy(
-                hardware_profile=HardwareProfile.HIGH_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=False,  # a100: false
-                    mixed_precision=True,
-                    cpu_offload=False,  # a100: false
-                    activation_offload=False,  # a100: false
-                    compile_model=True,
-                    dtype="bfloat16",  # a100: bfloat16
-                    compile_mode="max-autotune",  # a100: max-autotune
-                    use_flash_attention=True,
-                    empty_cache_freq=100,
-                    max_split_size=512
+            "a100_single":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_SINGLE,
+                    compile_mode="max-autotune",
+                    num_workers=8, prefetch_factor=8,
+                    gradient_checkpointing=False,
+                    max_split_size=512,
+                    learning_rate=5e-4, warmup_steps=4000,
                 ),
-                batch_size=64,  # a100: 64
-                accumulation_steps=2,  # a100: 2
-                compile_mode="max-autotune",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=8,
-                pin_memory=True,
-                prefetch_factor=8,
-                gradient_clipping=1.0,
-                learning_rate=5e-4,  # a100: 5e-4
-                warmup_steps=4000
-            ),
-        
-            # A100 FSDP (from training_a100_fsdp.yaml) - for multi-GPU
-            HardwareProfile.HIGH_END_MULTI: TrainingStrategy(
-                hardware_profile=HardwareProfile.HIGH_END_MULTI,
-                use_distributed=True,
-                distributed_backend='nccl',
-                use_fsdp=True,  # a100_fsdp: true
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # a100_fsdp: true
-                    mixed_precision=True,
-                    cpu_offload=False,
-                    compile_model=True,
-                    dtype="bfloat16",  # a100_fsdp: bfloat16
-                    compile_mode="max-autotune",  # a100_fsdp: max-autotune
-                    use_flash_attention=True,
-                    use_inductor=True,
+            HardwareProfile.HIGH_END_MULTI:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_MULTI,
+                    compile_mode="max-autotune",
+                    num_workers=8, prefetch_factor=8,
+                    gradient_checkpointing=True,
+                    use_channels_last=True, use_inductor=True,
+                    enable_nested_tensor=True,
+                    learning_rate=5e-4, warmup_steps=4000,
+                ),
+            # HIGH_END_MULTI uses distributed settings applied post-hoc
+            # (use_distributed=True, use_fsdp=True, batch_size *= gpu_count)
+
+            # ============ MID-RANGE ============
+            HardwareProfile.MID_RANGE_SINGLE:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    gradient_checkpointing=True,
                     use_channels_last=True,
-                    enable_nested_tensor=True
+                    max_split_size=256,
+                    learning_rate=4e-4, warmup_steps=2000,
                 ),
-                batch_size=128 * self.hardware_info['gpu_count'],  # a100_fsdp: 128 per GPU
-                accumulation_steps=1,
-                compile_mode="max-autotune",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=8,
-                pin_memory=True,
-                prefetch_factor=8,
-                gradient_clipping=1.0,
-                learning_rate=5e-4,
-                warmup_steps=4000
-            ),
-        
-            # ============ MID-RANGE GPUS ============
-        
-            # RTX 4090 (from training_rtx4090.yaml)
-            HardwareProfile.MID_RANGE_SINGLE: TrainingStrategy(
-                hardware_profile=HardwareProfile.MID_RANGE_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                   gradient_checkpointing=True,  # rtx4090: true
-                   mixed_precision=True,
-                   cpu_offload=False,  # rtx4090: false
-                   activation_offload=False,  # rtx4090: false
-                   compile_model=True,
-                   dtype="bfloat16",  # rtx4090: bfloat16
-                   compile_mode="reduce-overhead",  # rtx4090: reduce-overhead
-                   use_flash_attention=True,
-                   use_channels_last=True,
-                   max_split_size=256,  # rtx4090: 256
-                   empty_cache_freq=100
+            "rtx3090":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    gradient_checkpointing=True,
+                    cpu_offload=True,
+                    max_split_size=256,
+                    learning_rate=3e-4, warmup_steps=2000,
                 ),
-                batch_size=24,  # rtx4090: 24
-                accumulation_steps=5,  # rtx4090: 5
-                compile_mode="reduce-overhead",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=4,
-                pin_memory=True,
-                prefetch_factor=4,
-                gradient_clipping=1.0,
-                learning_rate=4e-4,  # rtx4090: 4e-4
-                warmup_steps=2000
-            ),
-        
-            # RTX 3090 (from training_rtx3090.yaml)
-            "rtx3090": TrainingStrategy(
-                hardware_profile=HardwareProfile.MID_RANGE_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # rtx3090: true
-                    mixed_precision=True,
-                    cpu_offload=True,  # rtx3090: true
-                    activation_offload=False,  # rtx3090: false
-                    compile_model=True,
-                    dtype="bfloat16",  # rtx3090: bfloat16
-                    compile_mode="reduce-overhead",  # rtx3090: reduce-overhead
-                    use_flash_attention=True,
-                    max_split_size=256,  # rtx3090: 256
-                    empty_cache_freq=100
+            "v100":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    dtype="float16",
+                    gradient_checkpointing=True,
+                    max_split_size=512,
+                    learning_rate=3e-4, warmup_steps=2000,
                 ),
-                batch_size=16,  # rtx3090: 16
-                accumulation_steps=8,  # rtx3090: 8
-                compile_mode="reduce-overhead",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=4,
-                pin_memory=True,
-                prefetch_factor=4,
-                gradient_clipping=1.0,
-                learning_rate=3e-4,  # rtx3090: 3e-4
-                warmup_steps=2000
-            ),
-        
-            # V100 (from training_v100.yaml)
-            "v100": TrainingStrategy(
-                hardware_profile=HardwareProfile.MID_RANGE_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # v100: true
-                    mixed_precision=True,
-                    cpu_offload=False,  # v100: false
-                    activation_offload=False,  # v100: false
-                    compile_model=True,
-                    dtype="float16",  # v100: float16 (no bfloat16 support)
-                    compile_mode="reduce-overhead",  # v100: reduce-overhead
-                    use_flash_attention=True,
-                    empty_cache_freq=100,
-                    max_split_size=512
+            "l4":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    gradient_checkpointing=False,
+                    num_workers=4, prefetch_factor=8,
+                    max_split_size=256,
+                    learning_rate=2e-4, warmup_steps=1500,
                 ),
-                batch_size=32,  # v100: 32
-                accumulation_steps=4,  # v100: 4
-                compile_mode="reduce-overhead",
-                mixed_precision_dtype=torch.float16,  # V100 uses float16
-                num_workers=4,
-                pin_memory=True,
-                prefetch_factor=4,
-                gradient_clipping=1.0,
-                learning_rate=3e-4,  # v100: 3e-4
-                warmup_steps=2000
-            ),
-        
-            # L4 (from training_l4.yaml)
-            "l4": TrainingStrategy(
-                hardware_profile=HardwareProfile.MID_RANGE_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # l4: true
-                    mixed_precision=True,
-                    cpu_offload=False,  # l4: false
-                    activation_offload=False,  # l4: false
-                    compile_model=True,
-                    dtype="bfloat16",  # l4: bfloat16
-                    compile_mode="default",  # l4: default
-                    use_flash_attention=True,
-                    max_split_size=256,  # l4: 256
-                    empty_cache_freq=100
+
+            # ============ LOW-END ============
+            HardwareProfile.LOW_END_SINGLE:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    gradient_checkpointing=True,
+                    cpu_offload=True,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=128, empty_cache_freq=50,
+                    learning_rate=3e-4, warmup_steps=1000,
                 ),
-                batch_size=24,  # l4: 24 (batch 32 OOM; 24 fits with headroom)
-                accumulation_steps=5,  # l4: 5 (effective batch 120)
-                compile_mode="default",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=4,
-                pin_memory=True,
-                prefetch_factor=4,
-                gradient_clipping=1.0,
-                learning_rate=2e-4,  # l4: 2e-4
-                warmup_steps=1500
-            ),
-        
-            # ============ LOW-END GPUS ============
-        
-            # RTX 3080 (from training_rtx3080.yaml)
-            HardwareProfile.LOW_END_SINGLE: TrainingStrategy(
-                hardware_profile=HardwareProfile.LOW_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # rtx3080: true
-                    mixed_precision=True,
-                    cpu_offload=True,  # rtx3080: true
-                    activation_offload=False,  # rtx3080: false
-                    compile_model=True,
-                    dtype="bfloat16",  # rtx3080: bfloat16
-                    compile_mode="reduce-overhead",  # rtx3080: reduce-overhead
-                    use_flash_attention=True,
-                    max_split_size=128,  # rtx3080: 128
-                    empty_cache_freq=50  # rtx3080: 50
+            "rtx3060":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    gradient_checkpointing=True,
+                    cpu_offload=True, activation_offload=True,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=128, empty_cache_freq=50,
+                    learning_rate=2e-4, warmup_steps=1000,
                 ),
-                batch_size=8,  # rtx3080: 8
-                accumulation_steps=16,  # rtx3080: 16
-                compile_mode="reduce-overhead",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=2,
-                pin_memory=True,
-                prefetch_factor=2,
-                gradient_clipping=1.0,
-                learning_rate=3e-4,  # rtx3080: 3e-4
-                warmup_steps=1000
-            ),
-        
-            # RTX 3060 (from training_rtx3060.yaml)
-            "rtx3060": TrainingStrategy(
-                hardware_profile=HardwareProfile.LOW_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # rtx3060: true
-                    mixed_precision=True,
-                    cpu_offload=True,  # rtx3060: true
-                    activation_offload=True,  # rtx3060: true
-                    compile_model=True,
-                    dtype="bfloat16",  # rtx3060: bfloat16
-                    compile_mode="reduce-overhead",  # rtx3060: reduce-overhead
-                    use_flash_attention=True,
-                    max_split_size=128,  # rtx3060: 128
-                    empty_cache_freq=50  # rtx3060: 50
-                ),
-                batch_size=8,  # rtx3060: 8
-                accumulation_steps=16,  # rtx3060: 16
-                compile_mode="reduce-overhead",
-                mixed_precision_dtype=torch.bfloat16,
-                num_workers=2,
-                pin_memory=True,
-                prefetch_factor=2,
-                gradient_clipping=1.0,
-                learning_rate=2e-4,  # rtx3060: 2e-4
-                warmup_steps=1000
-            ),
-         
-            # T4 (from training_t4.yaml)
-            "t4": TrainingStrategy(
-                hardware_profile=HardwareProfile.LOW_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # t4: true
-                    mixed_precision=True,
-                    cpu_offload=True,  # t4: true
-                    activation_offload=True,  # t4: true
-                    compile_model=True,
-                    dtype="float16",  # t4: float16
-                    compile_mode="default",  # t4: default
-                    use_flash_attention=False,  # T4 may not support
-                    max_split_size=128,  # t4: 128
-                    empty_cache_freq=50  # t4: 50
-                ),
-                batch_size=8,  # t4: 8
-                accumulation_steps=16,  # t4: 16
-                compile_mode="default",
-                mixed_precision_dtype=torch.float16,
-                num_workers=2,
-                pin_memory=True,
-                prefetch_factor=2,
-                gradient_clipping=1.0,
-                learning_rate=2e-4,  # t4: 2e-4
-                warmup_steps=500
-            ),
-        
-            # Colab Free Tier (from training_colab_free.yaml - K80/T4)
-            "colab_free": TrainingStrategy(
-                hardware_profile=HardwareProfile.LOW_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=True,  # colab: true
-                    mixed_precision=True,
-                    cpu_offload=True,  # colab: true
-                    activation_offload=True,  # colab: true
-                    compile_model=False,  # colab: false (can be slow)
-                    dtype="float16",  # colab: float16
+            "t4":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    dtype="float16",
                     compile_mode="default",
-                    use_flash_attention=False,  # colab: false (K80 doesn't support)
-                    max_split_size=64,  # colab: 64
-                    empty_cache_freq=25  # colab: 25
+                    gradient_checkpointing=True,
+                    cpu_offload=True, activation_offload=True,
+                    use_flash_attention=False,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=128, empty_cache_freq=50,
+                    learning_rate=2e-4, warmup_steps=500,
                 ),
-                batch_size=4,  # colab: 4
-                accumulation_steps=32,  # colab: 32
-                compile_mode="default",
-                mixed_precision_dtype=torch.float16,
-                num_workers=2,
-                pin_memory=True,
-                prefetch_factor=2,
-                gradient_clipping=1.0,
-                learning_rate=1e-4,  # colab: 1e-4
-                warmup_steps=500
-            ),
-        
-            # ============ SPECIAL HARDWARE ============
-        
-            # AMD MI250 (from training_amd_mi250.yaml)
-            "amd_mi250": TrainingStrategy(
-                hardware_profile=HardwareProfile.HIGH_END_SINGLE,
-                use_distributed=False,
-                distributed_backend='nccl',  # PyTorch maps to rccl on ROCm
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=False,  # mi250: false
-                    mixed_precision=True,
-                    cpu_offload=False,  # mi250: false
-                    activation_offload=False,  # mi250: false
-                    compile_model=True,
-                    dtype="float16",  # mi250: float16 (broadly supported on ROCm)
-                    compile_mode="max-autotune",  # mi250: max-autotune
-                    use_flash_attention=True,  # mi250: true (ROCm 5.6+)
-                    empty_cache_freq=100
+            "colab_free":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    dtype="float16", compile_mode="default",
+                    gradient_checkpointing=True,
+                    cpu_offload=True, activation_offload=True,
+                    compile_model=False,
+                    use_flash_attention=False,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=64, empty_cache_freq=25,
+                    learning_rate=1e-4, warmup_steps=500,
                 ),
-                batch_size=64,  # mi250: 64
-                accumulation_steps=2,  # mi250: 2
-                compile_mode="max-autotune",
-                mixed_precision_dtype=torch.float16,
-                num_workers=8,
-                pin_memory=True,
-                prefetch_factor=8,
-                gradient_clipping=1.0,
-                learning_rate=5e-4,  # mi250: 5e-4
-                warmup_steps=4000
-            ),
-        
-            # CPU Only (from training_cpu.yaml)
-            HardwareProfile.CPU_ONLY: TrainingStrategy(
-                hardware_profile=HardwareProfile.CPU_ONLY,
-                use_distributed=False,
-                distributed_backend='gloo',  # cpu: gloo
-                use_fsdp=False,
-                use_ddp=False,
-                memory_config=MemoryConfig(
-                    gradient_checkpointing=False,  # cpu: false (not effective)
-                    mixed_precision=False,  # cpu: must be false
-                    cpu_offload=False,  # cpu: irrelevant
-                    activation_offload=False,  # cpu: irrelevant
-                    compile_model=False,  # cpu: false
-                    dtype="float32",  # cpu: float32
-                    compile_mode="default",
-                    use_flash_attention=False,  # cpu: false
-                    dynamic_batch_size=True
+
+            # ============ SPECIAL ============
+            "amd_mi250":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_SINGLE,
+                    dtype="float16", compile_mode="max-autotune",
+                    gradient_checkpointing=False,
+                    num_workers=8, prefetch_factor=8,
+                    learning_rate=5e-4, warmup_steps=4000,
                 ),
-                batch_size=4,  # cpu: 4
-                accumulation_steps=1,  # cpu: 1
-                compile_mode="default",
-                mixed_precision_dtype=torch.float32,
-                num_workers=2,
-                pin_memory=False,  # cpu: false
-                prefetch_factor=2,
-                gradient_clipping=1.0,
-                learning_rate=1e-4,  # cpu: 1e-4
-                warmup_steps=100
-            ),
+
+            # ============ CPU ============
+            HardwareProfile.CPU_ONLY:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.CPU_ONLY,
+                    dtype="float32", compile_mode="default",
+                    gradient_checkpointing=False,
+                    compile_model=False,
+                    use_flash_attention=False,
+                    pin_memory=False, distributed_backend="gloo",
+                    num_workers=2, prefetch_factor=2,
+                    learning_rate=1e-4, warmup_steps=100,
+                ),
         }
+        # Patch HIGH_END_MULTI for distributed mode
+        strategies[HardwareProfile.HIGH_END_MULTI].use_distributed = True
+        strategies[HardwareProfile.HIGH_END_MULTI].use_fsdp = True
     
         # GPU name mapping for detection
         gpu_mappings = {
@@ -843,22 +609,17 @@ class IntelligentTrainer(BaseTrainer):
         if self.strategy.memory_config.gradient_checkpointing:
             self._enable_gradient_checkpointing()
             
-        # Apply model compilation if beneficial
+        # Apply model compilation (decoder only — encoder is small and compile
+        # overhead exceeds benefit; decoder benefits from fused attention ops)
         if self.strategy.memory_config.compile_model and hasattr(torch, 'compile'):
             try:
-                self.encoder = torch.compile(
-                    self.encoder,
-                    mode=self.strategy.compile_mode,
-                    fullgraph=False,
-                    dynamic=True
-                )
                 self.decoder = torch.compile(
                     self.decoder,
                     mode=self.strategy.compile_mode,
                     fullgraph=False,
-                    dynamic=True
+                    dynamic=False
                 )
-                logger.info(f"✅ Models compiled with mode: {self.strategy.compile_mode}")
+                logger.info(f"✅ Decoder compiled with mode: {self.strategy.compile_mode}")
             except Exception as e:
                 logger.warning(f"⚠️ Model compilation failed: {e}")
         
@@ -952,9 +713,7 @@ class IntelligentTrainer(BaseTrainer):
         logger.info("✅ Gradient checkpointing enabled")
 
     def _probe_batch_size(self):
-        """Probe max batch size via dummy forward/backward, then update the
-        batch sizer and strategy so the dataloader and scheduler start at the
-        real capacity instead of a hardcoded guess."""
+        """Probe max batch size, then adapt accumulation and LR dynamically."""
         if self.strategy.use_distributed or not torch.cuda.is_available():
             return
         logger.info("📏 Probing max batch size...")
@@ -963,9 +722,29 @@ class IntelligentTrainer(BaseTrainer):
             seq_len=getattr(self.config.model, 'max_seq_length', 150),
             vocab_size=getattr(self.config.model, 'vocab_size', 32000),
         )
-        # Keep the strategy in sync so scheduler estimates are reasonable
         self.strategy.batch_size = found
-        logger.info(f"📏 Batch sizer updated: initial={found}, max={self.batch_sizer.max_batch_size}")
+
+        # Adapt accumulation to target a sane effective batch size per tier
+        target_eff = {
+            HardwareProfile.HIGH_END_SINGLE: 512,
+            HardwareProfile.HIGH_END_MULTI: 512,
+            HardwareProfile.MID_RANGE_SINGLE: 256,
+            HardwareProfile.MID_RANGE_MULTI: 256,
+            HardwareProfile.LOW_END_SINGLE: 192,
+            HardwareProfile.LOW_END_MULTI: 192,
+            HardwareProfile.CPU_ONLY: 32,
+        }.get(self.strategy.hardware_profile, 256)
+        self.strategy.accumulation_steps = max(1, target_eff // found)
+        effective = found * self.strategy.accumulation_steps
+
+        # Scale LR with sqrt(effective_batch / target_eff) so gradient
+        # statistics stay similar when batch size changes significantly.
+        self.strategy.learning_rate *= (effective / max(target_eff, 1)) ** 0.5
+
+        logger.info(
+            f"📏 batch={found}, accum={self.strategy.accumulation_steps}, "
+            f"effective={effective}, lr={self.strategy.learning_rate:.2e}"
+        )
 
     def _setup_optimization(self):
         """Setup optimizers and schedulers"""
@@ -1299,6 +1078,7 @@ class IntelligentTrainer(BaseTrainer):
                 # Optimizer step
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
+                self.scheduler.step()
             else:
                 # Clip gradients
                 torch.nn.utils.clip_grad_norm_(
@@ -1307,6 +1087,7 @@ class IntelligentTrainer(BaseTrainer):
                 )
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
+                self.scheduler.step()
         
         # Apply QAT if enabled
         if self.qat_enabled:

@@ -1,23 +1,21 @@
-# config/training_rtx3080.yaml
-
-# RTX 3080-specific configuration (10GB/12GB memory, Ampere Architecture)
-# Inherits from base.yaml. Memory is the primary constraint.
-
-_base_: base.yaml
-
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() RTX 3080 / LOW_END_SINGLE
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
   batch_size: 8
-  accumulation_steps: 16 # Accumulate heavily to reach effective batch size.
+  accumulation_steps: 16
   effective_batch_size: 128
-  lr: 3e-4 # A stable learning rate for this class of GPU.
+  lr: 3e-4
   gradient_checkpointing: true
-  cpu_offload: true             # Offload optimizer state to CPU to save VRAM.
+  cpu_offload: true
   activation_offload: false
+  compile_model: true
   compile_mode: "reduce-overhead"
-  dtype: "bfloat16"               # Ampere supports bfloat16.
-  max_split_size: 128           # Smaller memory splits for less fragmentation.
-  empty_cache_freq: 50          # Clean up memory more frequently.
-
-distributed:
-  gradient_as_bucket_view: false
+  dtype: "bfloat16"
+  num_workers: 2
+  prefetch_factor: 2
+  warmup_steps: 1000
+  gradient_clipping: 1.0
+  use_flash_attention: true
+  max_split_size: 128
+  empty_cache_freq: 50

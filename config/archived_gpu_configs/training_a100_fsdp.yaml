@@ -1,13 +1,24 @@
-# config/training_a100_fsdp.yaml
-# Inherits from the base A100 config but overrides for large scale
-_base_: 'training_a100.yaml'
-
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() HIGH_END_MULTI (A100 FSDP)
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
-  use_fsdp: false
-  sharding_strategy: "HYBRID_SHARD" # Better for large models
-  mixed_precision: true
-  dtype: "bfloat16"
+  use_fsdp: true
+  use_distributed: true
+  distributed_backend: "nccl"
+  batch_size: 128  # per GPU; multiplied by gpu_count at runtime
+  accumulation_steps: 1
+  lr: 5e-4
+  gradient_checkpointing: true
+  cpu_offload: false
+  activation_offload: false
   compile_model: true
   compile_mode: "max-autotune"
-  gradient_checkpointing: true
-  batch_size: 128 # Larger batch size for powerful GPUs
+  dtype: "bfloat16"
+  num_workers: 8
+  prefetch_factor: 8
+  warmup_steps: 4000
+  gradient_clipping: 1.0
+  use_flash_attention: true
+  use_inductor: true
+  use_channels_last: true
+  enable_nested_tensor: true

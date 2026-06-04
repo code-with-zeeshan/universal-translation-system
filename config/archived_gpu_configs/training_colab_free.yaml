@@ -1,25 +1,21 @@
-# config/training_colab_free.yaml
-
-# Google Colab (Free Tier) specific configuration (e.g., K80/T4 with ~12-15GB VRAM)
-# Inherits from base.yaml. This is the most memory-conservative setup.
-
-_base_: base.yaml
-
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() "colab_free"
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
   batch_size: 4
-  accumulation_steps: 32 # Maximum accumulation.
+  accumulation_steps: 32
   effective_batch_size: 128
-  lr: 1e-4 # Very low learning rate for training stability on older hardware.
+  lr: 1e-4
   gradient_checkpointing: true
   cpu_offload: true
   activation_offload: true
-  compile_model: false          # Compiling can be slow or fail on older GPUs.
-  dtype: "float16"              # float16 is the only safe option (K80 doesn't support bfloat16).
-  flash_attention: false        # K80 does not support Flash Attention.
-  max_split_size: 64            # Tiny memory splits.
-  empty_cache_freq: 25          # Very frequent memory cleanup.
-
-distributed:
-  # Distributed training is not applicable in a standard Colab notebook.
-  gradient_as_bucket_view: false
+  compile_model: false
+  compile_mode: "default"
+  dtype: "float16"
+  num_workers: 2
+  prefetch_factor: 2
+  warmup_steps: 500
+  gradient_clipping: 1.0
+  use_flash_attention: false
+  max_split_size: 64
+  empty_cache_freq: 25

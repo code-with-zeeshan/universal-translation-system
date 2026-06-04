@@ -1,22 +1,21 @@
-# config/training_t4.yaml
-# T4-specific configuration (16GB memory)
-_base_: base.yaml
-
-# T4 training settings - very limited memory
-# All settings are under the 'training' key to correctly override the base config.
+# NOTE: Archived — NOT loaded by the trainer.
+# Source of truth: trainer.py _determine_optimal_strategy() "t4"
+# Overridden by hardcoded TrainingStrategy — this file is documentation only.
 training:
   batch_size: 8
   accumulation_steps: 16
   effective_batch_size: 128
-  lr: 2e-4  # Lower LR for stability
+  lr: 2e-4
   gradient_checkpointing: true
   cpu_offload: true
   activation_offload: true
-  compile_mode: "default"  # T4 might struggle with aggressive compilation
+  compile_model: true
+  compile_mode: "default"
   dtype: "float16"
-  max_split_size: 128  # Very small splits for 16GB memory
-  empty_cache_freq: 50  # More frequent cleanup
-
-distributed:
-  gradient_as_bucket_view: false
-  bucket_cap_mb: 10  # Smaller buckets
+  num_workers: 2
+  prefetch_factor: 2
+  warmup_steps: 500
+  gradient_clipping: 1.0
+  use_flash_attention: false
+  max_split_size: 128
+  empty_cache_freq: 50
