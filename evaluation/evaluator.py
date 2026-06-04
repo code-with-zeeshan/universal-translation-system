@@ -443,43 +443,18 @@ class TranslationEvaluator:
             batch_size = len(uncached_pairs)
             decoder_input_ids = torch.full((batch_size, 1), target_lang_id, device=self.device)
 
-            finished = torch.zeros(batch_size, dtype=torch.bool, device=self.device)
-            eos_token_id = 2
-            pad_token_id = 0
-
-            for _ in range(127):
-                logits = self.decoder(
-                    decoder_input_ids, encoder_output, attention_masks
-                )
-                next_token_logits = logits[:, -1, :] / 0.7
-
-                top_k = 50
-                if top_k > 0:
-                    indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
-                    next_token_logits[indices_to_remove] = float('-inf')
-
-                top_p = 0.9
-                if top_p < 1.0:
-                    sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
-                    cumulative_probs = torch.cumsum(torch.softmax(sorted_logits, dim=-1), dim=-1)
-                    sorted_indices_to_remove = cumulative_probs > top_p
-                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                    sorted_indices_to_remove[..., 0] = 0
-                    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-                    next_token_logits[indices_to_remove] = float('-inf')
-
-                probs = torch.softmax(next_token_logits, dim=-1)
-                next_tokens = torch.multinomial(probs, num_samples=1)
-
-                finished = finished | (next_tokens.squeeze(-1) == eos_token_id)
-                next_tokens[finished] = pad_token_id
-                decoder_input_ids = torch.cat([decoder_input_ids, next_tokens], dim=1)
-
-                if finished.all():
-                    break
+            generated_ids, _ = self.decoder.generate(
+                encoder_hidden_states=encoder_output,
+                encoder_attention_mask=attention_masks,
+                target_lang_id=target_lang_id,
+                max_length=128,
+                temperature=0.7,
+                top_k=50,
+                top_p=0.9,
+            )
 
             for idx_in_batch, original_idx in enumerate(uncached_indices):
-                token_ids = decoder_input_ids[idx_in_batch].cpu().numpy()
+                token_ids = generated_ids[idx_in_batch].cpu().numpy()
                 translation = self._detokenize(token_ids, vocab_pack)
                 translation = postprocess_grammar(translation, target_lang)
                 predictions[original_idx] = (original_idx, translation)
