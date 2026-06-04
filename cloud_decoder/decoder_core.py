@@ -196,6 +196,7 @@ class OptimizedUniversalDecoder(nn.Module):
         top_p: float = 0.9,
         eos_token_id: int = 2,
         pad_token_id: int = 0,
+        target_lang: Optional[str] = None,
     ) -> Tuple[torch.Tensor, List[float]]:
         batch_size = encoder_hidden_states.size(0)
         device = encoder_hidden_states.device
@@ -207,7 +208,8 @@ class OptimizedUniversalDecoder(nn.Module):
 
         for step in range(max_length - 1):
             logits = self.forward(
-                decoder_input_ids, encoder_hidden_states, encoder_attention_mask
+                decoder_input_ids, encoder_hidden_states, encoder_attention_mask,
+                target_lang=target_lang,
             )
 
             next_token_logits = logits[:, -1, :] / temperature

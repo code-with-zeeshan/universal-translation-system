@@ -217,6 +217,12 @@ def main(
     encoder = build_encoder(cfg)
     decoder = build_decoder(cfg)
 
+    # Add target language adapters (must be done before LoRA wrapping)
+    if hasattr(cfg.data, 'languages'):
+        for lang in cfg.data.languages:
+            if lang != 'en':
+                decoder.add_target_language_adapter(lang)
+
     # Wrap with LoRA if configured
     encoder, decoder = wrap_with_lora(encoder, decoder, cfg)
 

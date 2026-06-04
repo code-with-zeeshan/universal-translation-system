@@ -125,6 +125,7 @@ class TranslationEvaluator:
                 temperature=0.7,
                 top_k=50,
                 top_p=0.9,
+                target_lang=target_lang,
             )
 
             if return_candidates:
@@ -452,6 +453,7 @@ class TranslationEvaluator:
                 temperature=0.7,
                 top_k=50,
                 top_p=0.9,
+                target_lang=target_lang,
             )
 
             for idx_in_batch, original_idx in enumerate(uncached_indices):
