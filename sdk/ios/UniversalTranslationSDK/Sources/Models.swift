@@ -10,11 +10,17 @@ public struct VocabularyPack: Codable {
     public let version: String
     public let languages: [String]
     public let tokens: [String: Int]
-    public let embeddings: [String: [Float]]?  //  Critical for quality!
-    public let compression: String?  //  "int8", "fp16", etc.
+    public let embeddings: [String: [Float]]?
+    public let compression: String?
     public let subwords: [String: Int]
     public let specialTokens: [String: Int]
-    public let metadata: VocabularyMetadata 
+    public let metadata: VocabularyMetadata
+    
+    // Repo configuration
+    public static let hfRepoID = "your-org/universal-translation-system"
+    public static let hfBase = "https://huggingface.co/\(hfRepoID)/resolve/main/vocabs"
+    public static let cdnBase = ProcessInfo.processInfo.environment["VOCAB_CDN_URL"]
+        ?? "https://cdn.universaltranslation.com/vocabs"
     
     // Computed properties
     public var totalTokens: Int {
@@ -35,15 +41,16 @@ public struct VocabularyPack: Codable {
         return documentsPath.appendingPathComponent("Vocabularies/\(name)_v\(version).msgpack").path
     }
     
-    // Download URL
-    public var downloadURL: String {
-        let baseURL = ProcessInfo.processInfo.environment["VOCAB_CDN_URL"] 
-            ?? "https://cdn.universaltranslation.com/vocabs"
-        return "\(baseURL)/\(name)_v\(version).msgpack"
+    // Download URLs — tried in order
+    public var downloadURLs: [String] {
+        [
+            "\(Self.hfBase)/\(name)_v\(version).msgpack",
+            "\(Self.cdnBase)/\(name)_v\(version).msgpack"
+        ]
     }
     
     public var url: URL? {
-        URL(string: downloadURL)
+        URL(string: downloadURLs.first ?? "")
     }
 }
 

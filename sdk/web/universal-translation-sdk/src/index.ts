@@ -168,45 +168,55 @@ export class TranslationEncoder {
   }
   
   private async loadVocabularyPack(packName: string): Promise<void> {
-    try {
-      const url = `${this.config.vocabUrl}/${packName}_v1.0.json`;
-      console.log(`📥 Loading vocabulary pack from: ${url}`);
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      // Validate vocabulary structure
-      if (!data.tokens || !data.subwords || !data.special_tokens) {
-        throw new Error('Invalid vocabulary pack structure');
-      }
-      
-      // Create vocabulary pack
-      const pack: VocabularyPack = {
-        name: data.name,
-        version: data.version || '1.0',
-        languages: data.languages || [],
-        tokens: data.tokens,
-        subwords: data.subwords,
-        special_tokens: data.special_tokens,
-        metadata: data.metadata || {
-          total_tokens: Object.keys(data.tokens).length + 
-                       Object.keys(data.subwords).length + 
-                       Object.keys(data.special_tokens).length,
-          size_mb: 0
+    const version = '1.0.0';
+    const urls = [
+      `${this.config.hfVocabUrl}/${packName}_v${version}.json`,
+      `${this.config.vocabUrl}/${packName}_v${version}.json`,
+    ];
+    
+    let lastError: Error | null = null;
+    for (const url of urls) {
+      try {
+        console.log(`📥 Loading vocabulary pack from: ${url}`);
+        const response = await fetch(url);
+        if (!response.ok) {
+          lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+          continue;
         }
-      };
-      
-      this.vocabularyCache.set(packName, pack);
-      console.log(`✅ Loaded vocabulary pack: ${packName} (${pack.metadata.total_tokens} tokens)`);
-      
-    } catch (error) {
-      console.error(`❌ Failed to load vocabulary pack ${packName}:`, error);
-      throw new Error(`Failed to load vocabulary pack ${packName}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        
+        const data = await response.json();
+        
+        // Validate vocabulary structure
+        if (!data.tokens || !data.subwords || !data.special_tokens) {
+          lastError = new Error('Invalid vocabulary pack structure');
+          continue;
+        }
+        
+        // Create vocabulary pack
+        const pack: VocabularyPack = {
+          name: data.name,
+          version: data.version || version,
+          languages: data.languages || [],
+          tokens: data.tokens,
+          subwords: data.subwords,
+          special_tokens: data.special_tokens,
+          metadata: data.metadata || {
+            total_tokens: Object.keys(data.tokens).length + 
+                         Object.keys(data.subwords).length + 
+                         Object.keys(data.special_tokens).length,
+            size_mb: 0
+          }
+        };
+        
+        this.vocabularyCache.set(packName, pack);
+        console.log(`✅ Loaded vocabulary pack: ${packName} (${pack.metadata.total_tokens} tokens)`);
+        return;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`⚠️ Failed to load from ${url}: ${lastError.message}`);
+      }
     }
+    throw lastError || new Error(`Failed to load vocabulary pack ${packName} from all sources`);
   }
   
   private tokenize(text: string, sourceLang: string): Int32Array {

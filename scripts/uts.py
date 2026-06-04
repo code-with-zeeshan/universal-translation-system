@@ -10,6 +10,7 @@ Run without arguments for an overview, or use subcommands.
   uts vocab          Vocabulary pack management
   uts train          Model training (full / progressive / LoRA)
   uts eval           Evaluation and benchmarking
+  uts publish        Publish trained model to Hugging Face Hub
   uts serve          Start decoder / coordinator services
   uts tools          Utilities (config, GPU check, secrets, etc.)
   uts docs           Open documentation
@@ -22,6 +23,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,6 +31,34 @@ PY = sys.executable
 
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+def _scale_config(config_path: str, scale: float) -> str:
+    """Read a YAML config, scale training_distribution values, write to temp file."""
+    try:
+        import yaml
+    except ImportError:
+        print("error: PyYAML required for --scale. Run: pip install pyyaml")
+        sys.exit(1)
+
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f)
+
+    td = cfg.get("data", {}).get("training_distribution", {})
+    if not td:
+        print("warning: training_distribution not found in config")
+        return config_path
+
+    for k in td:
+        td[k] = int(td[k] * scale)
+
+    # Also scale total_size_gb proportionally
+    cfg.setdefault("data", {})["total_size_gb"] = max(1, int(cfg["data"].get("total_size_gb", 2) * scale))
+
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+    yaml.dump(cfg, tmp)
+    tmp.close()
+    print(f"→ Scaled training_distribution by {scale}× → {tmp.name}")
+    return tmp.name
 
 def _run(*args: str, **kwargs):
     """Run a python module as `python -m module [args...]`."""
@@ -84,15 +114,18 @@ def build_setup_parser(sub: argparse.ArgumentParser):
 # ── data ─────────────────────────────────────────────────────────────
 
 def cmd_data(args: argparse.Namespace):
+    config = args.config
+    if args.scale and args.scale != 1.0:
+        config = _scale_config(config, args.scale)
     if args.pipeline:
-        _run("data.unified_data_pipeline", config=args.config, resume=args.resume,
+        _run("data.unified_data_pipeline", config=config, resume=args.resume,
              stage=args.stage, reset=args.reset)
     elif args.download_only:
-        _run("data.unified_data_pipeline", config=args.config, eval_only=True)
+        _run("data.unified_data_pipeline", config=config, eval_only=True)
     elif args.augment:
         _run_module("data/synthetic_augmentation.py")
     elif args.validate_data:
-        _run("data.unified_data_pipeline", config=args.config, stage="validate")
+        _run("data.unified_data_pipeline", config=config, stage="validate")
     else:
         print("See: uts data --help")
 
@@ -103,6 +136,8 @@ def build_data_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--augment", action="store_true", help="Run synthetic data augmentation")
     sub.add_argument("--validate-data", action="store_true", help="Validate pipeline output")
     sub.add_argument("--config", default="config/base.yaml", help="Config file path")
+    sub.add_argument("--scale", type=float, default=1.0,
+                     help="Scale training_distribution by factor (e.g., --scale 5 for 5× data)")
     sub.add_argument("--resume", action="store_true", help="Resume from last checkpoint")
     sub.add_argument("--reset", action="store_true", help="Reset pipeline state (start fresh)")
     sub.add_argument("--stage", help="Run a single pipeline stage")
@@ -204,6 +239,29 @@ def build_eval_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--test-data", default="data/evaluation", help="Test data directory")
     sub.add_argument("--profile-steps", type=int, default=10, help="Steps to profile")
     sub.add_argument("--output-dir", default="profiling", help="Profiling output directory")
+
+
+# ── publish ─────────────────────────────────────────────────────────
+
+def cmd_publish(args: argparse.Namespace):
+    cmd = ["--repo-id", args.repo_id]
+    if args.checkpoint:
+        cmd += ["--checkpoint", args.checkpoint]
+    if args.no_onnx:
+        cmd += ["--no-onnx"]
+    if args.no_quantize:
+        cmd += ["--no-quantize"]
+    if args.upload_only:
+        cmd += ["--upload-only"]
+    _run_script("scripts/publish.py", *cmd)
+
+
+def build_publish_parser(sub: argparse.ArgumentParser):
+    sub.add_argument("--repo-id", required=True, help="HF Hub repo ID (e.g., your-org/universal-translation-system)")
+    sub.add_argument("--checkpoint", help="Path to best_model.pt (auto-discovers)")
+    sub.add_argument("--no-onnx", action="store_true", help="Skip ONNX export")
+    sub.add_argument("--no-quantize", action="store_true", help="Skip quantization")
+    sub.add_argument("--upload-only", action="store_true", help="Just upload existing artifacts")
 
 
 # ── serve ────────────────────────────────────────────────────────────
@@ -355,6 +413,7 @@ Workflows (run `uts <group> --help` for details):
   vocab          Vocabulary pack: build or evolve
   train          Training: full model / progressive / LoRA
   eval           Evaluation: model eval, benchmark, data download
+  publish        Publish model to Hugging Face Hub (single source of truth)
   serve          Services: decoder server, coordinator, Redis
   tools          Utilities: config, GPU, secrets, upload, prefetch
   docs           Open documentation by topic
@@ -404,6 +463,11 @@ p_eval = subparsers.add_parser("eval", help="Evaluation and benchmarking")
 build_eval_parser(p_eval)
 p_eval.set_defaults(func=cmd_eval)
 
+# publish
+p_publish = subparsers.add_parser("publish", help="Publish model to Hugging Face Hub")
+build_publish_parser(p_publish)
+p_publish.set_defaults(func=cmd_publish)
+
 # serve
 p_serve = subparsers.add_parser("serve", help="Start serving infrastructure")
 build_serve_parser(p_serve)
@@ -430,6 +494,7 @@ def main():
         print("  2. uts data --pipeline")
         print("  3. uts train --full")
         print("  4. uts eval --model --checkpoint checkpoints/*/best_model.pt")
+        print("  5. uts publish --repo-id your-org/universal-translation-system")
         print()
         print("  uts docs --open setup     Full setup guide")
         print("  uts docs --open train     Training guide")

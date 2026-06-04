@@ -147,6 +147,12 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'medium',
             },
+            'opus_ccmatrix': {
+                'dataset_name': 'Helsinki-NLP/opus_ccmatrix',
+                'type': DatasetType.TRAINING,
+                'streaming': True,
+                'quality': 'medium',
+            },
             'open_subtitles': {
                 'dataset_name': 'Helsinki-NLP/open_subtitles',
                 'type': DatasetType.TRAINING,

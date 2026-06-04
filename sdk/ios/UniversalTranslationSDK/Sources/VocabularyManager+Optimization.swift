@@ -130,33 +130,35 @@ public class VocabularyManager {
     }
     
     public func downloadVocabulary(_ pack: VocabularyPack) async throws {
-        guard let url = pack.url else {
-            throw TranslationError.networkError(URLError(.badURL))
-        }
+        var lastError: Error? = nil
         
-        logger.info("Downloading vocabulary pack: \(pack.name) from \(url)")
-        
-        do {
-            let (data, response) = try await session.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                throw TranslationError.networkError(URLError(.badServerResponse))
+        for urlStr in pack.downloadURLs {
+            guard let url = URL(string: urlStr) else { continue }
+            do {
+                logger.info("Downloading vocabulary pack: \(pack.name) from \(url)")
+                let (data, response) = try await session.data(from: url)
+                
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    lastError = TranslationError.networkError(URLError(.badServerResponse))
+                    continue
+                }
+                
+                // Save to file
+                let tempURL = URL(fileURLWithPath: pack.localPath + ".tmp")
+                try data.write(to: tempURL)
+                
+                // Atomic move
+                _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: pack.localPath), withItemAt: tempURL)
+                
+                logger.info("Downloaded vocabulary pack: \(pack.name) (\(data.count) bytes)")
+                return
+            } catch {
+                lastError = error
+                logger.warning("Failed to download from \(urlStr): \(error.localizedDescription)")
             }
-            
-            // Save to file
-            let tempURL = URL(fileURLWithPath: pack.localPath + ".tmp")
-            try data.write(to: tempURL)
-            
-            // Atomic move
-            _ = try FileManager.default.replaceItemAt(URL(fileURLWithPath: pack.localPath), withItemAt: tempURL)
-            
-            logger.info("Downloaded vocabulary pack: \(pack.name) (\(data.count) bytes)")
-            
-        } catch {
-            logger.error("Failed to download vocabulary: \(error)")
-            throw TranslationError.networkError(error)
         }
+        throw lastError ?? TranslationError.networkError(URLError(.cannotFindHost))
     }
     
     public func loadVocabulary(from path: String) async throws -> VocabularyPack {
@@ -210,9 +212,12 @@ public class VocabularyManager {
         }
     }
     
+    private let hfBase = "https://huggingface.co/your-org/universal-translation-system/resolve/main/vocabs"
+    private let cdnBase = ProcessInfo.processInfo.environment["VOCAB_CDN_URL"]
+        ?? "https://cdn.universaltranslation.com/vocabs"
+    
     private func getDownloadURL(for packName: String) -> String {
-        // Replace with your actual CDN URL
-        return "https://cdn.yourdomain.com/vocabs/\(packName)_v1.0.vocab"
+        "\(hfBase)/\(packName)_v1.0.msgpack"
     }
     
     private func getPackSize(_ packName: String) -> Double {

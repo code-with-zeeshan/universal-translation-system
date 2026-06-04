@@ -12,6 +12,9 @@ import 'models/vocabulary_pack.dart';
 class VocabularyManager {
   static final Logger _logger = Logger();
   
+  static const String hfBase = 'https://huggingface.co/your-org/universal-translation-system/resolve/main/vocabs';
+  static const String cdnBase = 'https://cdn.yourdomain.com/vocabs';
+  
   static const Map<String, String> _languageToPack = {
     'en': 'latin',
     'es': 'latin',
@@ -94,10 +97,16 @@ class VocabularyManager {
     return pack;
   }
   
-  /// Get download URL for vocabulary pack
+  /// Get download URLs for vocabulary pack — HF Hub primary, CDN fallback
+  List<String> getDownloadUrls(String packName, {String version = '1.0.0'}) {
+    return [
+      '$hfBase/${packName}_v$version.msgpack',
+      '$cdnBase/${packName}_v$version.msgpack',
+    ];
+  }
+  
   String _getDownloadUrl(String packName) {
-    // Replace with your actual CDN URL
-    return 'https://cdn.yourdomain.com/vocabs/${packName}_v1.0.msgpack';
+    return getDownloadUrls(packName).first;
   }
   
   /// Get all downloaded packs

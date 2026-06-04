@@ -249,25 +249,32 @@ class TranslationEncoder {
     }
   }
   
-  /// Download vocabulary pack
+  /// Download vocabulary pack — try HF Hub first, CDN fallback
   Future<void> _downloadVocabulary(VocabularyPack pack) async {
-    try {
-      final response = await http.get(Uri.parse(pack.downloadUrl));
-      
-      if (response.statusCode != 200) {
-        throw Exception('Failed to download vocabulary: ${response.statusCode}');
+    final urls = [
+      pack.downloadUrl,
+      pack.downloadUrl.replaceFirst(
+        'https://huggingface.co/your-org/universal-translation-system/resolve/main/vocabs',
+        'https://cdn.yourdomain.com/vocabs',
+      ),
+    ];
+    
+    for (final url in urls) {
+      try {
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode == 200) {
+          final file = File(pack.localPath);
+          await file.parent.create(recursive: true);
+          await file.writeAsBytes(response.bodyBytes);
+          _logger.i('Downloaded vocabulary pack: ${pack.name} from $url');
+          return;
+        }
+        _logger.w('HTTP ${response.statusCode} from $url');
+      } catch (e) {
+        _logger.w('Failed to download from $url: $e');
       }
-      
-      // Save to file
-      final file = File(pack.localPath);
-      await file.parent.create(recursive: true);
-      await file.writeAsBytes(response.bodyBytes);
-      
-      _logger.i('Downloaded vocabulary pack: ${pack.name} (${response.bodyBytes.length} bytes)');
-    } catch (e) {
-      _logger.e('Failed to download vocabulary', error: e);
-      rethrow;
     }
+    throw Exception('Failed to download vocabulary: all sources failed');
   }
   
   /// Get current memory usage

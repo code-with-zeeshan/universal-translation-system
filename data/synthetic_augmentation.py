@@ -1491,7 +1491,7 @@ class SyntheticDataAugmenter:
         source_lang: str,
         target_lang: str,
         output_file: str,
-        max_sentences: int = 100000,
+        max_sentences: int = 500000,
         batch_size: int = 128,
     ) -> Dict[str, int]:
         """

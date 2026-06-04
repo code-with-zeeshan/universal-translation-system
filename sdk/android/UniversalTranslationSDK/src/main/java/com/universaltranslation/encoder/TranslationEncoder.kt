@@ -78,6 +78,9 @@ class VocabularyManager(private val context: Context) {
     companion object {
         const val TAG = "VocabularyManager"
         const val VOCAB_DIR = "vocabularies"
+        const val HF_REPO_ID = "your-org/universal-translation-system"
+        const val HF_BASE = "https://huggingface.co/$HF_REPO_ID/resolve/main/vocabs"
+        const val CDN_BASE = "https://cdn.yourdomain.com/vocabs"
         val LANGUAGE_TO_PACK = mapOf(
             "en" to "latin", "es" to "latin", "fr" to "latin",
             "de" to "latin", "it" to "latin", "pt" to "latin",
@@ -119,7 +122,11 @@ class VocabularyManager(private val context: Context) {
     }
     
     private fun getDownloadUrl(packName: String): String {
-        return "https://cdn.yourdomain.com/vocabs/${packName}_v1.0.msgpack"
+        return "$HF_BASE/${packName}_v1.0.msgpack"
+    }
+    
+    private fun getCdnDownloadUrl(packName: String): String {
+        return "$CDN_BASE/${packName}_v1.0.msgpack"
     }
     
     private fun getPackSize(packName: String): Float {
@@ -280,29 +287,39 @@ class TranslationEncoder(private val context: Context) {
     }
     
     private suspend fun downloadVocabulary(vocabPack: VocabularyPack) = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(vocabPack.downloadUrl)
-            .build()
+        // Try Hugging Face Hub first, fall back to CDN
+        val urls = listOf(
+            "$HF_BASE/${vocabPack.name}_v${vocabPack.version}.msgpack",
+            "$CDN_BASE/${vocabPack.name}_v${vocabPack.version}.msgpack"
+        )
+        var lastError: Exception? = null
         
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("Failed to download vocabulary: ${response.code}")
+        for (url in urls) {
+            try {
+                val request = Request.Builder().url(url).build()
+                httpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        response.body?.let { body ->
+                            val tempFile = File(vocabPack.localPath + ".tmp")
+                            tempFile.outputStream().use { output ->
+                                body.byteStream().copyTo(output)
+                            }
+                            if (!tempFile.renameTo(File(vocabPack.localPath))) {
+                                tempFile.delete()
+                                throw IOException("Failed to save vocabulary pack")
+                            }
+                            Log.d(TAG, "Downloaded vocabulary pack: ${vocabPack.name} from $url")
+                            return@withContext
+                        } ?: throw IOException("Empty response body")
+                    }
+                    lastError = IOException("HTTP ${response.code} from $url")
+                }
+            } catch (e: Exception) {
+                lastError = e
+                Log.w(TAG, "Failed to download from $url: ${e.message}")
             }
-            
-            response.body?.let { body ->
-                val tempFile = File(vocabPack.localPath + ".tmp")
-                tempFile.outputStream().use { output ->
-                    body.byteStream().copyTo(output)
-                }
-                
-                if (!tempFile.renameTo(File(vocabPack.localPath))) {
-                    tempFile.delete()
-                    throw IOException("Failed to save vocabulary pack")
-                }
-                
-                Log.d(TAG, "Downloaded vocabulary pack: ${vocabPack.name} (${vocabPack.sizeMb}MB)")
-            } ?: throw IOException("Empty response body")
         }
+        throw lastError ?: IOException("All download sources failed")
     }
     
     fun getMemoryUsage(): Long {

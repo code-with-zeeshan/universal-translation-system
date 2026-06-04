@@ -68,45 +68,47 @@ extension VocabularyManager {
     
     // Download and process vocabulary with compression support
     public func downloadVocabulary(_ pack: VocabularyPack) async throws {
-        guard let url = pack.url else {
-            throw TranslationError.networkError(URLError(.badURL))
-        }
+        var lastError: Error? = nil
         
-        logger.info("Downloading vocabulary pack: \(pack.name) from \(url)")
-        
-        do {
-            let (data, response) = try await session.data(from: url)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                throw TranslationError.networkError(URLError(.badServerResponse))
+        for urlStr in pack.downloadURLs {
+            guard let url = URL(string: urlStr) else { continue }
+            do {
+                logger.info("Downloading vocabulary pack: \(pack.name) from \(url)")
+                let (data, response) = try await session.data(from: url)
+                
+                guard let httpResponse = response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    lastError = TranslationError.networkError(URLError(.badServerResponse))
+                    continue
+                }
+                
+                // Check if data is compressed
+                let processedData: Data
+                if isCompressed(data) {
+                    processedData = try decompressData(data)
+                    logger.info("Decompressed vocabulary data")
+                } else {
+                    processedData = data
+                }
+                
+                // Create vocabulary directory if needed
+                let vocabDir = URL(fileURLWithPath: pack.localPath).deletingLastPathComponent()
+                try FileManager.default.createDirectory(at: vocabDir, withIntermediateDirectories: true)
+                
+                // Save to file
+                let fileURL = URL(fileURLWithPath: pack.localPath)
+                try processedData.write(to: fileURL)
+                
+                // Verify the download
+                let savedPack = try await loadVocabulary(from: pack.localPath)
+                logger.info("Downloaded and verified vocabulary pack: \(savedPack.name)")
+                return
+            } catch {
+                lastError = error
+                logger.warning("Failed to download from \(urlStr): \(error.localizedDescription)")
             }
-            
-            // Check if data is compressed
-            let processedData: Data
-            if isCompressed(data) {
-                processedData = try decompressData(data)
-                logger.info("Decompressed vocabulary data")
-            } else {
-                processedData = data
-            }
-            
-            // Create vocabulary directory if needed
-            let vocabDir = URL(fileURLWithPath: pack.localPath).deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: vocabDir, withIntermediateDirectories: true)
-            
-            // Save to file
-            let fileURL = URL(fileURLWithPath: pack.localPath)
-            try processedData.write(to: fileURL)
-            
-            // Verify the download
-            let savedPack = try await loadVocabulary(from: pack.localPath)
-            logger.info("Downloaded and verified vocabulary pack: \(savedPack.name)")
-            
-        } catch {
-            logger.error("Failed to download vocabulary: \(error)")
-            throw TranslationError.networkError(error)
         }
+        throw lastError ?? TranslationError.networkError(URLError(.cannotFindHost))
     }
     
     private func isCompressed(_ data: Data) -> Bool {

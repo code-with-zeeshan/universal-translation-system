@@ -114,10 +114,10 @@ data_strategy:
     low: ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
   
   source_preferences:
-    en_centric: ['opus-100', 'opus_opensubtitles', 'wmt']
-    european: ['opus-100', 'opus_opensubtitles', 'wmt']
-    asian: ['opus-100']
-    default: ['opus-100', 'opus_opensubtitles']
+    en_centric: ['opus-100', 'opus_ccmatrix', 'opus_paracrawl', 'open_subtitles', 'wmt19', 'wmt20', 'wmt21']
+    european: ['opus-100', 'opus_ccmatrix', 'opus_paracrawl', 'open_subtitles', 'wmt19', 'wmt20', 'wmt21']
+    asian: ['opus-100', 'opus_ccmatrix']
+    default: ['opus-100', 'open_subtitles']
 
 
 # Model architecture (compact ~40MB target)
@@ -206,12 +206,13 @@ pipeline:
     - download_training
     - sample_filter
     - augment
+    - comet_quality
     - create_ready
     - validate
     - vocabulary
   comet_quality_threshold: 0.7
-  max_dynamic_ff_per_pair: 5000
-  max_idiom_per_lang: 2000
+  max_dynamic_ff_per_pair: 25000
+  max_idiom_per_lang: 10000
 
 security:
   trusted_model_sources:

@@ -11,6 +11,7 @@ export interface SdkConfig {
   // Model paths
   modelUrl: string;
   vocabUrl: string;
+  hfVocabUrl: string;
   wasmEncoderPath: string;
   
   // Version information
@@ -33,6 +34,7 @@ export function getConfig(): SdkConfig {
     // Model paths
     modelUrl: process.env.MODEL_URL || '/models/universal_encoder.onnx',
     vocabUrl: process.env.VOCAB_URL || '/vocabs',
+    hfVocabUrl: process.env.HF_VOCAB_URL || 'https://huggingface.co/your-org/universal-translation-system/resolve/main/vocabs',
     wasmEncoderPath: process.env.WASM_ENCODER_PATH || '/wasm/encoder.js',
     
     // Version information

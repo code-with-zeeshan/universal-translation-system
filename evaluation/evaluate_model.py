@@ -195,9 +195,19 @@ def main(
     Returns:
         True on success, False on failure
     """
-    # Default paths
+    # Default paths — try published model first, then fall back to latest checkpoint
     config = config or 'config/base.yaml'
-    checkpoint = checkpoint or 'models/production/best_model.pt'
+    if not checkpoint:
+        published = Path('models/production/best_model.pt')
+        if published.exists():
+            checkpoint = str(published)
+        else:
+            candidates = sorted(Path('checkpoints').rglob('best_model.pt'))
+            if candidates:
+                checkpoint = str(candidates[-1])
+                logger.info(f"📦 Using latest checkpoint: {checkpoint}")
+            else:
+                checkpoint = 'models/production/best_model.pt'
     test_data = test_data or 'data/evaluation'
 
     # Load config
