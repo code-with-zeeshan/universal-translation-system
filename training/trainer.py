@@ -725,6 +725,17 @@ class IntelligentTrainer(BaseTrainer):
         )
         self.strategy.batch_size = found
 
+        # When compile is active, CUDA graph caches add ~1-2 GB overhead
+        # that the eager-mode probe doesn't account for. Step back one
+        # probe size to leave headroom.
+        if self.strategy.memory_config.compile_model:
+            safe_sizes = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256]
+            idx = safe_sizes.index(found)
+            if idx > 3:  # don't go below a minimum of ~12
+                found = safe_sizes[idx - 1]
+                self.strategy.batch_size = found
+                self.batch_sizer.current_batch_size = found
+
         # Adapt accumulation to target a sane effective batch size per tier
         target_eff = {
             HardwareProfile.HIGH_END_SINGLE: 512,
