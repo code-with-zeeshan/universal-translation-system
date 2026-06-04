@@ -571,27 +571,14 @@ class TranslationEvaluator:
         for i in tqdm(range(0, len(test_data), batch_size), desc="Translating"):
             batch = test_data[i:i + batch_size]
 
-            for pair in batch:
-                # Check cache
-                cache_key = f"{pair.source_lang}-{pair.target_lang}:{pair.source}"
+            batch_results = self._process_batch(batch, cache if use_cache else None)
 
-                if use_cache and cache_key in cache:
-                    translation = cache[cache_key]
-                else:
-                    # Translate
-                    translation = self.translate(
-                        pair.source,
-                        pair.source_lang,
-                        pair.target_lang
-                    )
+            predictions.extend(batch_results['predictions'])
+            references.extend(batch_results['references'])
+            source_texts.extend(batch_results['sources'])
 
-                    if use_cache:
-                        cache[cache_key] = translation
-
+            for pair, translation in zip(batch, batch_results['predictions']):
                 pair.predicted = translation
-                predictions.append(translation)
-                references.append(pair.target)
-                source_texts.append(pair.source)
 
         # Save cache
         if use_cache:
