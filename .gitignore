@@ -130,6 +130,7 @@ vocabulary/temp_*
 
 # Evaluation reports (regenerated)
 evaluation/reports/
+evaluation_reports/
 
 # Runtime app config directory
 .universaltranslationsystem/
