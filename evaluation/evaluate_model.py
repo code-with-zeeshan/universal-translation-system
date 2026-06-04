@@ -93,9 +93,12 @@ def load_checkpoint(
     if 'encoder_state_dict' in ckpt and 'decoder_state_dict' in ckpt:
         enc_sd = ckpt['encoder_state_dict']
         dec_sd = ckpt['decoder_state_dict']
-        # Strip PEFT prefix if needed (base_model.model.xxx -> xxx)
-        enc_sd = {k.removeprefix('base_model.model.'): v for k, v in enc_sd.items()}
-        dec_sd = {k.removeprefix('base_model.model.'): v for k, v in dec_sd.items()}
+        # Strip torch.compile prefix _orig_mod. but KEEP PEFT prefix base_model.model.
+        # The checkpoint was saved from a compiled+PEFT model, giving keys like:
+        #   _orig_mod.base_model.model.transformer_layers.0.q_proj.lora_A.default.weight
+        # The PEFT-wrapped model expects: base_model.model.transformer_layers.0.q_proj.lora_A.default.weight
+        enc_sd = {k.removeprefix('_orig_mod.'): v for k, v in enc_sd.items()}
+        dec_sd = {k.removeprefix('_orig_mod.'): v for k, v in dec_sd.items()}
         enc_missing, enc_unexpected = encoder.load_state_dict(enc_sd, strict=False)
         dec_missing, dec_unexpected = decoder.load_state_dict(dec_sd, strict=False)
         if enc_missing:
@@ -231,6 +234,15 @@ def main(
     # Load vocabulary manager
     logger.info("📚 Loading vocabulary...")
     try:
+        vocab_dir = Path(cfg.vocabulary.vocab_dir)
+        if not vocab_dir.exists() or not list(vocab_dir.glob('*_v*.msgpack')):
+            logger.error(f"❌ Vocabulary packs not found at {vocab_dir}")
+            logger.error("   Run vocabulary creation first:")
+            logger.error(f"     python -m data.pipeline_orchestrator --stage vocabulary")
+            logger.error("   Or transfer existing vocab packs from your training instance:")
+            logger.error(f"     cp /path/to/vocab/*.msgpack {vocab_dir}/")
+            return False
+
         from vocabulary import create_vocabulary_manager
         vocab_manager = create_vocabulary_manager(cfg)
         if vocab_manager is None:

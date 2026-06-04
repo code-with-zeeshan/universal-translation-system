@@ -342,39 +342,54 @@ class UnifiedDataDownloader:
                 stats['eval_pairs'] += 1
                 continue
 
-            self.logger.info(f"📥 Downloading opus-100 test split for {pair_str}...")
-            try:
-                dataset = self.dataset_loader.load_dataset_safely(
-                    'Helsinki-NLP/opus-100',
-                    config_name=pair_str,
-                    split='test',
-                    streaming=True,
-                )
+            # Try direct config first (en-X), then reversed (X-en) if that fails
+            config_name = pair_str
+            reverse_config = f"{pair.target}-{pair.source}"
+            swap_src_tgt = False
 
-                if dataset is None:
-                    self.logger.warning(f"  No test split found for {pair_str}, skipping")
+            for attempt_cfg in [config_name, reverse_config]:
+                self.logger.info(f"📥 Downloading opus-100 test split for {pair_str} (config={attempt_cfg})...")
+                try:
+                    dataset = self.dataset_loader.load_dataset_safely(
+                        'Helsinki-NLP/opus-100',
+                        config_name=attempt_cfg,
+                        split='test',
+                        streaming=True,
+                    )
+
+                    if dataset is None:
+                        self.logger.warning(f"  No test split found for {attempt_cfg}")
+                        continue
+
+                    count = 0
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        for example in dataset:
+                            translation = example.get('translation', {})
+                            if attempt_cfg == reverse_config:
+                                # Config is reversed, swap source/target extraction
+                                src_text = translation.get(pair.target, '')
+                                tgt_text = translation.get(pair.source, '')
+                            else:
+                                src_text = translation.get(pair.source, '')
+                                tgt_text = translation.get(pair.target, '')
+                            if src_text and tgt_text:
+                                f.write(f"{src_text}\t{tgt_text}\t{pair.source}\t{pair.target}\n")
+                                count += 1
+
+                    if count > 0:
+                        self.logger.info(f"✅ Downloaded {count:,} test samples for {pair_str}")
+                        stats['eval_files'] += 1
+                        stats['eval_pairs'] += 1
+                        break
+                    else:
+                        self.logger.warning(f"  No samples for {attempt_cfg}, trying next")
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Config {attempt_cfg} failed: {e}")
                     continue
-
-                count = 0
-                with open(output_file, 'w', encoding='utf-8') as f:
-                    for example in dataset:
-                        translation = example.get('translation', {})
-                        src_text = translation.get(pair.source, '')
-                        tgt_text = translation.get(pair.target, '')
-                        if src_text and tgt_text:
-                            f.write(f"{src_text}\t{tgt_text}\t{pair.source}\t{pair.target}\n")
-                            count += 1
-
-                if count > 0:
-                    self.logger.info(f"✅ Downloaded {count:,} test samples for {pair_str}")
-                    stats['eval_files'] += 1
-                    stats['eval_pairs'] += 1
-                else:
-                    self.logger.warning(f"  No samples for {pair_str}, removing empty file")
-                    output_file.unlink(missing_ok=True)
-
-            except Exception as e:
-                self.logger.warning(f"⚠️ Failed to download eval data for {pair_str}: {e}")
+            else:
+                # Both config attempts failed
+                self.logger.warning(f"  Failed to download eval data for {pair_str} (tried both {config_name} and {reverse_config})")
                 output_file.unlink(missing_ok=True)
                 continue
 
