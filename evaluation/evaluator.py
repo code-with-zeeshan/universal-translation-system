@@ -543,6 +543,9 @@ class TranslationEvaluator:
             with open(cache_file, 'r') as f:
                 cache = json.load(f)
 
+        # Sort by source length for efficient batching (minimizes padding)
+        test_data.sort(key=lambda p: len(p.source.split()))
+
         # Process in batches
         for i in tqdm(range(0, len(test_data), batch_size), desc="Translating"):
             batch = test_data[i:i + batch_size]
