@@ -5,6 +5,7 @@ import numpy as np
 from tqdm import tqdm
 import json
 import logging
+import datetime
 from dataclasses import dataclass
 from collections import defaultdict
 try:
@@ -717,7 +718,7 @@ class TranslationEvaluator:
             "details": metrics,
             "language_pairs": metrics.get('language_pair_scores', {}),
             "metadata": {
-                "evaluation_date": str(Path.cwd().ctime()),
+                "evaluation_date": str(datetime.datetime.now()),
                 "model_info": {
                     "encoder": self.encoder.__class__.__name__,
                     "decoder": self.decoder.__class__.__name__,
