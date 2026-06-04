@@ -169,7 +169,7 @@ def evaluate_file(
         if lang_pair_scores:
             logger.info("Per-language-pair BLEU:")
             for pair, score in sorted(lang_pair_scores.items()):
-                logger.info(f"  {pair}: BLEU={score.get('bleu', 'N/A'):.2f} "
+                logger.info(f"  {pair}: BLEU={score.get('bleu', 'N/A')} "
                           f"({score.get('sample_count', 0)} samples)")
 
         logger.info(f"✅ {test_file.name} evaluation complete")
