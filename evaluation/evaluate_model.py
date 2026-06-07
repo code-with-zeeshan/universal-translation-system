@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any, List
 
 import torch
 
-from evaluation.metrics import TranslationPair
+from evaluation.evaluator import TranslationPair
 from evaluation.evaluator import TranslationEvaluator, evaluate_translation_quality
 from config.schemas import load_config as load_pydantic_config
 from utils.constants import (

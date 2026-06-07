@@ -3,7 +3,7 @@ Tests for evaluation.metrics - translation data structures.
 """
 
 import pytest
-from evaluation.metrics import TranslationPair
+from evaluation.evaluator import TranslationPair
 
 
 class TestTranslationPair:

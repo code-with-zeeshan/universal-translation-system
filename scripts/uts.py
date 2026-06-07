@@ -112,6 +112,9 @@ def cmd_setup(args: argparse.Namespace):
     if args.validate:
         _run_script("scripts/validate_config.py", args.validate)
         return
+    if args.verify:
+        _run_script("scripts/first_time_success.py")
+        return
     parser.print_help()
 
 
@@ -119,6 +122,7 @@ def build_setup_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--check", action="store_true", help="Run GPU / environment readiness check")
     sub.add_argument("--config-wizard", action="store_true", help="Interactive config wizard")
     sub.add_argument("--validate", metavar="CONFIG_PATH", help="Validate a config YAML file")
+    sub.add_argument("--verify", action="store_true", help="Verify post-deployment setup (check services, endpoints, sample translation)")
 
 
 # ── data ─────────────────────────────────────────────────────────────
@@ -136,6 +140,8 @@ def cmd_data(args: argparse.Namespace):
         _run_module("data/synthetic_augmentation.py")
     elif args.validate_data:
         _run("data.unified_data_pipeline", config=config, stage="validate")
+    elif args.domains:
+        _run_module("data/acquire_domain_data.py", "--domains", args.domains)
     else:
         print("See: uts data --help")
 
@@ -145,6 +151,7 @@ def build_data_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--download-only", action="store_true", help="Download evaluation data only")
     sub.add_argument("--augment", action="store_true", help="Run synthetic data augmentation")
     sub.add_argument("--validate-data", action="store_true", help="Validate pipeline output")
+    sub.add_argument("--domains", metavar="LIST", help="Download domain-specific data (e.g., medical,legal)")
     sub.add_argument("--config", default="config/base.yaml", help="Config file path")
     sub.add_argument("--scale", type=float, default=1.0,
                      help="Scale training_distribution by factor (e.g., --scale 5 for 5× data)")
@@ -165,6 +172,10 @@ def cmd_vocab(args: argparse.Namespace):
     elif args.evolve:
         _run_module("vocabulary/evolve_vocabulary.py",
                      *(("--pack", args.pack) if args.pack else []))
+    elif args.sign_vocab:
+        _run_script("scripts/build_and_upload_pipeline.py", "--sign-packs")
+    elif args.verify_vocab:
+        _run_module("vocabulary/vocab_validation.py", "--verify")
     else:
         print("See: uts vocab --help")
 
@@ -172,6 +183,8 @@ def cmd_vocab(args: argparse.Namespace):
 def build_vocab_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--build", action="store_true", help="Build vocabulary packs from processed data")
     sub.add_argument("--evolve", action="store_true", help="Evolve an existing vocabulary pack")
+    sub.add_argument("--sign-vocab", action="store_true", help="Sign vocabulary packs with HMAC")
+    sub.add_argument("--verify-vocab", action="store_true", help="Verify vocabulary pack signatures")
     sub.add_argument("--vocab-size", type=int, default=32000, help="Tokens per vocabulary pack")
     sub.add_argument("--mode", choices=["production", "research", "hybrid"], help="Creation mode")
     sub.add_argument("--groups", nargs="*", help="Specific groups: latin cjk arabic devanagari cyrillic thai")
@@ -192,6 +205,13 @@ def cmd_train(args: argparse.Namespace):
              learning_rate=args.lr,
              experiment_name=args.experiment_name,
              checkpoint=checkpoint)
+    elif args.distill:
+        _run_module("training/distillation_trainer.py",
+                     config=args.config,
+                     teacher=args.teacher or "facebook/nllb-200-3.3B",
+                     alpha=args.distill_alpha,
+                     temperature=args.distill_temp,
+                     num_epochs=args.num_epochs)
     elif args.progressive:
         _run_module("training/progressive_training.py",
                      *(("--start-from-tier", args.start_tier) if args.start_tier else []),
@@ -206,6 +226,10 @@ def cmd_train(args: argparse.Namespace):
 
 def build_train_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--full", action="store_true", help="Full model training (all parameters)")
+    sub.add_argument("--distill", action="store_true", help="Knowledge distillation from a teacher model")
+    sub.add_argument("--teacher", default="facebook/nllb-200-3.3B", help="Teacher model for distillation")
+    sub.add_argument("--distill-alpha", type=float, default=0.5, help="CE vs KD loss weight (0-1)")
+    sub.add_argument("--distill-temp", type=float, default=4.0, help="Distillation temperature")
     sub.add_argument("--progressive", action="store_true", help="Progressive multi-tier training")
     sub.add_argument("--lora", action="store_true", help="Show LoRA adapter training instructions")
     sub.add_argument("--config", default="config/base.yaml", help="Config file path")
@@ -268,6 +292,12 @@ def cmd_publish(args: argparse.Namespace):
         cmd += ["--no-quantize"]
     if args.upload_only:
         cmd += ["--upload-only"]
+    if args.preflight:
+        _run_module("tools/cloud_preflight.py")
+        return
+    if args.optimize_decoder:
+        _run_module("cloud_decoder/quantize_optimize.py")
+        return
     _run_script("scripts/publish.py", *cmd)
 
 
@@ -277,6 +307,8 @@ def build_publish_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--no-onnx", action="store_true", help="Skip ONNX export")
     sub.add_argument("--no-quantize", action="store_true", help="Skip quantization")
     sub.add_argument("--upload-only", action="store_true", help="Just upload existing artifacts")
+    sub.add_argument("--preflight", action="store_true", help="Run cloud preflight checks before publish")
+    sub.add_argument("--optimize-decoder", action="store_true", help="Quantize and optimize the decoder model")
 
 
 # ── serve ────────────────────────────────────────────────────────────
@@ -328,6 +360,13 @@ def cmd_tools(args: argparse.Namespace):
         _run_script("scripts/upload_artifacts.py", f"--repo_id={args.repo_id or args.upload}")
     elif args.version:
         _run_script("scripts/version_manager.py", "show")
+    elif args.register_decoder:
+        _run_module("tools/register_decoder_node.py")
+    elif args.build_encoder:
+        _run_script("scripts/build_encoder_core.sh", args.build_target or "--all")
+    elif args.check_compat:
+        _run_script("scripts/compatibility_checks.py",
+                     *(("--version-config", args.version_config) if args.version_config else []))
     elif args.install:
         _run_script("scripts/install.sh",
                      *(["--train"] if args.train else []),
@@ -354,6 +393,12 @@ def build_tools_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--set-env", action="store_true", help="Set env vars for preview")
     sub.add_argument("--upload", nargs="?", const=True, help="Upload artifacts to HF Hub")
     sub.add_argument("--version", action="store_true", help="Show component versions")
+    sub.add_argument("--register-decoder", action="store_true", help="Register a decoder node with the coordinator pool")
+    sub.add_argument("--build-encoder", nargs="?", const="--all",
+                     help="Build native C++ encoder core for all platforms")
+    sub.add_argument("--build-target", help="Target platform for encoder build (auto: --all)")
+    sub.add_argument("--check-compat", action="store_true", help="Run API/schema/version compatibility checks")
+    sub.add_argument("--version-config", help="Path to version-config.json for compatibility check")
     sub.add_argument("--install", action="store_true", help="Install system dependencies")
     sub.add_argument("--train", action="store_true", help="Install training deps")
     sub.add_argument("--serve", action="store_true", help="Install serving deps")

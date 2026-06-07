@@ -8,6 +8,16 @@ import logging
 import datetime
 from dataclasses import dataclass
 from collections import defaultdict
+from typing import List, Optional as ListOpt, Dict, Any
+
+
+@dataclass
+class TranslationPair:
+    source: str
+    target: str
+    source_lang: str
+    target_lang: str
+    predicted: Optional[str] = None
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
@@ -30,11 +40,7 @@ except ImportError:
     COMET_AVAILABLE = False
 
 from utils.constants import EVALUATION_REPORT_FILENAME
-from evaluation.metrics import TranslationPair
 from utils.translation_quality import TranslationQualityPipeline, apply_tone_prompt, postprocess_grammar, score_translation_quality
-
-from utils.constants import EVALUATION_REPORT_FILENAME
-from evaluation.metrics import TranslationPair
 
 
 class TranslationEvaluator:

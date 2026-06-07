@@ -48,6 +48,7 @@ from utils.rate_limiter import RateLimiter
 from utils.redis_manager import RedisManager
 from utils.exceptions import ConfigurationError, NetworkError
 from utils.security import validate_model_source, safe_load_model
+from coordinator.circuit_breaker import CircuitBreakerRegistry, CircuitState
 
 # --- Configuration and Constants ---
 from utils.logging_config import setup_logging, get_logger
@@ -489,6 +490,9 @@ class DecoderPool:
         self.node_watchers = {}
         self.discovery_thread = None
         
+        # Circuit breaker registry
+        self.circuit_breakers = CircuitBreakerRegistry()
+        
         if self.use_etcd:
             self._setup_etcd()
         
@@ -712,6 +716,14 @@ class DecoderPool:
             logger.error(f"Error during sync reload: {e}")
             # Fallback to disk
             self._load_from_disk()
+        self._init_circuit_breakers()
+
+    def _init_circuit_breakers(self):
+        """Ensure every node has a circuit breaker registered."""
+        for node in self.nodes:
+            nid = node.get('node_id', node.get('endpoint'))
+            if nid and not self.circuit_breakers.get(nid):
+                self.circuit_breakers.register(nid)
 
     def _load_from_disk(self):
         """Synchronously loads the pool nodes and AB tests configuration from the JSON file."""
@@ -856,10 +868,18 @@ class DecoderPool:
                 # In a real scenario, parse metrics from health endpoint (load/uptime)
                 node['load'] = random.randint(0, node.get('capacity', 100))
                 node['uptime'] = node.get('uptime', 0) + 10
+                # Record success in circuit breaker
+                cb = self.circuit_breakers.get(node['node_id'])
+                if cb:
+                    cb.record_success()
             else:
                 node['healthy'] = False
                 node['load'] = -1
                 node['uptime'] = 0
+                # Record failure in circuit breaker
+                cb = self.circuit_breakers.get(node['node_id'])
+                if cb:
+                    cb.record_failure()
 
             # Process loaded adapters response
             if isinstance(adapters_resp, httpx.Response) and adapters_resp.status_code == 200:
@@ -873,14 +893,22 @@ class DecoderPool:
             node['uptime'] = 0
             node['hot_adapters'] = []
             logger.warning(f"Health check failed for node {node['node_id']}: {e}")
+            # Record exception in circuit breaker
+            cb = self.circuit_breakers.get(node['node_id'])
+            if cb:
+                cb.record_failure()
 
     async def get_healthy_decoders(self) -> List[Dict]:
         async with self.lock:
-            return [n for n in self.nodes if n.get('healthy')]
+            return [
+                n for n in self.nodes if n.get('healthy')
+                and self.circuit_breakers.get(n['node_id'], CircuitState.CLOSED) != CircuitState.OPEN
+            ]
 
     async def add_decoder(self, node: Dict):
         async with self.lock:
             self.nodes.append(node)
+            self.circuit_breakers.register(node.get('node_id', node.get('endpoint')))
             await self._save()
 
     async def remove_decoder(self, node_id: str):
