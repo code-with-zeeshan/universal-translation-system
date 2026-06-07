@@ -5,11 +5,19 @@ import { config } from './config';
 
 const tracer = trace.getTracer('universal-translation-sdk');
 const MODEL_VERSION = config.modelVersion;
+const HF_REPO = config.hfRepo;
+
+interface CoordinatorStatus {
+  single_decoder: boolean;
+  decoder_pool_size: number;
+  healthy_decoders: number;
+  decoders: { node_id: string; endpoint: string }[];
+}
 
 // Error codes enum - matching Android implementation
 export enum TranslationErrorCode {
   NETWORK_ERROR = "NETWORK_ERROR",
-  MODEL_NOT_FOUND = "MODEL_NOT_FOUND",
+  MODEL_NOT_FOUND = "MODEL_NOT_FOUND",  
   VOCABULARY_NOT_LOADED = "VOCABULARY_NOT_LOADED",
   ENCODING_FAILED = "ENCODING_FAILED",
   DECODING_FAILED = "DECODING_FAILED",
@@ -52,6 +60,9 @@ class TranslationAnalytics {
 
 export interface TranslationClientOptions {
   decoderUrl?: string;
+  coordinatorUrl?: string;
+  localDecoderUrl?: string;
+  preferLocal?: boolean;
   timeout?: number;
   retryCount?: number;
   enableAnalytics?: boolean;
@@ -59,6 +70,11 @@ export interface TranslationClientOptions {
 
 export class TranslationClient {
   private decoderUrl: string;
+  private coordinatorUrl: string | null;
+  private localDecoderUrl: string | null;
+  private preferLocal: boolean;
+  private localDecoderAvailable: boolean = false;
+  private useCoordinator: boolean = false;
   private timeout: number;
   private retryCount: number;
   private analytics: TranslationAnalytics;
@@ -66,10 +82,99 @@ export class TranslationClient {
   
   constructor(options: TranslationClientOptions = {}) {
     this.decoderUrl = options.decoderUrl || config.decoderApiUrl;
-    this.timeout = options.timeout || 30000; // 30 seconds default
+    this.coordinatorUrl = options.coordinatorUrl || config.coordinatorApiUrl || null;
+    this.localDecoderUrl = options.localDecoderUrl || null;
+    this.preferLocal = options.preferLocal !== false;
+    this.timeout = options.timeout || 30000;
     this.retryCount = options.retryCount || 2;
     this.enableAnalytics = options.enableAnalytics !== false;
     this.analytics = new TranslationAnalytics();
+    
+    if (this.localDecoderUrl && this.preferLocal) {
+      this.checkLocalDecoder();
+    }
+    if (this.coordinatorUrl) {
+      this.resolveCoordinator();
+    }
+    this.checkEncoderUpdate();
+  }
+
+  private async checkLocalDecoder(): Promise<void> {
+    try {
+      const resp = await fetch(`${this.localDecoderUrl}/health`, { signal: AbortSignal.timeout(2000) });
+      this.localDecoderAvailable = resp.ok;
+    } catch {
+      this.localDecoderAvailable = false;
+    }
+  }
+
+  private getBaseUrl(): string {
+    if (this.localDecoderAvailable && this.preferLocal && this.localDecoderUrl) {
+      return this.localDecoderUrl;
+    }
+    if (this.useCoordinator && this.coordinatorUrl) {
+      return this.coordinatorUrl;
+    }
+    return this.decoderUrl;
+  }
+
+  private async resolveCoordinator(): Promise<void> {
+    try {
+      const resp = await fetch(`${this.coordinatorUrl}/api/status`, { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) return;
+      const status: CoordinatorStatus = await resp.json();
+      if (status.single_decoder && status.decoders.length > 0) {
+        this.decoderUrl = status.decoders[0].endpoint;
+        this.useCoordinator = false;
+      } else {
+        this.useCoordinator = true;
+      }
+    } catch {
+      console.warn('Coordinator unreachable, falling back to direct decoder');
+    }
+  }
+
+  private async checkEncoderUpdate(): Promise<void> {
+    try {
+      const resp = await fetch(`https://huggingface.co/${HF_REPO}/raw/main/models/production/encoder.onnx`, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(5000)
+      });
+      if (!resp.ok) return;
+      const remoteEtag = resp.headers.get('etag') || resp.headers.get('last-modified') || '';
+      const cachedEtag = await this.getCachedEtag();
+      if (remoteEtag && remoteEtag !== cachedEtag) {
+        await this.cacheEtag(remoteEtag);
+        this.downloadEncoderUpdate();
+      }
+    } catch {
+      // Offline or HF unavailable, bundled encoder is fine
+    }
+  }
+
+  private async getCachedEtag(): Promise<string | null> {
+    try {
+      const val = await NativeModules?.UniversalTranslationEncoder?.getCachedEtag?.();
+      return val || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async cacheEtag(etag: string): Promise<void> {
+    try {
+      await NativeModules?.UniversalTranslationEncoder?.cacheEtag?.(etag);
+    } catch {
+      // Non-critical, bundled encoder works fine
+    }
+  }
+
+  private async downloadEncoderUpdate(): Promise<void> {
+    try {
+      await NativeModules?.UniversalTranslationEncoder?.downloadEncoderUpdate?.();
+    } catch {
+      console.warn('Failed to download encoder update, using bundled version');
+    }
   }
   
   get modelVersion() {
@@ -177,6 +282,7 @@ export class TranslationClient {
   ): Promise<TranslationResult> {
     span.setAttribute('encoding_method', 'api');
     
+    const baseUrl = this.getBaseUrl();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Model-Version': MODEL_VERSION,
@@ -188,7 +294,7 @@ export class TranslationClient {
     propagation.inject(context.active(), headers);
     
     try {
-      const response = await this.fetchWithRetry(`${this.decoderUrl}/translate`, {
+      const response = await this.fetchWithRetry(`${baseUrl}/translate`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -233,7 +339,7 @@ export class TranslationClient {
   }
   
   /**
-   * Sends encoded data to decoder
+   * Sends encoded data to decoder (or coordinator when multi-decoder, or local decoder when available)
    */
   private async sendToDecoder(
     compressedData: Uint8Array,
@@ -243,6 +349,12 @@ export class TranslationClient {
     span: any
   ): Promise<TranslationResult> {
     span.setAttribute('encoding_method', 'local');
+    
+    const targetUrl = this.localDecoderAvailable && this.preferLocal && this.localDecoderUrl
+      ? this.localDecoderUrl
+      : this.useCoordinator && this.coordinatorUrl
+        ? `${this.coordinatorUrl}/api/decode`
+        : this.decoderUrl;
     
     const headers: Record<string, string> = {
       'Content-Type': 'application/octet-stream',
@@ -255,7 +367,7 @@ export class TranslationClient {
     propagation.inject(context.active(), headers);
     
     try {
-      const response = await this.fetchWithRetry(this.decoderUrl, {
+      const response = await this.fetchWithRetry(targetUrl, {
         method: 'POST',
         headers,
         body: compressedData

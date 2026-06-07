@@ -56,7 +56,7 @@ cd sdk/ios/UniversalTranslationSDK && swift test
 
 ### Publishing (SDKs)
 - See docs/SDK_PUBLISHING.md for publishing Android (Maven), iOS (CocoaPods/SPM), and RN linking.
-- Web SDK publishing to npm is available via GitHub Actions (web-npm-publish.yml) with NPM_TOKEN secret.
+- Web SDK and PyPI packages are published via GitHub Actions (build-upload.yml, publish-pypi.yml).
 
 ### Areas We Need Help
 1. **Language Support**: Adding more languages and improving vocabulary packs
@@ -117,7 +117,7 @@ python coordinator/advanced_coordinator.py
 
 #### Usage Modes
 
-There are two ways to run a decoder node (`universal-decoder-node`):
+There are two ways to run a decoder node (`udn`):
 
 - **Private/Personal Use:**  
   You may run a decoder node for your own needs or testing without registering it with the project. No further action is needed.
@@ -127,29 +127,27 @@ There are two ways to run a decoder node (`universal-decoder-node`):
 
 Want to help by running a decoder node? Here's how:
 
-#### Option 1: Quick Deploy (Managed)
+#### Option 1: Quick Deploy
 ```bash
-# Install the universal-decoder-node package
+# Install the package
 pip install universal-decoder-node
 
 # Register your node with the coordinator
-universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com" --gpu-type "T4" --capacity 100 --coordinator-url "https://coordinator.example.com"
+udn register --name "your-node-name" --endpoint "https://your-decoder.com" --gpu-type "T4" --capacity 100 --coordinator-url "https://coordinator.example.com"
 
-# Start the decoder service
-universal-decoder-node start --host 0.0.0.0 --port 8001 --workers 4
+# Start the decoder service (GPU auto-detected, permission prompted)
+udn start --host 0.0.0.0 --port 8001 --workers 4
 ```
 
-#### Option 2: Custom Deploy with Docker
-1. Clone the repository
-2. Configure environment variables in `.env` file
-3. Run with Docker Compose:
-   ```bash
-   docker compose --env-file .env up -d decoder
-   ```
-4. Register your node with the coordinator:
-   ```bash
-   docker compose exec decoder universal-decoder-node register --name "your-node-name" --endpoint "https://your-decoder.com"
-   ```
+#### Option 2: Docker (one command)
+```bash
+# Build & run
+udn docker --gpus
+
+# Or with Docker Compose:
+docker compose --env-file .env up -d decoder
+udn register --name "your-node-name" --endpoint "https://your-decoder.com"
+```
 
 **Decoder Node Requirements**
 - HTTPS endpoint with valid certificate (for production)
@@ -164,7 +162,7 @@ universal-decoder-node start --host 0.0.0.0 --port 8001 --workers 4
 
 ### How Encoder and Decoder Communicate
 - **Encoder (Edge/SDK)** encodes text to embeddings on device
-- **Decoder (Cloud Node)** exposes a REST API (`/decode` endpoint, served by FastAPI/uvicorn)
+- **Decoder (Cloud/Local Node)** exposes a REST API (`/decode` endpoint, served by `udn`)
 - **Communication Protocol**: The encoder sends compressed embeddings (binary) to the decoder's `/decode` endpoint, specifying the target language in the header. The decoder returns the translated text as JSON.
 - **Coordinator** manages the decoder pool, handles load balancing, and monitors health
 - See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/API.md](docs/API.md) for protocol details.

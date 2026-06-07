@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 import torch
-from universal_decoder_node.decoder import OptimizedUniversalDecoder, DecoderService
+from udn.decoder import OptimizedUniversalDecoder, DecoderService
 
 
 def test_decoder_initialization():

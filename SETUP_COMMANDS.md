@@ -93,6 +93,10 @@ Creates 6 per-script packs at `vocabulary/vocab/`.
 ### 7. Train full model
 
 ```bash
+# Default: 5 epochs (budget-friendly, ~3h on A100, ~$4.65)
+./uts train --full
+
+# Override for more epochs:
 ./uts train --full --num-epochs 10 --batch-size 32
 ```
 
@@ -105,7 +109,7 @@ Or using the default config (already tuned for A100):
 ```yaml
 training:
   use_lora: false           # Train all 150.8M params
-  num_epochs: 10
+  num_epochs: 5             # Default (~3h, $4.65). Override: --num-epochs 10
   lr: 3e-4
   batch_size: 32
   gradient_checkpointing: true
@@ -139,7 +143,7 @@ Edit `config/base.yaml`:
 ```yaml
 training:
   use_lora: false
-  num_epochs: 10
+  num_epochs: 5               # Default; use --num-epochs 10 for longer
   lr: 3e-4
   batch_size: 16              # Reduced from 32
   accumulation_steps: 8       # Keeps effective batch = 128
@@ -169,7 +173,7 @@ Edit `config/base.yaml`:
 ```yaml
 training:
   use_lora: false
-  num_epochs: 10
+  num_epochs: 5               # Default; --num-epochs 10 for convergence
   lr: 3e-4
   batch_size: 8               # Must reduce for 16GB
   accumulation_steps: 16      # Keeps effective batch = 128

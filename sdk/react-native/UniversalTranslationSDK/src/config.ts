@@ -6,7 +6,11 @@
 export interface SdkConfig {
   // API endpoints
   decoderApiUrl: string;
+  coordinatorApiUrl: string;
   encoderApiUrl: string;
+  
+  // HF repo for encoder updates
+  hfRepo: string;
   
   // Model paths
   modelUrl: string;
@@ -27,7 +31,11 @@ export function getConfig(): SdkConfig {
   return {
     // API endpoints
     decoderApiUrl: process.env.DECODER_API_URL || 'https://api.yourdomain.com/decode',
+    coordinatorApiUrl: process.env.COORDINATOR_API_URL || '',
     encoderApiUrl: process.env.ENCODER_API_URL || 'https://api.universal-translation.com/encode',
+    
+    // HF repo for encoder update checks
+    hfRepo: process.env.HF_REPO || 'your-org/universal-translation-system',
     
     // Model paths
     modelUrl: process.env.MODEL_URL || '/models/universal_encoder.onnx',

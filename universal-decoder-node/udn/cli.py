@@ -7,10 +7,16 @@ import requests
 import subprocess
 from pathlib import Path
 from typing import Optional
-import docker
 import yaml
+import torch
 from .decoder import create_decoder_service
 from .config import DecoderConfig, load_config, save_config
+
+# Optional docker SDK (not always available)
+try:
+    import docker
+except ImportError:
+    docker = None
 
 # Load environment variables with defaults
 DEFAULT_DECODER_ENDPOINT = os.environ.get("DECODER_ENDPOINT", "http://localhost:8000")
@@ -21,15 +27,127 @@ DEFAULT_WORKERS = int(os.environ.get("DECODER_WORKERS", "1"))
 DEFAULT_VOCAB_DIR = os.environ.get("VOCAB_DIR", "vocabulary/vocab")
 
 
+def _detect_gpu() -> Optional[str]:
+    """Detect GPU availability and ask user for permission.
+
+    Returns 'cuda', 'mps', or None if user declines or no GPU found.
+    The result is cached in DECODER_CONFIG to avoid re-prompting.
+    """
+    config_path = os.environ.get('DECODER_CONFIG', 'decoder_config.yaml')
+    if os.path.exists(config_path):
+        try:
+            cfg = load_config(config_path)
+            if cfg.device in ('cuda', 'mps', 'cpu'):
+                return cfg.device if cfg.device != 'cpu' else None
+        except Exception:
+            pass
+
+    try:
+        import torch
+    except ImportError:
+        return None
+
+    gpu_type = None
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_type = 'cuda'
+        click.echo(f"\n🎮 GPU detected: {gpu_name}")
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        gpu_type = 'mps'
+        click.echo("\n🎮 Apple Metal GPU detected")
+
+    if gpu_type is None:
+        click.echo("ℹ️  No GPU detected — using CPU")
+        return None
+
+    click.echo(f"🚀 GPU inference is ~5-10x faster than CPU for translation decoding.")
+    use_gpu = click.confirm(f"Use {gpu_type.upper()} for faster inference?", default=True)
+    if not use_gpu:
+        click.echo("ℹ️  Using CPU (you can change this later in config)")
+        return None
+
+    # Save preference to config
+    try:
+        if os.path.exists(config_path):
+            cfg = load_config(config_path)
+        else:
+            cfg = DecoderConfig()
+        cfg.device = gpu_type
+        save_config(cfg, config_path)
+        click.echo(f"✅ GPU preference saved to {config_path}")
+    except Exception:
+        pass
+
+    return gpu_type
+
+
+def _advertise_mdns(host: str, port: int):
+    """Advertise decoder via mDNS/Zeroconf so SDKs auto-discover it."""
+    try:
+        from zeroconf import Zeroconf, ServiceInfo
+        import socket
+        local_ip = socket.gethostbyname(socket.gethostname())
+        info = ServiceInfo(
+            "_universal-translate._tcp.local.",
+            f"udn-{port}._universal-translate._tcp.local.",
+            addresses=[socket.inet_aton(local_ip)],
+            port=port,
+            properties={"path": "/decode", "version": "1.0.0"},
+        )
+        zeroconf = Zeroconf()
+        zeroconf.register_service(info)
+        click.echo(f"📡 Advertising decoder via mDNS ({local_ip}:{port})")
+    except ImportError:
+        click.echo("ℹ️  Install zeroconf for mDNS discovery: pip install zeroconf")
+    except Exception as e:
+        click.echo(f"ℹ️  mDNS advertisement skipped: {e}")
+
+
+@cli.command()
+@click.option('--timeout', default=3, type=int, help='Discovery timeout in seconds')
+def discover(timeout: int):
+    """Discover local decoders on the network via mDNS"""
+    try:
+        from zeroconf import Zeroconf, ServiceBrowser, ServiceStateChange
+        from threading import Event
+
+        found = []
+        def on_change(zeroconf, service_type, name, state_change):
+            if state_change is ServiceStateChange.Added:
+                info = zeroconf.get_service_info(service_type, name)
+                if info and info.parsed_addresses():
+                    addr = info.parsed_addresses()[0]
+                    found.append(f"http://{addr}:{info.port}")
+                    click.echo(f"  ✅ Decoder at http://{addr}:{info.port}")
+
+        click.echo(f"🔍 Scanning for local decoders ({timeout}s)...")
+        z = Zeroconf()
+        browser = ServiceBrowser(z, "_universal-translate._tcp.local.", [on_change])
+        Event().wait(timeout)
+        z.close()
+
+        if not found:
+            click.echo("❌ No local decoders found")
+        else:
+            click.echo(f"\n📡 Use: --local-decoder-url {found[0]} in your SDK")
+    except ImportError:
+        click.echo("Install zeroconf: pip install zeroconf")
+
+
 @click.group()
 @click.version_option(version='0.1.0')
 def cli():
     """
-    Universal Decoder Node - High-performance translation decoder service
+    udn - Universal Decoder Node
 
-    Usage Modes:
-    - Personal/Private: Run the decoder on your own device or cloud for private translation/testing. Registration is not required.
-    - Contributing: If you want to support the project by adding your node to the public decoder pool, follow the registration steps.
+    Deploy a high-performance translation decoder on your own machine or cloud.
+    Use 'udn discover' to find running decoders on your network.
+
+    Examples:
+      udn start            Run decoder directly (CPU)
+      udn serve            Run decoder with LitServe (faster, auto-batching)
+      udn docker           Build & run in Docker
+      udn discover         Find local decoders via mDNS
     """
     pass
 
@@ -42,8 +160,9 @@ def cli():
 @click.option('--vocab-dir', default=DEFAULT_VOCAB_DIR, type=click.Path(), help='Directory containing vocabulary packs')
 @click.option('--config', type=click.Path(exists=True), help='Configuration file path')
 @click.option('--docker', is_flag=True, help='Run in Docker container')
+@click.option('--gpu/--no-gpu', default=None, help='Force GPU or CPU (auto-detect if not set)')
 def start(host: str, port: int, workers: int, model_path: Optional[str], 
-          vocab_dir: str, config: Optional[str], docker: bool):
+          vocab_dir: str, config: Optional[str], docker: bool, gpu: Optional[bool]):
     """Start the decoder service"""
     
     if config:
@@ -54,6 +173,15 @@ def start(host: str, port: int, workers: int, model_path: Optional[str],
         model_path = cfg.model_path or model_path
         vocab_dir = cfg.vocab_dir or vocab_dir
     
+    if gpu is None:
+        detected = _detect_gpu()
+        if detected:
+            os.environ['DECODER_DEVICE'] = detected
+    elif gpu:
+        os.environ['DECODER_DEVICE'] = 'cuda' if torch.cuda.is_available() else 'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 'cpu'
+    else:
+        os.environ['DECODER_DEVICE'] = 'cpu'
+    
     if docker:
         click.echo("🐋 Starting decoder in Docker container...")
         _run_docker(host, port, model_path, vocab_dir)
@@ -63,12 +191,13 @@ def start(host: str, port: int, workers: int, model_path: Optional[str],
         click.echo(f"🧠 Model: {model_path or 'default'}")
         click.echo(f"📚 Vocab directory: {vocab_dir}")
         
-        # Set environment variables
         if model_path:
             os.environ['MODEL_PATH'] = model_path
         os.environ['VOCAB_DIR'] = vocab_dir
         
-        # Create and run service
+        # Advertise via mDNS so SDKs auto-discover
+        _advertise_mdns(host, port)
+        
         service = create_decoder_service(model_path, vocab_dir)
         service.run(host=host, port=port, workers=workers)
 
@@ -79,7 +208,8 @@ def start(host: str, port: int, workers: int, model_path: Optional[str],
 @click.option('--model-path', type=click.Path(exists=True), help='Path to model file')
 @click.option('--vocab-dir', default=DEFAULT_VOCAB_DIR, type=click.Path(), help='Directory containing vocabulary packs')
 @click.option('--max-batch-size', default=8, type=int, help='Max batch size for LitServe auto-batching')
-def serve(host: str, port: int, model_path: Optional[str], vocab_dir: str, max_batch_size: int):
+@click.option('--gpu/--no-gpu', default=None, help='Force GPU or CPU (auto-detect if not set)')
+def serve(host: str, port: int, model_path: Optional[str], vocab_dir: str, max_batch_size: int, gpu: Optional[bool]):
     """Start decoder with LitServe (2x faster than FastAPI)"""
     import litserve as ls
     from .litserve_decoder import DecoderLitAPI
@@ -88,6 +218,16 @@ def serve(host: str, port: int, model_path: Optional[str], vocab_dir: str, max_b
     click.echo(f"📦 Max batch size: {max_batch_size}")
     click.echo(f"🧠 Model: {model_path or 'default'}")
     click.echo(f"📚 Vocab directory: {vocab_dir}")
+
+    if gpu is None:
+        detected = _detect_gpu()
+        accelerator = detected if detected else "cpu"
+    elif gpu:
+        accelerator = "cuda" if torch.cuda.is_available() else "mps" if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else "cpu"
+    else:
+        accelerator = "cpu"
+
+    click.echo(f"⚡ Accelerator: {accelerator}")
 
     if model_path:
         os.environ['MODEL_PATH'] = model_path
@@ -99,7 +239,7 @@ def serve(host: str, port: int, model_path: Optional[str], vocab_dir: str, max_b
         max_batch_size=max_batch_size,
         batch_timeout=0.01,
     )
-    server = ls.LitServer(api, accelerator="auto")
+    server = ls.LitServer(api, accelerator=accelerator)
     server.run(port=port)
 
 
@@ -356,8 +496,45 @@ def init(output: str):
 @cli.command()
 @click.option('--build-only', is_flag=True, help='Build image without running')
 @click.option('--tag', default='universal-decoder:latest', help='Docker image tag')
+@click.option('--port', default=8000, type=int, help='Host port to bind')
+@click.option('--gpus', is_flag=True, help='Enable GPU support')
+def docker(build_only: bool, tag: str, port: int, gpus: bool):
+    """Build and run decoder in Docker (simple way)"""
+    dockerfile = os.path.join(os.path.dirname(__file__), '..', 'Dockerfile')
+    if not os.path.exists(dockerfile):
+        click.echo("❌ Dockerfile not found — run from universal-decoder-node/ directory")
+        return
+
+    click.echo(f"🐋 Building Docker image {tag}...")
+    build_cmd = ['docker', 'build', '-f', dockerfile, '-t', tag, os.path.dirname(dockerfile)]
+    result = subprocess.run(build_cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        click.echo(f"❌ Build failed: {result.stderr}")
+        return
+
+    click.echo(f"✅ Built {tag}")
+    if build_only:
+        return
+
+    click.echo("🚀 Starting container...")
+    run_cmd = [
+        'docker', 'run', '-d',
+        '--name', 'universal-decoder',
+        '-p', f'{port}:8000',
+    ]
+    if gpus:
+        run_cmd += ['--gpus', 'all']
+    run_cmd.append(tag)
+
+    subprocess.run(run_cmd)
+    click.echo(f"✅ Decoder running on http://localhost:{port}")
+    click.echo("📊 Logs: docker logs -f universal-decoder")
+
+@cli.command()
+@click.option('--build-only', is_flag=True, help='Build image without running')
+@click.option('--tag', default='universal-decoder:latest', help='Docker image tag')
 def docker_build(build_only: bool, tag: str):
-    """Build Docker image for decoder"""
+    """(legacy) Build Docker image for decoder"""
     
     dockerfile_content = '''FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
@@ -374,11 +551,11 @@ COPY . /app/
 RUN pip install --no-cache-dir -e .
 
 # Download models (optional)
-# RUN universal-decoder-node download-models
+# RUN udn download-models
 
 EXPOSE 8000
 
-CMD ["universal-decoder-node", "start"]
+CMD ["udn", "start"]
 '''
     
     # Save Dockerfile

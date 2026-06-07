@@ -2,10 +2,15 @@ classDiagram
     direction LR
 
     class SDK {
-      +encode(text): Embeddings
+      +init(coordinatorUrl, decoderUrl, localDecoderUrl)
+      +resolveCoordinator()
+      +checkEncoderUpdate()
+      +checkLocalDecoder()
+      +getRequestUrl()
+      +encode(text)
       +sendDecodeRequest(payload)
-      +handleResult(translation)
-      -cache: LocalCache
+      -localDecoder
+      -preferLocal
     }
 
     class EncoderCore {
@@ -24,53 +29,70 @@ classDiagram
     class CoordinatorAPI {
       +POST /decode
       +GET /health
+      +GET /status
       +GET /metrics
     }
 
-    class Router {
-      +selectNode(): DecoderNode
-      -loadStats
-      -healthState
+    class CoordinatorBatcher {
+      +accumulate(endpoint, request)
+      +flush(endpoint)
+      -windowMs: 50
+      -pending: Map
+    }
+
+    class CircuitBreaker {
+      -state: CLOSED | OPEN | HALF-OPEN
+      -failureCount
+      -threshold
+      +recordSuccess()
+      +recordFailure()
+      +allowRequest(): bool
+    }
+
+    class DecoderPool {
+      +getHealthyDecoders()
+      +addDecoder(url)
+      +removeDecoder(url)
+      +reloadSync()
     }
 
     class DecoderNode {
       +decode(embeddings): Translation
-      +/health
-      +/metrics
+      +health
       -model: Transformer
       -adapters
+      -gpu: bool
     }
 
-    class MetricsExporter {
-      +expose()
+    class GPUMonitor {
+      +detectGPU(): CUDA | MPS | None
+      -config: decoder_config.yaml
     }
 
-    class Tracer {
-      +recordSpan()
-    }
-
-    class RedisStore {
-      +get(key)
-      +set(key, value)
+    class mDNSService {
+      +broadcast()
+      +discover()
+      -type: _universal-translate._tcp
     }
 
     class ArtifactStore {
       +download(modelId)
-      +listVersions()
+      +checkVersion(repoId)
     }
 
     SDK --> EncoderCore : uses
     SDK --> VocabularyManager : loads packs
     SDK --> CoordinatorAPI : calls
+    SDK --> DecoderNode : direct (when single_decoder)
+    SDK --> ArtifactStore : checkEncoderUpdate
 
-    CoordinatorAPI --> Router : delegates
-    Router --> DecoderNode : routes
+    CoordinatorAPI --> CoordinatorBatcher : batches
+    CoordinatorAPI --> CircuitBreaker : guards
+    CoordinatorAPI --> DecoderPool : manages
 
+    DecoderPool --> DecoderNode : routes to
+    DecoderPool --> CircuitBreaker : per-node state
+
+    DecoderNode --> GPUMonitor : auto-detect
+    DecoderNode --> mDNSService : advertise/discover
     DecoderNode --> ArtifactStore : downloads
-    CoordinatorAPI --> MetricsExporter : exposes
-    DecoderNode --> MetricsExporter : exposes
-
-    CoordinatorAPI --> Tracer : traces
-    DecoderNode --> Tracer : traces
-
-    Router --> RedisStore : optional state

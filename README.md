@@ -87,7 +87,8 @@ The system is designed for zero-full-retraining language expansion:
 
 ```bash
 # Phase 1: Full model training
-./uts train --full --num-epochs 10
+./uts train --full                    # Default 5 epochs (~3h)
+./uts train --full --num-epochs 10    # Full convergence (~6h)
 
 # Phase 2: LoRA adapter for new language
 # (edit config: add language, set use_lora: true)

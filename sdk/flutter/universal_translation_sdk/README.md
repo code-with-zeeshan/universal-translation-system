@@ -1,46 +1,42 @@
 # UniversalTranslationSDK for Flutter
 
-A cross-platform Flutter SDK for the Universal Translation System, supporting dynamic vocabulary packs and coordinator integration.
+A Flutter SDK for the Universal Translation System with coordinator-aware routing and auto-updating encoder.
 
 ## Features
-- Edge encoding, cloud decoding (privacy-preserving)
-- Dynamic vocabulary packs
-- Coordinator integration
-- Cross-platform (Android, iOS, desktop)
+- **Edge encoding** via FFI (privacy-preserving)
+- **Coordinator-aware**: single decoder → direct, multiple → proxy through coordinator
+- **Auto-updating encoder**: checks HF Hub for newer model at init
+- **Dynamic vocabulary packs** from HF Hub with CDN fallback
 
 ## Quick Start
 
-1) Add to `pubspec.yaml`:
-```yaml
-dependencies:
-  universal_translation_sdk:
-    path: ../../sdk/flutter/universal_translation_sdk
-```
-
-2) Initialize and use:
 ```dart
 import 'package:universal_translation_sdk/universal_translation_sdk.dart';
-import 'package:http/http.dart' as http;
 
-final encoder = TranslationEncoder();
-await encoder.initialize();
-await encoder.loadVocabulary('en', 'es');
-final encoded = await encoder.encode(text: 'Hello, world!', sourceLang: 'en', targetLang: 'es');
+// Direct decoder
+final client = TranslationClient(decoderUrl: 'http://decoder:8000');
 
-final resp = await http.post(
-  Uri.parse('http://localhost:5100/api/decode'),
-  headers: {
-    'Content-Type': 'application/octet-stream',
-    'X-Source-Language': 'en',
-    'X-Target-Language': 'es',
-  },
-  body: encoded,
+// With coordinator (auto-routes based on pool size)
+final client = TranslationClient(
+  decoderUrl: 'http://decoder:8000',
+  coordinatorUrl: 'http://coordinator:5100',
 );
+
+await client.initialize();
+final result = await client.translate(text: 'Hello world', from: 'en', to: 'es');
+```
+
+## Constructor
+
+```dart
+TranslationClient({
+  String decoderUrl = 'https://api.yourdomain.com/decode',
+  String? coordinatorUrl,
+  Duration timeout = Duration(seconds: 30),
+})
 ```
 
 ## Documentation
-- See [docs/SDK_INTEGRATION.md](../../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
-
----
-
-For more, see the main repo.
+- [SDK Integration](../../docs/SDK_INTEGRATION.md)
+- [Architecture](../../docs/ARCHITECTURE.md)
+- [Publishing](../../docs/SDK_PUBLISHING.md)

@@ -46,7 +46,7 @@ docker build -f docker/decoder.Dockerfile -t universal-decoder:latest .
 ### React Native/Web
 - Build with Node.js, TypeScript, bundlers.
 - Publish to npm.
-- Workflows: `.github/workflows/web-npm-publish.yml`, `.github/workflows/sdk-publish.yml`
+- Workflows: `.github/workflows/publish-pypi.yml`, `.github/workflows/build-upload.yml`
 
 ---
 

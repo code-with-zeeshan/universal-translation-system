@@ -47,7 +47,7 @@ All notable changes to the Universal Translation System will be documented in th
 - SDK_PUBLISHING.md guide (Android Maven, iOS Podspec/SPM, RN linking)
 - Web example Express server with proper WASM headers (COOP/COEP/CORS)
 - README updates for Android/iOS/Flutter/Web SDKs with coordinator usage
-- GitHub Actions workflows: sdk-publish.yml and web-npm-publish.yml
+- GitHub Actions workflows: build-upload.yml, publish-pypi.yml
 - Coordinator periodic Redis-to-disk mirroring via `COORDINATOR_MIRROR_INTERVAL`
 - Centralized logging via `utils.logging_config.setup_logging`
 - Automatic creation of logs folder structure via `DirectoryManager.create_logs_structure()`

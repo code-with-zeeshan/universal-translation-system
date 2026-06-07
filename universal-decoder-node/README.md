@@ -1,107 +1,102 @@
 # Universal Decoder Node
 
-High-performance translation decoder service for the Universal Translation System. Serves as a standalone node or registers with the coordinator pool.
-
-## Features
-- GPU-accelerated decoding with continuous batching
-- Built-in monitoring with Prometheus metrics
-- JWT authentication for admin endpoints
-- Docker support with GPU passthrough
-- Optimized for T4/V100/A100 GPUs
-- RESTful API with FastAPI/uvicorn
-
-## Installation
-
-```bash
-pip install universal-decoder-node
-```
-
-For GPU support:
-```bash
-pip install universal-decoder-node[gpu]
-```
+High-performance translation decoder service. Run locally via pip or Docker — your data stays on your network.
 
 ## Quick Start
 
-1. Start the decoder service:
 ```bash
-universal-decoder-node start
+pip install universal-decoder-node
+
+# Start with GPU detection + permission prompt
+udn start
+
+# Or serve with LitServe (auto-batching, 2x faster)
+udn serve
 ```
 
-2. Check service health:
+On first run, `udn` detects CUDA/MPS GPUs and asks permission before using them.
+
+## Docker (one command)
+
 ```bash
-universal-decoder-node status
+udn docker              # build & run on port 8000
+udn docker --gpus       # with GPU passthrough
+udn docker --port 9000  # custom port
 ```
 
-3. Register with coordinator:
+Or manually:
+
 ```bash
-universal-decoder-node register \
-  --name my-decoder \
-  --endpoint https://my-decoder.com \
-  --gpu-type T4
+docker build -t udn .
+docker run -d --gpus all -p 8000:8000 udn
 ```
 
-## CLI Commands
-- `start` -- Start the decoder service
-- `status` -- Check service status
-- `register` -- Register node with coordinator
-- `test` -- Test translation
-- `init` -- Create configuration file
-- `docker-build` -- Build Docker image
+## CLI Reference
+
+| Command | Description |
+|---|---|
+| `udn start` | Start decoder (FastAPI/uvicorn) |
+| `udn serve` | Start with LitServe (auto-batching) |
+| `udn docker` | Build & run in Docker |
+| `udn status` | Check service health |
+| `udn register` | Register node with coordinator pool |
+| `udn discover` | Scan network for local decoders (mDNS) |
+| `udn test` | Test translation |
+| `udn init` | Generate config file |
+
+## Auto-Discovery (mDNS/Zeroconf)
+
+When running, `udn` advertises itself on the local network via mDNS. SDKs automatically discover it:
+
+```bash
+# On any machine, discover running decoders:
+udn discover
+```
+
+The Web SDK also scans `localhost:8000`, `:8080`, `:9000` automatically if no URL is configured.
 
 ## Configuration
 
 ```bash
-universal-decoder-node init
+udn init                # create config.yaml
+udn start --config config.yaml
 ```
 
-Example `config.yaml`:
+Key config fields:
 ```yaml
 decoder:
   host: 0.0.0.0
-  port: 8001
-  workers: 1
-  model_path: models/decoder.pt
-  vocab_dir: vocabs
-  device: cuda
+  port: 8000
+  device: cuda          # set by GPU permission prompt
   max_batch_size: 64
-  batch_timeout_ms: 10
-
-security:
-  jwt_secret: your-secret-key
-  enable_auth: true
-
-monitoring:
-  prometheus_port: 9200
-  enable_tracing: false
 ```
 
-## Docker Deployment
-```bash
-universal-decoder-node docker-build
-docker run -d \
-  --gpus all \
-  -p 8001:8001 \
-  -v ./models:/app/models \
-   -v ./vocabulary/vocab:/app/vocabs \
-  universal-decoder:latest
-```
+## GPU Support
 
-## API Endpoints
-- `GET /health` -- Health check
-- `GET /status` -- Service status
-- `POST /decode` -- Decode translation
-- `POST /admin/reload_model` -- Reload model (requires auth)
+- Auto-detects NVIDIA CUDA and Apple Metal (MPS)
+- Prompts for permission on first run
+- Preference saved to `decoder_config.yaml`
+- Override: `udn start --gpu` / `udn start --no-gpu`
+
+## API
+
+| Endpoint | Description |
+|---|---|
+| `GET /health` | Health check |
+| `POST /decode` | Decode compressed encoder output |
+| `GET /metrics` | Prometheus metrics |
 
 ## Development
+
 ```bash
-git clone https://github.com/yourusername/universal-decoder-node
+git clone https://github.com/yourusername/universal-translation-system
 cd universal-decoder-node
 pip install -e .[dev]
 pytest
-black universal_decoder_node
-isort universal_decoder_node
+black udn
+isort udn
 ```
 
 ## License
+
 Apache License 2.0

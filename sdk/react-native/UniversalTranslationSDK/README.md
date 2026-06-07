@@ -1,39 +1,54 @@
 # UniversalTranslationSDK for React Native
 
-A React Native SDK for the Universal Translation System, supporting dynamic vocabulary packs and coordinator integration.
+A React Native SDK for the Universal Translation System with coordinator-aware routing, local decoder preference, and auto-updating encoder.
 
 ## Features
-- Edge encoding, cloud decoding (privacy-preserving)
-- Dynamic vocabulary packs
-- Coordinator integration for load balancing
+- **Edge encoding** via native iOS/Android modules (privacy-preserving)
+- **Coordinator-aware**: single decoder → direct, multiple → proxy through coordinator
+- **Local decoder preference**: auto-discovers local decoder, falls back to cloud
+- **Auto-updating encoder**: checks HF Hub for newer model at init
+- **Dynamic vocabulary packs** with retry logic
 
 ## Quick Start
 
-1) Install:
-```bash
-npm install @universal-translation/react-native-sdk
-```
-
-2) iOS pods:
-```bash
-cd ios && pod install && cd ..
-```
-
-3) Use:
 ```tsx
 import { TranslationClient } from '@universal-translation/react-native-sdk';
 
+// Auto-routes: local decoder → coordinator → cloud fallback
 const client = new TranslationClient({
-  decoderUrl: 'http://localhost:5100/api/decode',
-  apiKey: process.env.API_KEY,
+  coordinatorUrl: 'http://coordinator:5100',
 });
 
-const result = await client.translate({ text: 'Hello world', sourceLang: 'en', targetLang: 'es' });
+// Or force privacy mode (local decoder only):
+const client = new TranslationClient({
+  localDecoderUrl: 'http://localhost:8000',
+  preferLocal: true,
+});
+
+const result = await client.translate({
+  text: 'Hello world',
+  sourceLang: 'en',
+  targetLang: 'es',
+});
+```
+
+## Options
+
+| Option | Default | Description |
+|---|---|---|
+| `decoderUrl` | env `DECODER_API_URL` | Direct decoder endpoint |
+| `coordinatorUrl` | env `COORDINATOR_API_URL` | Coordinator for multi-decoder routing |
+| `localDecoderUrl` | — | Local decoder (privacy mode) |
+| `preferLocal` | `true` | Prefer local decoder over cloud |
+
+## Installation
+
+```bash
+npm install @universal-translation/react-native-sdk
+cd ios && pod install && cd ..
 ```
 
 ## Documentation
-- See [docs/SDK_INTEGRATION.md](../../docs/SDK_INTEGRATION.md) and [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md)
-
----
-
-For more, see the main repo.
+- [SDK Integration](../../docs/SDK_INTEGRATION.md)
+- [Architecture](../../docs/ARCHITECTURE.md)
+- [Publishing](../../docs/SDK_PUBLISHING.md)

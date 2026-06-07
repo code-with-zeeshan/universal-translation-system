@@ -86,8 +86,7 @@ ENABLE_VOCABULARY_METRICS=true
 - `prometheus/rules/alerting_rules.yml` -- Alert rules
 - `prometheus/rules/recording_rules.yml` -- Recording rules
 - `grafana/dashboards/comprehensive.json` -- Grafana dashboard
-- `enhanced_metrics.py` -- Prometheus metrics definitions
-- `metrics.py` -- Core metrics
+- `metrics.py` -- All Prometheus metrics (enhanced metrics merged)
 - `metrics_collector.py` -- Metrics collection helpers
 
 ---

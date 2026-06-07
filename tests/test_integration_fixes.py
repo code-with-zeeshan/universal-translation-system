@@ -42,7 +42,7 @@ class TestIntegrationFixes(unittest.TestCase):
     
     def test_remote_encoder_implementation_fixed(self):
         """Test that remote encoder implementation is complete"""
-        with open('universal-decoder-node/universal-decoder-node/cli.py', 'r') as f:
+        with open('universal-decoder-node/udn/cli.py', 'r') as f:
             content = f.read()
             # Should not contain TODO
             self.assertNotIn('TODO: Implement remote encoder call', content)
@@ -51,7 +51,7 @@ class TestIntegrationFixes(unittest.TestCase):
     
     def test_jwt_secret_environment_variable(self):
         """Test that JWT secret uses environment variable"""
-        with open('universal-decoder-node/universal-decoder-node/cli.py', 'r') as f:
+        with open('universal-decoder-node/udn/cli.py', 'r') as f:
             content = f.read()
             self.assertIn('os.environ.get(\'JWT_SECRET\'', content)
     

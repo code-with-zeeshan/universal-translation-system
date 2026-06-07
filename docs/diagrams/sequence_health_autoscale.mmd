@@ -1,17 +1,35 @@
 sequenceDiagram
     autonumber
     participant COORD as Coordinator
+    participant CB as Circuit Breaker
     participant HC as Health Prober
     participant DN as Decoder Node
     participant PM as Prometheus
     participant HPA as K8s Autoscaler
 
-    COORD->>HC: Schedule probes
-    HC->>DN: GET health
-    DN-->>HC: status healthy or unhealthy
-    HC->>COORD: Update node registry
-    COORD-->>PM: Pool metrics metrics
-    DN-->>PM: Node metrics metrics
-    PM-->>HPA: Metrics CPU GPU latency QPS
-    HPA->>DN: Scale up and down replicas
-    HPA->>COORD: Notify changes optional
+    loop Every 10s
+        HC->>DN: GET /health
+        alt Healthy
+            DN-->>HC: 200 OK
+            HC->>CB: recordSuccess()
+            CB->>CB: CLOSED (normal)
+        else Unhealthy or timeout
+            DN--xHC: failure
+            HC->>CB: recordFailure()
+            CB->>CB: OPEN (skip node)
+            Note over CB: After cooldown → HALF-OPEN
+            CB->>DN: probe request
+            alt recovered
+                DN-->>CB: 200 OK
+                CB->>CB: CLOSED
+            else still down
+                CB->>CB: OPEN again
+            end
+        end
+        HC->>COORD: Update pool registry
+    end
+
+    COORD-->>PM: Pool metrics (size, healthy, circuit-breakers)
+    DN-->>PM: Node metrics (utilization, latency, QPS)
+    PM-->>HPA: Metrics (CPU, GPU, latency, QPS)
+    HPA->>DN: Scale up / down replicas

@@ -24,7 +24,6 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
 ]
-# Runtime dependencies aligned with setup.py
 dependencies = [
     "torch>=2.0.0",
     "numpy>=1.21.0,<2.0.0",
@@ -50,11 +49,10 @@ Repository = "https://github.com/code-with-zeeshan/universal-translation-system"
 Issues = "https://github.com/code-with-zeeshan/universal-translation-system/issues"
 
 [project.scripts]
-universal-decoder-node = "universal_decoder_node.cli:cli"
-udn = "universal_decoder_node.cli:cli"
+udn = "udn.cli:cli"
 
 [tool.setuptools.packages.find]
-include = ["universal_decoder_node*"]
+include = ["udn*"]
 exclude = ["tests*"]
 
 [project.optional-dependencies]
@@ -63,6 +61,7 @@ perf = [
   "uvloop>=0.19.0; platform_system != 'Windows'",
   "tenacity>=8.2.3",
   "watchdog>=2.3.0",
+  "zeroconf>=0.132.0",
 ]
 dev = [
   "pytest>=7.4.0",

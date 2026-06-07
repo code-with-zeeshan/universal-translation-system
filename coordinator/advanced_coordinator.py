@@ -202,6 +202,7 @@ class StatusSchema(BaseModel):
     model_version: str
     decoder_pool_size: int
     healthy_decoders: int
+    single_decoder: bool
     decoders: List[DecoderNodeSchema]
 
 # --- FastAPI App Setup ---
@@ -1053,6 +1054,51 @@ class DecoderPool:
 
 pool = DecoderPool()
 
+class CoordinatorBatcher:
+    """Batches incoming decode requests per decoder endpoint.
+
+    Accumulates requests over a short window (batch_window seconds) before
+    forwarding them concurrently to the decoder. The decoder's own batching
+    (e.g. LitServe) then processes them as a batch, improving throughput.
+    """
+    def __init__(self, batch_window: float = 0.05):
+        self._queues: Dict[str, List[Tuple[bytes, Dict[str, str], asyncio.Future]]] = {}
+        self._lock = asyncio.Lock()
+        self._batch_window = batch_window
+
+    async def submit(self, endpoint: str, body: bytes, headers: Dict[str, str]) -> Response:
+        loop = asyncio.get_event_loop()
+        future = loop.create_future()
+        async with self._lock:
+            if endpoint not in self._queues:
+                self._queues[endpoint] = []
+                asyncio.ensure_future(self._flush(endpoint))
+            self._queues[endpoint].append((body, headers, future))
+        return await future
+
+    async def _flush(self, endpoint: str) -> None:
+        await asyncio.sleep(self._batch_window)
+        async with self._lock:
+            items = self._queues.pop(endpoint, [])
+        if not items:
+            return
+        async with httpx.AsyncClient() as client:
+            tasks = []
+            for body, headers, future in items:
+                tasks.append(asyncio.ensure_future(
+                    self._send_one(client, endpoint, body, headers, future)
+                ))
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _send_one(self, client: httpx.AsyncClient, endpoint: str, body: bytes, headers: Dict[str, str], future: asyncio.Future) -> None:
+        try:
+            resp = await client.post(f"{endpoint}/decode", content=body, headers=headers, timeout=10)
+            future.set_result(Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers)))
+        except Exception as e:
+            future.set_exception(e)
+
+batcher = CoordinatorBatcher()
+
 # --- Authentication Dependencies ---
 bearer_scheme = HTTPBearer()
 
@@ -1206,6 +1252,7 @@ async def get_status():
             "model_version": MODEL_VERSION,
             "decoder_pool_size": len(pool.nodes),
             "healthy_decoders": len(healthy_decoders),
+            "single_decoder": len(pool.nodes) == 1,
             "decoders": [DecoderNodeSchema(**n) for n in pool.nodes]
         }
 
@@ -1264,11 +1311,8 @@ async def decode_proxy(
                 'X-Target-Language': x_target_language,
                 'X-Domain': x_domain or ''
             }
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(f"{node['endpoint']}/decode", content=content, headers=headers, timeout=10)
-                resp.raise_for_status()
-            return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
-        except (httpx.RequestError, httpx.HTTPStatusError) as e:
+            return await batcher.submit(node['endpoint'], content, headers)
+        except Exception as e:
             requests_errors.labels(endpoint='/api/decode', group=request_group).inc()
             logger.error(f"Failed to contact decoder {node['node_id']}: {e}")
             raise HTTPException(status_code=502, detail=f"Failed to contact decoder: {e}")

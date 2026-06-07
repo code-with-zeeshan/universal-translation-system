@@ -10,7 +10,7 @@ The model needs **5-10 epochs** to converge. One epoch of LoRA on a random backb
 - **For adding new languages:** Yes. Freeze backbone, train LoRA adapters only.
 
 ### What GPU do I need?
-- **A100 40GB** (recommended) — full 150.8M model, batch 32, ~6 hours
+- **A100 40GB** (recommended) — full 150.8M model, batch 32, ~3 hours (5 epochs)
 - **L4 24GB** — full model, smaller batch, ~10 hours
 - **L40s 48GB** — fastest but expensive
 

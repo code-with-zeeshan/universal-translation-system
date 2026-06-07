@@ -10,9 +10,9 @@ Key endpoints (built-in):
   GET  /metrics  — Prometheus metrics
 
 Usage:
-  python -m universal_decoder_node.litserve_decoder
+  python -m udn.litserve_decoder
   # or
-  litserve serve universal_decoder_node.litserve_decoder:decoder_api
+  udn-litserve
 """
 import os
 import time

@@ -6,15 +6,40 @@ import Network
 import BackgroundTasks
 
 private let logger = Logger(subsystem: "com.universaltranslation.sdk", category: "TranslationClient")
+private let hfRepo = "your-org/universal-translation-system"
+
+// MARK: - Coordinator Status Models
+
+struct CoordinatorStatusResponse: Codable {
+    let singleDecoder: Bool
+    let decoderPoolSize: Int
+    let healthyDecoders: Int
+    let decoders: [CoordinatorDecoderInfo]
+    
+    enum CodingKeys: String, CodingKey {
+        case singleDecoder = "single_decoder"
+        case decoderPoolSize = "decoder_pool_size"
+        case healthyDecoders = "healthy_decoders"
+        case decoders
+    }
+}
+
+struct CoordinatorDecoderInfo: Codable {
+    let nodeId: String
+    let endpoint: String
+    
+    enum CodingKeys: String, CodingKey {
+        case nodeId = "node_id"
+        case endpoint
+    }
+}
 
 @available(iOS 15.0, *)
 extension TranslationClient {
     
-    // Register background task identifier
     static let backgroundTaskIdentifier = "com.universal.translation.process"
     
     public func enableBackgroundTranslation() {
-        // Register background task
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.backgroundTaskIdentifier,
             using: nil
@@ -22,7 +47,6 @@ extension TranslationClient {
             self.handleBackgroundTranslation(task: task as! BGProcessingTask)
         }
         
-        // Schedule initial task
         scheduleBackgroundTranslation()
     }
     
@@ -30,7 +54,7 @@ extension TranslationClient {
         let request = BGProcessingTaskRequest(identifier: Self.backgroundTaskIdentifier)
         request.requiresNetworkConnectivity = true
         request.requiresExternalPower = false
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // 15 minutes
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         
         do {
             try BGTaskScheduler.shared.submit(request)
@@ -41,7 +65,6 @@ extension TranslationClient {
     }
     
     private func handleBackgroundTranslation(task: BGProcessingTask) {
-        // Schedule next task
         scheduleBackgroundTranslation()
         
         task.expirationHandler = {
@@ -51,12 +74,8 @@ extension TranslationClient {
         
         Task {
             do {
-                // Process any pending translations
                 let success = await processPendingTranslations()
-                
-                // Prefetch vocabularies
                 await vocabularyManager.prefetchVocabulariesForUserLanguages()
-                
                 task.setTaskCompleted(success: success)
             } catch {
                 logger.error("Background task failed: \(error)")
@@ -66,12 +85,6 @@ extension TranslationClient {
     }
     
     private func processPendingTranslations() async -> Bool {
-        // Implement your pending translation logic
-        // This could include:
-        // - Retrying failed translations
-        // - Preloading frequently used language pairs
-        // - Cleaning up old cache entries
-        
         logger.info("Processing pending translations in background")
         return true
     }
@@ -83,40 +96,112 @@ extension TranslationClient {
 public actor TranslationClient {
     private let encoder: TranslationEncoder
     private let decoderURL: URL
+    private let coordinatorURL: URL?
+    private var effectiveDecoderURL: URL
+    private var useCoordinator: Bool = false
     private let session: URLSession
     private let monitor: NWPathMonitor
     
-    // Cache for translations
     private var translationCache: [String: String] = [:]
     private let maxCacheSize = 100
     
-    public init(decoderURL: String = "https://api.yourdomain.com/decode") throws {
+    public init(decoderURL: String = "https://api.yourdomain.com/decode", coordinatorURL: String? = nil) throws {
         guard let url = URL(string: decoderURL) else {
             throw TranslationError.networkError(URLError(.badURL))
         }
         
         self.encoder = try TranslationEncoder()
         self.decoderURL = url
+        self.effectiveDecoderURL = url
+        self.coordinatorURL = coordinatorURL.flatMap { URL(string: $0) }
         
-        // Configure session
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
-        config.httpAdditionalHeaders = [
-            "User-Agent": "UniversalTranslationSDK/1.0"
-        ]
+        config.httpAdditionalHeaders = ["User-Agent": "UniversalTranslationSDK/1.0"]
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
         
         self.session = URLSession(configuration: config)
         
-        // Setup network monitoring
         self.monitor = NWPathMonitor()
         self.monitor.start(queue: .global(qos: .background))
         
         logger.info("TranslationClient initialized with decoder URL: \(decoderURL)")
+        
+        if self.coordinatorURL != nil {
+            Task { await self.resolveCoordinator() }
+        }
+        Task { await self.checkEncoderUpdate() }
     }
     
     deinit {
         monitor.cancel()
+    }
+    
+    // MARK: - Coordinator Resolution
+    
+    private func resolveCoordinator() async {
+        guard let coordURL = coordinatorURL else { return }
+        var request = URLRequest(url: coordURL.appendingPathComponent("/api/status"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 5
+        
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return }
+            let status = try JSONDecoder().decode(CoordinatorStatusResponse.self, from: data)
+            if status.singleDecoder, let first = status.decoders.first, let url = URL(string: first.endpoint) {
+                effectiveDecoderURL = url
+                useCoordinator = false
+            } else {
+                useCoordinator = true
+            }
+        } catch {
+            logger.warning("Coordinator unreachable, falling back to direct decoder: \(error)")
+            effectiveDecoderURL = decoderURL
+        }
+    }
+    
+    private func getRequestURL() -> URL {
+        if useCoordinator, let coordURL = coordinatorURL {
+            return coordURL.appendingPathComponent("/api/decode")
+        }
+        return effectiveDecoderURL
+    }
+    
+    // MARK: - Encoder Update Check
+    
+    private func checkEncoderUpdate() async {
+        guard let url = URL(string: "https://huggingface.co/\(hfRepo)/raw/main/models/production/encoder.onnx") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 5
+        
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return }
+            let remoteEtag = httpResponse.value(forHTTPHeaderField: "etag") ?? httpResponse.value(forHTTPHeaderField: "last-modified") ?? ""
+            let cached = await encoder.getCachedEtag()
+            if !remoteEtag.isEmpty, remoteEtag != cached {
+                await encoder.cacheEtag(remoteEtag)
+                await downloadEncoderUpdate()
+            }
+        } catch {
+            // Offline or HF unavailable, bundled encoder is fine
+        }
+    }
+    
+    private func downloadEncoderUpdate() async {
+        guard let url = URL(string: "https://huggingface.co/\(hfRepo)/resolve/main/models/production/encoder.onnx") else { return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return }
+            await encoder.updateEncoder(data)
+        } catch {
+            logger.warning("Failed to download encoder update, using bundled version: \(error)")
+        }
     }
     
     // MARK: - Public Methods
@@ -128,12 +213,10 @@ public actor TranslationClient {
         options: TranslationOptions? = nil
     ) async throws -> TranslationResponse {
         
-        // Check network connectivity
         guard monitor.currentPath.status == .satisfied else {
             throw TranslationError.networkError(URLError(.notConnectedToInternet))
         }
         
-        // Check cache
         let cacheKey = "\(sourceLang)-\(targetLang):\(text)"
         if let cachedTranslation = translationCache[cacheKey] {
             logger.info("Returning cached translation")
@@ -145,7 +228,6 @@ public actor TranslationClient {
             )
         }
         
-        // Encode locally
         logger.info("Encoding text: \(text.prefix(50))...")
         let encodedData = try await encoder.encode(
             text: text,
@@ -153,14 +235,12 @@ public actor TranslationClient {
             targetLang: targetLang
         )
         
-        // Send to decoder
         let response = try await sendToDecoder(
             encodedData: encodedData,
             targetLang: targetLang,
             options: options
         )
         
-        // Cache the result
         addToCache(key: cacheKey, translation: response.translation)
         
         return response
@@ -173,7 +253,6 @@ public actor TranslationClient {
         options: TranslationOptions? = nil
     ) async throws -> [TranslationResponse] {
         
-        // Process in parallel with limited concurrency
         return try await withThrowingTaskGroup(of: (Int, TranslationResponse).self) { group in
             for (index, text) in texts.enumerated() {
                 group.addTask { [self] in
@@ -187,7 +266,6 @@ public actor TranslationClient {
                 }
             }
             
-            // Collect results in order
             var results = Array<TranslationResponse?>(repeating: nil, count: texts.count)
             for try await (index, response) in group {
                 results[index] = response
@@ -222,13 +300,13 @@ public actor TranslationClient {
         options: TranslationOptions?
     ) async throws -> TranslationResponse {
         
-        var request = URLRequest(url: decoderURL)
+        let targetURL = getRequestURL()
+        var request = URLRequest(url: targetURL)
         request.httpMethod = "POST"
         request.httpBody = encodedData
         request.setValue(targetLang, forHTTPHeaderField: "X-Target-Language")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         
-        // Add options headers if provided
         if let formality = options?.formality {
             request.setValue(formality.rawValue, forHTTPHeaderField: "X-Formality")
         }
@@ -272,9 +350,7 @@ public actor TranslationClient {
     }
     
     private func addToCache(key: String, translation: String) {
-        // Implement LRU cache
         if translationCache.count >= maxCacheSize {
-            // Remove oldest entry (simplified - in production use proper LRU)
             if let firstKey = translationCache.keys.first {
                 translationCache.removeValue(forKey: firstKey)
             }

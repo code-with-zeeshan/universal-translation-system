@@ -21,7 +21,6 @@ This document outlines security best practices for deploying and operating the U
 
 ### Rotation & JWKS
 - Use rotation CLI: `tools/rotate_secrets.py` (supports HS256 and RS256)
-- Scheduled rotation workflow: `.github/workflows/scheduled-rotation.yml`
 - RS256: maintain multiple public keys via `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||` separator
 
 ### JWT Secrets
@@ -69,7 +68,7 @@ data:
 ### TLS/SSL
 - Always use HTTPS for all API endpoints
 - Use TLS 1.2 or higher
-- See `universal_decoder_node/utils/https_middleware.py` for HTTPS enforcement
+- See `udn/utils/https_middleware.py` for HTTPS enforcement
 
 ### Network Policies
 - Use Kubernetes Network Policies to restrict traffic

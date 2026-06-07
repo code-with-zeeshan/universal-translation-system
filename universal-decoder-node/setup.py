@@ -13,7 +13,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/code-with-zeeshan/universal-translation-system/tree/main/universal-decoder-node",
-    packages=find_packages(),
+    packages=find_packages(include=["udn", "udn.*"]),
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
@@ -27,7 +27,6 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        # Core runtime used by decoder service
         "torch>=2.0.0",
         "numpy>=1.21.0,<2.0.0",
         "msgpack>=1.0.0",
@@ -46,12 +45,12 @@ setup(
         "aiofiles>=23.2.0",
     ],
     extras_require={
-        # Optional performance/ops extras
         "perf": [
             "orjson>=3.9.10",
             "uvloop>=0.19.0; platform_system != 'Windows'",
             "tenacity>=8.2.3",
             "watchdog>=2.3.0",
+            "zeroconf>=0.132.0",
         ],
         "dev": [
             "pytest>=7.4.0",
@@ -67,13 +66,12 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "universal-decoder-node=universal_decoder_node.cli:cli",
-            "udn=universal_decoder_node.cli:cli",  # Short alias
-            "udn-litserve=universal_decoder_node.litserve_decoder:main",  # LitServe variant
+            "udn=udn.cli:cli",
+            "udn-litserve=udn.litserve_decoder:main",
         ],
     },
     include_package_data=True,
     package_data={
-        "universal_decoder_node": ["*.yaml", "*.yml"],
+        "udn": ["*.yaml", "*.yml"],
     },
 )

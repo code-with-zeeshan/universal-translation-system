@@ -132,6 +132,13 @@ vocabulary/temp_*
 evaluation/reports/
 evaluation_reports/
 
+# Runtime GPU config (auto-detected)
+decoder_config.yaml
+universal-decoder-node/decoder_config.yaml
+
+# opencode config
+.opencode/
+
 # Runtime app config directory
 .universaltranslationsystem/
 

@@ -5,13 +5,16 @@ flowchart LR
         A3[Flutter]
         A4[React Native]
         A5[Web - WASM]
+        EU[checkEncoderUpdate\nHF Hub HEAD + etag]
+        LD[checkLocalDecoder\nlocalhost ports 8000/8080/9000]
+        CR[Coordinator-aware\n/api/status → single_decoder?]
     end
 
-    subgraph Edge
-        E1[Universal Encoder Core\nC++/FFI + WASM]
+    subgraph Edge [Edge Encoder]
+        E1[Encoder Core\nC++/FFI + WASM]
         E2[Vocabulary Manager\nPacks: Latin/CJK/... 2-4MB]
         E3[Local Cache\nLRU + Versioned]
-        E4[Compression/Serialization\nLZ4 + MsgPack]
+        E4[Serialization\nLZ4 + MsgPack]
         E1 --- E2
         E2 --- E3
         E1 --> E4
@@ -19,88 +22,62 @@ flowchart LR
 
     subgraph Network
         TLS[TLS/HTTPS]
-        Auth[JWT and API Keys]
-        RL[Rate Limiter]
-        CB[Circuit Breaker]
+        Auth[JWT + API Keys]
         TLS --- Auth
-        Auth --- RL
-        RL --- CB
     end
 
     subgraph Coordinator
-        C_API[HTTP API - decode health metrics]
-        C_RT[Router - Least Loaded and Health]
-        C_HC[Health Prober\nActive and Passive]
-        C_MX[Metrics Exporter\nPrometheus]
-        C_TR[Tracing\nOpenTelemetry]
-        C_ADM[Admin and Dashboard]
-        C_REDIS[Redis\noptional]
-        C_CFG[Configuration\nconfig and env]
-        C_SEC[AuthN/Z\nJWT]
-        C_API --> C_RT
-        C_RT --> C_HC
-        C_API --> C_SEC
+        C_API[HTTP API\ndecode / health / metrics]
+        C_ST[Pool Status\n/api/status → single_decoder]
+        C_CB[Circuit Breaker\nCLOSED / OPEN / HALF-OPEN]
+        C_BT[CoordinatorBatcher\n50ms window → concurrent]
+        C_HC[Health Prober\nperiodic + on-fail]
+        C_MX[Metrics\nPrometheus]
+        C_REDIS[Redis\noptional persistence]
+        C_API --> C_ST
+        C_API --> C_CB
+        C_API --> C_BT
+        C_BT --> C_HC
         C_API --> C_MX
-        C_API --> C_TR
-        C_RT --> C_REDIS
-        C_ADM --> C_MX
-        C_CFG -. reads .-> C_API
+        C_HC --> C_REDIS
     end
 
     subgraph DecoderPool
-        DN1[Decoder Node #1\nFastAPI + PyTorch]
-        DN2[Decoder Node #2]
-        DNn[Decoder Node #N]
-                    MLD[Model Loader\nAdapters]
-            VLM[Runtime Vocab Access]
-            MXS[Metrics Exporter]
-            HCS[Health Endpoint]
-        DN1 --- MLD
-        DN1 --- VLM
-        DN1 --- MXS
-        DN1 --- HCS
-        DN2 --- MXS
-        DNn --- MXS
-    end
-
-    subgraph ObservabilityGroup
-        PM[Prometheus]
-        GF[Grafana]
-        AL[Alerting]
-        OTEL[OpenTelemetry Collector]
-        PM --> GF
-        PM --> AL
-        OTEL -. traces .- GF
+        DN1[Decoder Node\nLitServe / PyTorch]
+        DN2[Decoder Node]
+        DNn[Decoder Node N]
+        MD[mDNS\n_universal-translate._tcp]
+        GD[GPU Detection\nCUDA / MPS]
+        DK[Docker\nudn docker --gpus]
+        DN1 --- MD
+        DN1 --- GD
+        DN1 --- DK
     end
 
     subgraph Artifacts
-        MS[(Model/Artifact Store\nHF Hub)]
-        VR[Version Registry\nversion-config.json]
+        MS[(Model Store\nHugging Face Hub)]
     end
 
-    subgraph CICD
-        BLD[Build Scripts\nscripts/*]
-        PBL[Publish/Release]
-        DKR[Docker Images\ndocker/*]
-        K8S[Kubernetes Manifests\ncharts/uts/ + kubernetes/]
+    subgraph Observability
+        PM[Prometheus]
+        GF[Grafana]
+    end
+
+    subgraph QualityTiers [Deployment Tiers]
+        QT1[Cloud: 500MB FP32]
+        QT2[Flagship: 250MB FP16]
+        QT3[Standard: 125MB INT8]
     end
 
     A1 & A2 & A3 & A4 & A5 -->|Text| E1
     E1 -->|Embeddings| E4
     E4 -->|HTTPS + JWT| TLS
-    TLS --> Auth --> RL --> CB --> C_API
+    TLS --> Auth --> C_API
 
-    C_RT -->|/decode| DN1 & DN2 & DNn
+    C_BT -->|/decode| DN1 & DN2 & DNn
     DN1 -->|Translation| C_API
-    C_API -->|Result| A1 & A2 & A3 & A4 & A5
+    C_API -->|Result| SDKs
 
     C_MX --> PM
-    MXS --> PM
-    C_TR --> OTEL
-
-    MLD -. downloads .-> MS
-    VR -. governs .-> C_CFG
-
-    BLD --> DKR --> K8S
-    K8S --> Coordinator
-    K8S --> DecoderPool
+    PM --> GF
+    DN1 -. downloads .-> MS

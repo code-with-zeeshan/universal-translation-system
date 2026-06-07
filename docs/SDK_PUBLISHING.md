@@ -90,7 +90,7 @@ npm publish --access public
 
 ## Versioning & CI
 - Semantic versioning (`MAJOR.MINOR.PATCH`).
-- Automate publishing with GitHub Actions (`.github/workflows/sdk-publish.yml`, `web-npm-publish.yml`).
+- Automate publishing with GitHub Actions (`.github/workflows/build-upload.yml`, `.github/workflows/publish-pypi.yml`).
 - Naming convention:
   - Web: `@your-org/universal-translation-sdk`
   - React Native: `@your-org/universal-translation-sdk-rn`

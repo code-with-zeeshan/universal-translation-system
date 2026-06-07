@@ -102,7 +102,7 @@ model:
 
 training:
   use_lora: false                 # false = train full model
-  num_epochs: 10                  # Training epochs
+  num_epochs: 5                   # Default epochs (override: --num-epochs 10)
   lr: 3e-4                        # Learning rate
   warmup_steps: 1000              # LR warmup
   batch_size: 32                  # Per-GPU batch

@@ -412,7 +412,6 @@ DOCS = {
     "monitor": "monitoring/README.md",
     "faq": "FAQ.md",
     "trouble": "docs/TROUBLESHOOT.md",
-    "roadmap": "docs/Roadmap.md",
     "vision": "docs/VISION.md",
 }
 
@@ -450,6 +449,21 @@ def build_docs_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--list", action="store_true", help="List available documentation topics")
 
 
+# ── tui ─────────────────────────────────────────────────────────────
+
+def cmd_tui(args: argparse.Namespace):
+    _run("tui.app",
+         config=args.config,
+         pipeline=args.pipeline,
+         train=args.train)
+
+
+def build_tui_parser(sub: argparse.ArgumentParser):
+    sub.add_argument("--config", default="config/base.yaml", help="Config file path")
+    sub.add_argument("--pipeline", action="store_true", help="Data pipeline only")
+    sub.add_argument("--train", action="store_true", help="Training only")
+
+
 # ── main parser ──────────────────────────────────────────────────────
 
 BANNER = """
@@ -470,6 +484,7 @@ Workflows (run `uts <group> --help` for details):
   publish        Publish model to Hugging Face Hub (single source of truth)
   serve          Services: decoder server, coordinator, Redis
   tools          Utilities: config, GPU, secrets, upload, prefetch
+  tui            Terminal UI dashboard for pipeline/training
   docs           Open documentation by topic
 
 Common flags (available on most groups):
@@ -532,6 +547,11 @@ p_tools = subparsers.add_parser("tools", help="Utility tools")
 build_tools_parser(p_tools)
 p_tools.set_defaults(func=cmd_tools)
 
+# tui
+p_tui = subparsers.add_parser("tui", help="Terminal UI dashboard for pipeline/training")
+build_tui_parser(p_tui)
+p_tui.set_defaults(func=cmd_tui)
+
 # docs
 p_docs = subparsers.add_parser("docs", help="Documentation browser")
 build_docs_parser(p_docs)
@@ -549,6 +569,7 @@ def main():
         print("  3. uts train --full")
         print("  4. uts eval --model --checkpoint checkpoints/*/best_model.pt")
         print("  5. uts publish --repo-id your-org/universal-translation-system")
+        print("  Dashboard: uts tui --config config/base.yaml")
         print()
         print("  uts docs --open setup     Full setup guide")
         print("  uts docs --open train     Training guide")

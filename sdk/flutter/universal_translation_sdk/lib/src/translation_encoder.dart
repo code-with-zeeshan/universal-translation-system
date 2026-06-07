@@ -321,23 +321,132 @@ class TranslationError extends TranslationResult {
   });
 }
 
+// Coordinator status response model
+class _CoordinatorStatus {
+  final bool singleDecoder;
+  final List<_CoordinatorDecoder> decoders;
+  
+  _CoordinatorStatus({required this.singleDecoder, required this.decoders});
+  
+  factory _CoordinatorStatus.fromJson(Map<String, dynamic> json) {
+    return _CoordinatorStatus(
+      singleDecoder: json['single_decoder'] as bool,
+      decoders: (json['decoders'] as List)
+          .map((d) => _CoordinatorDecoder.fromJson(d as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class _CoordinatorDecoder {
+  final String nodeId;
+  final String endpoint;
+  
+  _CoordinatorDecoder({required this.nodeId, required this.endpoint});
+  
+  factory _CoordinatorDecoder.fromJson(Map<String, dynamic> json) {
+    return _CoordinatorDecoder(
+      nodeId: json['node_id'] as String,
+      endpoint: json['endpoint'] as String,
+    );
+  }
+}
+
 /// Translation client for end-to-end translation
 class TranslationClient {
   static final Logger _logger = Logger();
+  static const String _hfRepo = 'your-org/universal-translation-system';
   
   final TranslationEncoder _encoder = TranslationEncoder();
   final String decoderUrl;
+  final String? coordinatorUrl;
   final http.Client _httpClient = http.Client();
   final Duration timeout;
   
+  String _effectiveDecoderUrl;
+  bool _useCoordinator = false;
+  
   TranslationClient({
     this.decoderUrl = 'https://api.yourdomain.com/decode',
+    this.coordinatorUrl,
     this.timeout = const Duration(seconds: 30),
-  });
+  }) : _effectiveDecoderUrl = decoderUrl;
   
   /// Initialize the client
   Future<void> initialize() async {
     await _encoder.initialize();
+    await _resolveCoordinator();
+    await _checkEncoderUpdate();
+  }
+
+  Future<void> _resolveCoordinator() async {
+    if (coordinatorUrl == null) return;
+    try {
+      final response = await _httpClient
+          .get(Uri.parse('$coordinatorUrl/api/status'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final status = _CoordinatorStatus.fromJson(jsonDecode(response.body));
+        if (status.singleDecoder && status.decoders.isNotEmpty) {
+          _effectiveDecoderUrl = status.decoders.first.endpoint;
+          _useCoordinator = false;
+        } else {
+          _useCoordinator = true;
+        }
+      }
+    } catch (e) {
+      _logger.w('Coordinator unreachable, falling back to direct decoder: $e');
+      _effectiveDecoderUrl = decoderUrl;
+    }
+  }
+
+  String _getRequestUrl() {
+    if (_useCoordinator && coordinatorUrl != null) {
+      return '$coordinatorUrl/api/decode';
+    }
+    return _effectiveDecoderUrl;
+  }
+
+  Future<void> _checkEncoderUpdate() async {
+    try {
+      final response = await _httpClient
+          .get(Uri.parse('https://huggingface.co/$_hfRepo/raw/main/models/production/encoder.onnx'))
+          .timeout(const Duration(seconds: 5));
+      // HEAD not easily available in dart:http, so we check content-length and last-modified
+      final remoteEtag = response.headers['etag'] ?? response.headers['last-modified'] ?? '';
+      if (remoteEtag.isNotEmpty) {
+        final cached = _getCachedEtag();
+        if (remoteEtag != cached) {
+          _cacheEtag(remoteEtag);
+          await _downloadEncoderUpdate();
+        }
+      }
+    } catch (e) {
+      // Offline or HF unavailable, bundled encoder is fine
+    }
+  }
+
+  String? _getCachedEtag() {
+    // In production, this would read from SharedPreferences or secure storage
+    return null;
+  }
+
+  void _cacheEtag(String etag) {
+    // In production, this would persist the etag
+  }
+
+  Future<void> _downloadEncoderUpdate() async {
+    try {
+      final response = await _httpClient
+          .get(Uri.parse('https://huggingface.co/$_hfRepo/resolve/main/models/production/encoder.onnx'))
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        // In production, this would update the encoder model file
+        _logger.i('Encoder update downloaded (${response.bodyBytes.length} bytes)');
+      }
+    } catch (e) {
+      _logger.w('Failed to download encoder update, using bundled version: $e');
+    }
   }
   
   /// Translate text from source to target language
@@ -347,7 +456,6 @@ class TranslationClient {
     required String to,
   }) async {
     try {
-      // Validate input
       if (text.trim().isEmpty) {
         return const TranslationError(
           message: 'Text cannot be empty',
@@ -355,15 +463,13 @@ class TranslationClient {
         );
       }
       
-      // Encode locally
       _logger.d('Encoding text: ${text.length} characters');
       final encoded = await _encoder.encode(text, from, to);
       
-      // Send to decoder
       _logger.d('Sending to decoder: ${encoded.length} bytes');
       final response = await _httpClient
           .post(
-            Uri.parse(decoderUrl),
+            Uri.parse(_getRequestUrl()),
             headers: {
               'Content-Type': 'application/octet-stream',
               'X-Target-Language': to,

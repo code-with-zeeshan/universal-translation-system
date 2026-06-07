@@ -50,8 +50,6 @@ setup(
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [
-            "uts-train=scripts.build_and_upload_pipeline:main",
-            "uts-pipeline=scripts.pipeline:main",
             "uts-tui=tui.app:main",
         ],
     },
