@@ -172,10 +172,6 @@ def cmd_vocab(args: argparse.Namespace):
     elif args.evolve:
         _run_module("vocabulary/evolve_vocabulary.py",
                      *(("--pack", args.pack) if args.pack else []))
-    elif args.sign_vocab:
-        _run_script("scripts/build_and_upload_pipeline.py", "--sign-packs")
-    elif args.verify_vocab:
-        _run_module("vocabulary/vocab_validation.py", "--verify")
     else:
         print("See: uts vocab --help")
 
@@ -183,8 +179,6 @@ def cmd_vocab(args: argparse.Namespace):
 def build_vocab_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--build", action="store_true", help="Build vocabulary packs from processed data")
     sub.add_argument("--evolve", action="store_true", help="Evolve an existing vocabulary pack")
-    sub.add_argument("--sign-vocab", action="store_true", help="Sign vocabulary packs with HMAC")
-    sub.add_argument("--verify-vocab", action="store_true", help="Verify vocabulary pack signatures")
     sub.add_argument("--vocab-size", type=int, default=32000, help="Tokens per vocabulary pack")
     sub.add_argument("--mode", choices=["production", "research", "hybrid"], help="Creation mode")
     sub.add_argument("--groups", nargs="*", help="Specific groups: latin cjk arabic devanagari cyrillic thai")
