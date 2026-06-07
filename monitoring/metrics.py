@@ -388,3 +388,145 @@ def track_sdk_request(sdk_type, method, status, latency=None):
             sdk_type=sdk_type,
             method=method
         ).observe(latency)
+
+
+# ── Enhanced metrics (ported from enhanced_metrics.py) ──────────────
+
+# Encoder metrics
+ENCODING_SIZE = Histogram(
+    'encoding_size_bytes',
+    'Size of encoded data in bytes',
+    ['source_lang', 'target_lang'],
+    buckets=(100, 500, 1000, 2000, 5000, 10000, 20000)
+)
+
+# Decoder GPU metrics
+DECODER_GPU_UTILIZATION = Gauge(
+    'decoder_gpu_utilization_percent',
+    'GPU utilization percentage per decoder',
+    ['decoder_id', 'gpu_id']
+)
+
+DECODER_GPU_MEMORY = Gauge(
+    'decoder_gpu_memory_used_bytes',
+    'GPU memory used in bytes per decoder',
+    ['decoder_id', 'gpu_id']
+)
+
+# Vocabulary cache metrics
+VOCABULARY_CACHE_SIZE = Gauge(
+    'vocabulary_cache_size_bytes',
+    'Size of vocabulary cache in bytes',
+    ['language']
+)
+
+VOCABULARY_CACHE_HITS = Counter(
+    'vocabulary_cache_hits_total',
+    'Total number of vocabulary cache hits',
+    ['language']
+)
+
+VOCABULARY_CACHE_MISSES = Counter(
+    'vocabulary_cache_misses_total',
+    'Total number of vocabulary cache misses',
+    ['language']
+)
+
+# Coordinator metrics
+COORDINATOR_ACTIVE_DECODERS = Gauge(
+    'coordinator_active_decoders',
+    'Number of active decoders in the pool'
+)
+
+COORDINATOR_ROUTING_DECISIONS = Counter(
+    'coordinator_routing_decisions_total',
+    'Total number of routing decisions',
+    ['decision_type']
+)
+
+# Circuit breaker metrics (for coordinator multi-decoder failover)
+CIRCUIT_BREAKER_STATE = Gauge(
+    'circuit_breaker_state',
+    'Circuit breaker state (0=closed, 1=half-open, 2=open)',
+    ['name']
+)
+
+CIRCUIT_BREAKER_FAILURES = Counter(
+    'circuit_breaker_failures_total',
+    'Total number of circuit breaker failures',
+    ['name', 'error_type']
+)
+
+CIRCUIT_BREAKER_SUCCESSES = Counter(
+    'circuit_breaker_successes_total',
+    'Total number of circuit breaker successes',
+    ['name']
+)
+
+# Error metrics
+ERROR_COUNT = Counter(
+    'error_count_total',
+    'Total number of errors',
+    ['component', 'error_code']
+)
+
+
+def track_encoding_size(source_lang: str, target_lang: str, size_bytes: int):
+    """Track the size of encoded data in bytes."""
+    ENCODING_SIZE.labels(source_lang=source_lang, target_lang=target_lang).observe(size_bytes)
+
+
+def track_error(component: str, error_code: str):
+    """Track an error by component and error code."""
+    ERROR_COUNT.labels(component=component, error_code=error_code).inc()
+
+
+def track_vocabulary_cache_hit(language: str):
+    """Increment vocabulary cache hit counter for a language."""
+    VOCABULARY_CACHE_HITS.labels(language=language).inc()
+
+
+def track_vocabulary_cache_miss(language: str):
+    """Increment vocabulary cache miss counter for a language."""
+    VOCABULARY_CACHE_MISSES.labels(language=language).inc()
+
+
+def set_vocabulary_cache_size(language: str, size_bytes: int):
+    """Set the vocabulary cache size for a language."""
+    VOCABULARY_CACHE_SIZE.labels(language=language).set(size_bytes)
+
+
+def set_decoder_gpu_utilization(decoder_id: str, gpu_id: str, utilization: float):
+    """Set GPU utilization percentage for a decoder node."""
+    DECODER_GPU_UTILIZATION.labels(decoder_id=decoder_id, gpu_id=gpu_id).set(utilization)
+
+
+def set_decoder_gpu_memory(decoder_id: str, gpu_id: str, memory_bytes: int):
+    """Set GPU memory usage for a decoder node."""
+    DECODER_GPU_MEMORY.labels(decoder_id=decoder_id, gpu_id=gpu_id).set(memory_bytes)
+
+
+def set_coordinator_active_decoders(count: int):
+    """Set the number of active decoders in the coordinator pool."""
+    COORDINATOR_ACTIVE_DECODERS.set(count)
+
+
+def track_coordinator_routing_decision(decision_type: str):
+    """Increment routing decision counter by type."""
+    COORDINATOR_ROUTING_DECISIONS.labels(decision_type=decision_type).inc()
+
+
+def set_circuit_breaker_state(name: str, state: str):
+    """Set circuit breaker state (CLOSED=0, HALF_OPEN=1, OPEN=2)."""
+    state_value = {"CLOSED": 0, "HALF_OPEN": 1, "OPEN": 2}.get(state, 0)
+    CIRCUIT_BREAKER_STATE.labels(name=name).set(state_value)
+
+
+def track_circuit_breaker_failure(name: str, error_type: str):
+    """Increment circuit breaker failure counter."""
+    CIRCUIT_BREAKER_FAILURES.labels(name=name, error_type=error_type).inc()
+
+
+def track_circuit_breaker_success(name: str):
+    """Increment circuit breaker success counter."""
+    CIRCUIT_BREAKER_SUCCESSES.labels(name=name).inc()
