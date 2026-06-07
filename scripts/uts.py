@@ -60,6 +60,16 @@ def _scale_config(config_path: str, scale: float) -> str:
     print(f"→ Scaled training_distribution by {scale}× → {tmp.name}")
     return tmp.name
 
+
+def _find_latest_checkpoint() -> str | None:
+    """Return the most recently modified .pt file in checkpoints/."""
+    candidates = sorted(Path("checkpoints").rglob("*.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if candidates:
+        print(f"→ Auto-detected checkpoint: {candidates[0]}")
+        return str(candidates[0])
+    return None
+
+
 def _run(*args: str, **kwargs):
     """Run a python module as `python -m module [args...]`."""
     cmd = [PY, "-m"] + list(args)
@@ -172,6 +182,7 @@ def build_vocab_parser(sub: argparse.ArgumentParser):
 
 def cmd_train(args: argparse.Namespace):
     if args.full:
+        checkpoint = args.checkpoint or _find_latest_checkpoint()
         _run("training.trainer" if args.distributed else "training.launch",
              "train",
              config=args.config,
@@ -180,7 +191,7 @@ def cmd_train(args: argparse.Namespace):
              batch_size=args.batch_size,
              learning_rate=args.lr,
              experiment_name=args.experiment_name,
-             checkpoint=args.checkpoint)
+             checkpoint=checkpoint)
     elif args.progressive:
         _run_module("training/progressive_training.py",
                      *(("--start-from-tier", args.start_tier) if args.start_tier else []),
@@ -214,6 +225,10 @@ def build_train_parser(sub: argparse.ArgumentParser):
 
 def cmd_eval(args: argparse.Namespace):
     if args.model:
+        eval_dir = Path(args.test_data or "data/evaluation")
+        if not eval_dir.exists() or not any(eval_dir.iterdir()):
+            print("→ Eval data missing, downloading...")
+            _run("data.unified_data_pipeline", config=args.config, eval_only=True)
         _run_module("evaluation/evaluate_model.py",
                      config=args.config,
                      checkpoint=args.checkpoint,

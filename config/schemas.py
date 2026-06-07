@@ -99,7 +99,7 @@ class TrainingConfig(BaseModel):
     log_every: int = 100
     validate_every: int = 1
     profile_training: bool = False
-    num_epochs: Optional[int] = 20
+    num_epochs: Optional[int] = 5
     batch_size: int = 32
     resume_from: Optional[str] = None
     validate_only: Optional[bool] = False

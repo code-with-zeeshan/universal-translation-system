@@ -29,7 +29,6 @@ tracer = trace.get_tracer(__name__)
 
 
 CORE_STAGES = [
-    PipelineStage.DOWNLOAD_EVAL,
     PipelineStage.DOWNLOAD_TRAIN,
     PipelineStage.SAMPLE_FILTER,
     PipelineStage.AUGMENT,
