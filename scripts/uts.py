@@ -447,6 +447,7 @@ DOCS = {
     "faq": "FAQ.md",
     "trouble": "docs/TROUBLESHOOT.md",
     "vision": "docs/VISION.md",
+    "layout": "docs/RUNTIME_LAYOUT.md",
     "version": "docs/VERSION_MANAGEMENT.md",
     "secret": "docs/SECRET_MANAGEMENT.md",
     "tui": "docs/TUI.md",
