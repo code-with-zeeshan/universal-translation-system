@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
 from enum import Enum
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 import zipfile
 import io
@@ -85,7 +85,6 @@ class UnifiedDataDownloader:
         
         # Initialize utilities
         self.data_processor = DataProcessor(config, self.logger)
-        self.dataset_loader = DatasetLoader(self.logger)
         
         # Configuration
         # Support both object-attr and dict-style configs
@@ -93,9 +92,17 @@ class UnifiedDataDownloader:
         if isinstance(data_cfg, dict):
             self.languages = data_cfg.get('active_languages', ['en'])
             self.training_distribution = data_cfg.get('training_distribution', {})
+            self.download_max_workers = data_cfg.get('download_max_workers', 4)
+            self.download_parallel_batches = data_cfg.get('download_parallel_batches', False)
+            self.datasets_cache_dir = data_cfg.get('datasets_cache_dir', None)
         else:
             self.languages = getattr(data_cfg, 'active_languages', ['en'])
             self.training_distribution = getattr(data_cfg, 'training_distribution', {})
+            self.download_max_workers = getattr(data_cfg, 'download_max_workers', 4)
+            self.download_parallel_batches = getattr(data_cfg, 'download_parallel_batches', False)
+            self.datasets_cache_dir = getattr(data_cfg, 'datasets_cache_dir', None)
+        
+        self.dataset_loader = DatasetLoader(self.logger, self.datasets_cache_dir)
         
         # Setup HTTP session with retries (from curated downloader)
         self.session = self._setup_http_session()
@@ -249,6 +256,7 @@ class UnifiedDataDownloader:
         pairs = self.get_required_pairs(dataset_type)
         
         schedule = []
+        mw = self.download_max_workers
         
         if dataset_type == DatasetType.EVALUATION:
             # Simple schedule for evaluation data
@@ -256,7 +264,7 @@ class UnifiedDataDownloader:
                 'batch_name': 'Evaluation Datasets',
                 'pairs': pairs,
                 'parallel': True,
-                'max_workers': 4
+                'max_workers': mw
             })
         else:
             # Smart batching for training data
@@ -267,7 +275,7 @@ class UnifiedDataDownloader:
                     'batch_name': 'High Priority English Pairs',
                     'pairs': batch1,
                     'parallel': True,
-                    'max_workers': 4
+                    'max_workers': mw
                 })
             
             # Direct pairs (non-English)
@@ -277,7 +285,7 @@ class UnifiedDataDownloader:
                     'batch_name': 'Direct Language Pairs',
                     'pairs': batch2,
                     'parallel': True,
-                    'max_workers': 2
+                    'max_workers': mw
                 })
             
             # Remaining pairs
@@ -287,7 +295,7 @@ class UnifiedDataDownloader:
                     'batch_name': 'Additional Pairs',
                     'pairs': batch3,
                     'parallel': True,
-                    'max_workers': 3
+                    'max_workers': mw
                 })
         
         return schedule
@@ -417,35 +425,48 @@ class UnifiedDataDownloader:
         # Get download schedule
         schedule = self.get_download_schedule(DatasetType.TRAINING)
         
-        for batch in schedule:
-            self.logger.info(f"\n📦 {batch['batch_name']}:")
-            self.logger.info(f"  Pairs: {len(batch['pairs'])}")
-            self.logger.info(f"  Parallel: {batch['parallel']}")
-            
-            if batch['parallel']:
-                # Parallel download
-                with ThreadPoolExecutor(max_workers=batch['max_workers']) as executor:
-                    futures = []
-                    for pair in batch['pairs']:
-                        future = executor.submit(
-                            self._download_pair_data,
-                            pair,
-                            output_dir
-                        )
-                        futures.append((pair, future))
-                    
-                    # Collect results
-                    for pair, future in tqdm(futures, desc=batch['batch_name']):
-                        try:
-                            if future.result():
-                                stats['downloaded_pairs'] += 1
-                        except Exception as e:
-                            self.logger.error(f"Failed to download {pair.pair_string}: {e}")
-            else:
-                # Sequential download
-                for pair in tqdm(batch['pairs'], desc=batch['batch_name']):
-                    if self._download_pair_data(pair, output_dir):
-                        stats['downloaded_pairs'] += 1
+        if self.download_parallel_batches:
+            all_pairs = [p for batch in schedule for p in batch['pairs']]
+            self.logger.info(f"📦 Downloading {len(all_pairs)} pairs in parallel (max_workers={self.download_max_workers})")
+            with ThreadPoolExecutor(max_workers=self.download_max_workers) as executor:
+                futures = {executor.submit(self._download_pair_data, pair, output_dir): pair for batch in schedule for pair in batch['pairs']}
+                for future in tqdm(as_completed(futures), total=len(futures), desc="All Pairs"):
+                    try:
+                        if future.result():
+                            stats['downloaded_pairs'] += 1
+                    except Exception as e:
+                        pair = futures[future]
+                        self.logger.error(f"Failed to download {pair.pair_string}: {e}")
+        else:
+            for batch in schedule:
+                self.logger.info(f"\n📦 {batch['batch_name']}:")
+                self.logger.info(f"  Pairs: {len(batch['pairs'])}")
+                self.logger.info(f"  Parallel: {batch['parallel']}")
+                
+                if batch['parallel']:
+                    # Parallel download
+                    with ThreadPoolExecutor(max_workers=batch['max_workers']) as executor:
+                        futures = []
+                        for pair in batch['pairs']:
+                            future = executor.submit(
+                                self._download_pair_data,
+                                pair,
+                                output_dir
+                            )
+                            futures.append((pair, future))
+                        
+                        # Collect results
+                        for pair, future in tqdm(futures, desc=batch['batch_name']):
+                            try:
+                                if future.result():
+                                    stats['downloaded_pairs'] += 1
+                            except Exception as e:
+                                self.logger.error(f"Failed to download {pair.pair_string}: {e}")
+                else:
+                    # Sequential download
+                    for pair in tqdm(batch['pairs'], desc=batch['batch_name']):
+                        if self._download_pair_data(pair, output_dir):
+                            stats['downloaded_pairs'] += 1
         
         return stats
     

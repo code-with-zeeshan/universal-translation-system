@@ -136,8 +136,9 @@ class DataProcessor:
 class DatasetLoader:
     """Centralized dataset loading with error handling"""
     
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    def __init__(self, logger: Optional[logging.Logger] = None, cache_dir: Optional[str] = None):
         self.logger = logger or logging.getLogger(__name__)
+        self.cache_dir = cache_dir
     
     def load_dataset_safely(
         self,
@@ -167,6 +168,8 @@ class DatasetLoader:
                     load_args['name'] = config_name
                 if split:
                     load_args['split'] = split
+                if self.cache_dir:
+                    load_args['cache_dir'] = self.cache_dir
                 load_args.update(kwargs)
                 dataset = load_dataset(**load_args)
                 self.logger.info(f"✅ Successfully loaded {dataset_name}")

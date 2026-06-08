@@ -567,7 +567,11 @@ class IntelligentTrainer(BaseTrainer):
         
         # Gradient scaler for mixed precision
         if self.strategy.memory_config.mixed_precision:
-            self.scaler = torch.amp.GradScaler('cuda')
+            device_type = self.device.type
+            if device_type in ('cuda', 'cpu'):
+                self.scaler = torch.amp.GradScaler(device_type)
+            else:
+                self.scaler = None
         else:
             self.scaler = None
     

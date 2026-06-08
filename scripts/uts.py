@@ -180,11 +180,18 @@ def build_data_parser(sub: argparse.ArgumentParser):
 
 def cmd_vocab(args: argparse.Namespace):
     if args.build:
-        _run_script("scripts/build_and_upload_pipeline.py",
-                     "--create-vocabs",
-                     *(("--vocab-size", str(args.vocab_size)) if args.vocab_size else []),
-                     *(("--vocab-mode", args.mode) if args.mode else []),
-                     *(("--vocab-groups", *args.groups) if args.groups else []))
+        code = (
+            "from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode;"
+            "from vocabulary.vocab_config import UnifiedVocabConfig;"
+            "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab',"
+            "config=UnifiedVocabConfig(vocab_size=%d));" % (args.vocab_size or 32000)
+            + ("mode=CreationMode.%s;" % args.mode.upper() if args.mode else "mode=None;")
+            + ("groups=%s;" % args.groups if args.groups else "groups=None;")
+            + "creator.create_all_packs(mode=mode, groups_to_create=groups);"
+        )
+        print(f"\n$ python -c \"vocabulary creator\"\n")
+        sys.stdout.flush()
+        subprocess.run([PY, "-c", code], check=True, cwd=str(ROOT))
     elif args.evolve:
         _run_module("vocabulary/evolve_vocabulary.py",
                      *(("--pack", args.pack) if args.pack else []))

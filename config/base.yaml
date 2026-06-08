@@ -71,6 +71,10 @@ data:
     ar-fr: 40000
     th-vi: 40000
   
+  download_max_workers: 4
+  download_parallel_batches: false
+  # datasets_cache_dir: /path/to/hf/cache
+
   augmentation_pairs:
     - en-es
     - en-fr

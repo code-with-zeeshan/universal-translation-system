@@ -21,6 +21,9 @@ class DataConfig(BaseModel):
     max_sentence_length: int = Field(64, description="Maximum sentence length")
     output_dir: str = "data/processed"
     augmentation_pairs: List[str] = Field(default_factory=list, description="Language pairs for synthetic augmentation")
+    download_max_workers: int = Field(4, description="Max parallel downloads per batch")
+    download_parallel_batches: bool = Field(False, description="Run download batches concurrently")
+    datasets_cache_dir: Optional[str] = Field(None, description="Cache directory for HuggingFace datasets")
 
     class Config:
         extra = "allow"
@@ -247,8 +250,8 @@ class DecoderConfig(BaseModel):
         description="Maximum sequence length for decoding"
     )
     device: str = Field(
-        default=os.environ.get("DECODER_DEVICE", "cuda"),
-        description="Device to run decoder on (cpu, cuda)"
+        default=os.environ.get("DECODER_DEVICE", "auto"),
+        description="Device to run decoder on (cpu, cuda, auto)"
     )
     batch_size: int = Field(
         default=int(os.environ.get("DECODER_BATCH_SIZE", "32")),
@@ -265,8 +268,8 @@ class DecoderConfig(BaseModel):
 
     @validator("device")
     def validate_device(cls, v):
-        if v not in ["cpu", "cuda"]:
-            raise ValueError(f"Device must be one of: cpu, cuda. Got: {v}")
+        if v not in ["cpu", "cuda", "auto"]:
+            raise ValueError(f"Device must be one of: cpu, cuda, auto. Got: {v}")
         return v
 
 

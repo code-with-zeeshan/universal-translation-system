@@ -42,8 +42,13 @@ class MemoryOptimizedTrainer:
         
         # Setup mixed precision with modern torch.amp
         if self.config.mixed_precision:
-            self.scaler = torch.amp.GradScaler(device='cuda')
-            self.autocast_ctx = torch.amp.autocast(device_type='cuda', dtype=self.config.dtype)
+            device_type = self.device.type
+            if device_type in ('cuda', 'cpu'):
+                self.scaler = torch.amp.GradScaler(device=device_type)
+                self.autocast_ctx = torch.amp.autocast(device_type=device_type, dtype=self.config.dtype)
+            else:
+                self.scaler = None
+                self.autocast_ctx = None
         else:
             self.scaler = None
             self.autocast_ctx = None
@@ -64,9 +69,12 @@ class MemoryOptimizedTrainer:
         if self.config.gradient_checkpointing:
             self._enable_gradient_checkpointing()
         
-        # 3. Setup Flash Attention
+        # 3. Setup Flash Attention (CUDA only)
         if self.config.use_flash_attention:
-            self._setup_flash_attention()
+            if torch.cuda.is_available():
+                self._setup_flash_attention()
+            else:
+                logger.warning("Flash Attention requires CUDA, skipping")
         
         # 4. Enable channels last memory format
         if self.config.use_channels_last:
