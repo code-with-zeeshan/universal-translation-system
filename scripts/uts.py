@@ -447,6 +447,11 @@ DOCS = {
     "faq": "FAQ.md",
     "trouble": "docs/TROUBLESHOOT.md",
     "vision": "docs/VISION.md",
+    "version": "docs/VERSION_MANAGEMENT.md",
+    "secret": "docs/SECRET_MANAGEMENT.md",
+    "tui": "docs/TUI.md",
+    "publish": "docs/PUBLISHING.md",
+    "test": "docs/TESTING.md",
 }
 
 TOPICS = {

@@ -185,7 +185,7 @@ data:
 | `--open TOPIC` | Open documentation for a topic |
 | `--list` | List available documentation topics |
 
-Available topics: `setup`, `train`, `arch`, `vocab`, `deploy`, `api`, `env`, `sdk`, `monitor`, `faq`, `trouble`, `roadmap`, `vision`
+Available topics: `setup`, `train`, `arch`, `vocab`, `deploy`, `api`, `env`, `sdk`, `monitor`, `faq`, `trouble`, `roadmap`, `vision`, `version`, `secret`, `tui`, `publish`, `test`
 
 ## Language Expansion Strategy (Adding Languages Beyond 20)
 
