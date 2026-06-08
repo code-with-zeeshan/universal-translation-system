@@ -1103,7 +1103,7 @@ class SyntheticDataAugmenter:
         self.languages = self.config.data.active_languages
         self.quality_threshold = self.config.data.quality_threshold
         self.output_dir = Path(self.config.data.processed_dir)
-        self.pipeline_batch_size = 128
+        self.pipeline_batch_size = 512
 
         self._model = None
         self._tokenizer = None
@@ -1464,7 +1464,7 @@ class SyntheticDataAugmenter:
                 eng_sentences = [c.replace("{meaning}", correct_meaning) for c in contexts]
 
                 # Translate to source language → natural source sentences containing ff_word
-                batch_size = 128
+                batch_size = 512
                 for i in range(0, len(eng_sentences), batch_size):
                     batch = eng_sentences[i:i + batch_size]
                     try:
@@ -1492,7 +1492,7 @@ class SyntheticDataAugmenter:
         target_lang: str,
         output_file: str,
         max_sentences: int = 500000,
-        batch_size: int = 128,
+        batch_size: int = 512,
     ) -> Dict[str, int]:
         """
         Use backtranslation to create synthetic parallel data.
