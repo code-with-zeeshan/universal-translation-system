@@ -157,7 +157,7 @@ def upload_to_hub(repo_id: str):
 
     logger.info(f"Uploading to HF Hub: {repo_id}")
     result = subprocess.run(
-        [sys.executable, str(upload_script), "--repo_id", repo_id],
+        [sys.executable, str(upload_script), "--repo-id", repo_id],
         cwd=str(ROOT), capture_output=True, text=True,
     )
     if result.returncode == 0:

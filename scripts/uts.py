@@ -16,7 +16,7 @@ Run without arguments for an overview, or use subcommands.
   uts docs           Open documentation
 
   uts <group> --help    Detailed help for a group
-  uts help <topic>      Open documentation in browser
+  uts docs --open <topic>      Open documentation in browser
 """
 import argparse
 import os
@@ -351,7 +351,7 @@ def cmd_tools(args: argparse.Namespace):
                      type=args.key_type,
                      *(("--set-env",) if args.set_env else []))
     elif args.upload:
-        _run_script("scripts/upload_artifacts.py", f"--repo_id={args.repo_id or args.upload}")
+        _run_script("scripts/upload_artifacts.py", f"--repo-id={args.repo_id or args.upload}")
     elif args.version:
         _run_script("scripts/version_manager.py", "show")
     elif args.register_decoder:
@@ -501,7 +501,7 @@ Examples:
   uts data --pipeline --config base.yaml  Run data pipeline
   uts train --full --config base.yaml     Train full model
   uts tools --validate-config config.yaml Validate config
-  uts help train                          Open training docs
+  uts docs --open train                   Open training docs
 """,
 )
 

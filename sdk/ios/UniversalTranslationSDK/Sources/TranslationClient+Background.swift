@@ -6,7 +6,6 @@ import Network
 import BackgroundTasks
 
 private let logger = Logger(subsystem: "com.universaltranslation.sdk", category: "TranslationClient")
-private let hfRepo = "your-org/universal-translation-system"
 
 // MARK: - Coordinator Status Models
 
@@ -97,15 +96,25 @@ public actor TranslationClient {
     private let encoder: TranslationEncoder
     private let decoderURL: URL
     private let coordinatorURL: URL?
+    private var localDecoderURL: URL?
+    private let preferLocal: Bool
+    private let hfRepo: String
     private var effectiveDecoderURL: URL
     private var useCoordinator: Bool = false
+    private var localDecoderAvailable: Bool = false
     private let session: URLSession
     private let monitor: NWPathMonitor
     
     private var translationCache: [String: String] = [:]
     private let maxCacheSize = 100
     
-    public init(decoderURL: String = "https://api.yourdomain.com/decode", coordinatorURL: String? = nil) throws {
+    public init(
+        decoderURL: String = "https://api.yourdomain.com/decode",
+        coordinatorURL: String? = nil,
+        localDecoderURL: String? = nil,
+        preferLocal: Bool = true,
+        hfRepo: String = "your-org/universal-translation-system"
+    ) throws {
         guard let url = URL(string: decoderURL) else {
             throw TranslationError.networkError(URLError(.badURL))
         }
@@ -114,6 +123,9 @@ public actor TranslationClient {
         self.decoderURL = url
         self.effectiveDecoderURL = url
         self.coordinatorURL = coordinatorURL.flatMap { URL(string: $0) }
+        self.localDecoderURL = localDecoderURL.flatMap { URL(string: $0) }
+        self.preferLocal = preferLocal
+        self.hfRepo = hfRepo
         
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 30
@@ -127,6 +139,9 @@ public actor TranslationClient {
         
         logger.info("TranslationClient initialized with decoder URL: \(decoderURL)")
         
+        if self.localDecoderURL != nil && self.preferLocal {
+            Task { await self.checkLocalDecoder() }
+        }
         if self.coordinatorURL != nil {
             Task { await self.resolveCoordinator() }
         }
@@ -161,7 +176,46 @@ public actor TranslationClient {
         }
     }
     
+    private func checkLocalDecoder() async {
+        if let localURL = localDecoderURL {
+            var request = URLRequest(url: localURL.appendingPathComponent("/health"))
+            request.httpMethod = "GET"
+            request.timeoutInterval = 2
+            do {
+                let (_, response) = try await session.data(for: request)
+                localDecoderAvailable = (response as? HTTPURLResponse)?.statusCode == 200
+                return
+            } catch {
+                logger.warning("Local decoder unreachable: \(error)")
+                localDecoderAvailable = false
+                return
+            }
+        }
+        // Auto-scan common ports for a local decoder
+        let ports = [8000, 8080, 9000]
+        for port in ports {
+            guard let url = URL(string: "http://localhost:\(port)/health") else { continue }
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.timeoutInterval = 1
+            do {
+                let (_, response) = try await session.data(for: request)
+                if (response as? HTTPURLResponse)?.statusCode == 200 {
+                    localDecoderURL = URL(string: "http://localhost:\(port)/decode")
+                    localDecoderAvailable = true
+                    return
+                }
+            } catch {
+                continue
+            }
+        }
+        localDecoderAvailable = false
+    }
+    
     private func getRequestURL() -> URL {
+        if localDecoderAvailable, preferLocal, let localURL = localDecoderURL {
+            return localURL
+        }
         if useCoordinator, let coordURL = coordinatorURL {
             return coordURL.appendingPathComponent("/api/decode")
         }

@@ -355,28 +355,52 @@ class _CoordinatorDecoder {
 /// Translation client for end-to-end translation
 class TranslationClient {
   static final Logger _logger = Logger();
-  static const String _hfRepo = 'your-org/universal-translation-system';
-  
   final TranslationEncoder _encoder = TranslationEncoder();
   final String decoderUrl;
   final String? coordinatorUrl;
+  final String? localDecoderUrl;
+  final bool preferLocal;
+  final String hfRepo;
   final http.Client _httpClient = http.Client();
   final Duration timeout;
   
   String _effectiveDecoderUrl;
   bool _useCoordinator = false;
+  bool _localDecoderAvailable = false;
   
   TranslationClient({
     this.decoderUrl = 'https://api.yourdomain.com/decode',
     this.coordinatorUrl,
+    this.localDecoderUrl,
+    this.preferLocal = true,
+    this.hfRepo = 'your-org/universal-translation-system',
     this.timeout = const Duration(seconds: 30),
   }) : _effectiveDecoderUrl = decoderUrl;
   
   /// Initialize the client
   Future<void> initialize() async {
     await _encoder.initialize();
+    if (localDecoderUrl != null && preferLocal) {
+      await _checkLocalDecoder();
+    }
     await _resolveCoordinator();
     await _checkEncoderUpdate();
+  }
+
+  Future<void> _checkLocalDecoder() async {
+    if (localDecoderUrl == null) {
+      _localDecoderAvailable = false;
+      return;
+    }
+    try {
+      final response = await _httpClient
+          .get(Uri.parse('$localDecoderUrl/health'))
+          .timeout(const Duration(seconds: 2));
+      _localDecoderAvailable = response.statusCode == 200;
+    } catch (e) {
+      _logger.w('Local decoder unreachable: $e');
+      _localDecoderAvailable = false;
+    }
   }
 
   Future<void> _resolveCoordinator() async {
@@ -401,6 +425,9 @@ class TranslationClient {
   }
 
   String _getRequestUrl() {
+    if (_localDecoderAvailable && preferLocal && localDecoderUrl != null) {
+      return localDecoderUrl;
+    }
     if (_useCoordinator && coordinatorUrl != null) {
       return '$coordinatorUrl/api/decode';
     }
@@ -410,7 +437,7 @@ class TranslationClient {
   Future<void> _checkEncoderUpdate() async {
     try {
       final response = await _httpClient
-          .get(Uri.parse('https://huggingface.co/$_hfRepo/raw/main/models/production/encoder.onnx'))
+          .get(Uri.parse('https://huggingface.co/$hfRepo/raw/main/models/production/encoder.onnx'))
           .timeout(const Duration(seconds: 5));
       // HEAD not easily available in dart:http, so we check content-length and last-modified
       final remoteEtag = response.headers['etag'] ?? response.headers['last-modified'] ?? '';
@@ -438,7 +465,7 @@ class TranslationClient {
   Future<void> _downloadEncoderUpdate() async {
     try {
       final response = await _httpClient
-          .get(Uri.parse('https://huggingface.co/$_hfRepo/resolve/main/models/production/encoder.onnx'))
+          .get(Uri.parse('https://huggingface.co/$hfRepo/resolve/main/models/production/encoder.onnx'))
           .timeout(const Duration(seconds: 30));
       if (response.statusCode == 200) {
         // In production, this would update the encoder model file
@@ -452,8 +479,8 @@ class TranslationClient {
   /// Translate text from source to target language
   Future<TranslationResult> translate({
     required String text,
-    required String from,
-    required String to,
+    required String sourceLang,
+    required String targetLang,
   }) async {
     try {
       if (text.trim().isEmpty) {
@@ -464,7 +491,7 @@ class TranslationClient {
       }
       
       _logger.d('Encoding text: ${text.length} characters');
-      final encoded = await _encoder.encode(text, from, to);
+      final encoded = await _encoder.encode(text, sourceLang, targetLang);
       
       _logger.d('Sending to decoder: ${encoded.length} bytes');
       final response = await _httpClient
@@ -472,8 +499,8 @@ class TranslationClient {
             Uri.parse(_getRequestUrl()),
             headers: {
               'Content-Type': 'application/octet-stream',
-              'X-Target-Language': to,
-              'X-Source-Language': from,
+              'X-Target-Language': targetLang,
+              'X-Source-Language': sourceLang,
             },
             body: encoded,
           )

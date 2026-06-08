@@ -16,7 +16,7 @@ os.environ.setdefault("UTS_HMAC_KEY", "a" * 40)
 _PROJECT_PACKAGES = [
     "utils", "data", "training", "integration",
     "evaluation", "vocabulary", "config", "connector",
-    "monitoring", "tools", "encoder", "decoder",
+    "monitoring", "tools", "encoder", 
     "encoder_core", "coordinator", "cloud_decoder",
 ]
 
@@ -1021,9 +1021,6 @@ _PROJECT_SUBMODULE_MOCKS = {
     'utils.rate_limiter': _make_mock_module('rate_limiter', {
         'RateLimiter': MagicMock(),
     }),
-    'utils.sensitive_filter': _make_mock_module('sensitive_filter', {
-        'SensitiveDataFilter': MagicMock(),
-    }),
     'utils.logging_config': _make_mock_module('logging_config', {
         'setup_logging': MagicMock(),
         'LoggingSensitiveDataFilter': MagicMock(),
@@ -1035,7 +1032,7 @@ _PROJECT_SUBMODULE_MOCKS = {
         'PipelineStage': MagicMock(),
         'PipelineState': MagicMock(),
     }),
-    'evaluation.metrics': _make_mock_module('metrics', {
+    'evaluation.evaluator': _make_mock_module('evaluator', {
         'TranslationPair': MagicMock(),
     }),
     'vocabulary.vocab_config': _make_mock_module('vocab_config', {
@@ -1085,12 +1082,6 @@ _PROJECT_SUBMODULE_MOCKS = {
         'DASHBOARD_TEMPLATE': MagicMock(),
         'DecoderNodeSchema': MagicMock(),
         'app': MagicMock(),
-    }),
-    'main': _make_mock_module('main', {
-        'HardwareConfig': MagicMock(),
-        'setup_logging': MagicMock(),
-        'SystemIntegrator': MagicMock(),
-        'integrate_full_pipeline': MagicMock(),
     }),
 }
 

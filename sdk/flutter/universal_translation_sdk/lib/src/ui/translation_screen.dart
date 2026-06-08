@@ -66,8 +66,8 @@ class _TranslationScreenState extends State<TranslationScreen> {
     try {
       final result = await _translationClient.translate(
         text: _inputController.text,
-        from: _selectedSourceLang,
-        to: _selectedTargetLang,
+        sourceLang: _selectedSourceLang,
+        targetLang: _selectedTargetLang,
       );
       
       if (mounted) {

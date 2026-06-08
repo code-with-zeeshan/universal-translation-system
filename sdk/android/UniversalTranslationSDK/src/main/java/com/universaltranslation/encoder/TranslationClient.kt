@@ -51,15 +51,18 @@ class TranslationAnalytics {
 class TranslationClient(
     private val context: Context,
     private val decoderUrl: String = "https://api.yourdomain.com/decode",
-    private val coordinatorUrl: String? = null
+    private val coordinatorUrl: String? = null,
+    private var localDecoderUrl: String? = null,
+    private val preferLocal: Boolean = true,
+    private val hfRepo: String = "your-org/universal-translation-system"
 ) {
     companion object {
         private const val TAG = "TranslationClient"
-        private const val HF_REPO = "your-org/universal-translation-system"
     }
     
     private var effectiveDecoderUrl: String = decoderUrl
     private var useCoordinator: Boolean = false
+    private var localDecoderAvailable: Boolean = false
     private val encoder = TranslationEncoder(context)
     private val analytics = TranslationAnalytics()
     private val httpClient = OkHttpClient.Builder()
@@ -69,10 +72,50 @@ class TranslationClient(
     private val gson = Gson()
 
     init {
+        if (localDecoderUrl != null && preferLocal) {
+            checkLocalDecoder()
+        }
         if (coordinatorUrl != null) {
             resolveCoordinator()
         }
         checkEncoderUpdate()
+    }
+
+    private fun checkLocalDecoder() {
+        if (localDecoderUrl != null) {
+            try {
+                val request = Request.Builder()
+                    .url("$localDecoderUrl/health")
+                    .get()
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                localDecoderAvailable = response.isSuccessful
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "Local decoder unreachable", e)
+                localDecoderAvailable = false
+                return
+            }
+        }
+        // Auto-scan common ports for a local decoder
+        val ports = listOf(8000, 8080, 9000)
+        for (port in ports) {
+            try {
+                val request = Request.Builder()
+                    .url("http://localhost:$port/health")
+                    .get()
+                    .build()
+                val response = httpClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    localDecoderUrl = "http://localhost:$port/decode"
+                    localDecoderAvailable = true
+                    return
+                }
+            } catch (_: Exception) {
+                continue
+            }
+        }
+        localDecoderAvailable = false
     }
 
     private fun resolveCoordinator() {
@@ -99,13 +142,16 @@ class TranslationClient(
     }
 
     private fun getRequestUrl(): String {
+        if (localDecoderAvailable && preferLocal && localDecoderUrl != null) {
+            return localDecoderUrl
+        }
         return if (useCoordinator && coordinatorUrl != null) "$coordinatorUrl/api/decode" else effectiveDecoderUrl
     }
 
     private fun checkEncoderUpdate() {
         try {
             val request = Request.Builder()
-                .url("https://huggingface.co/$HF_REPO/raw/main/models/production/encoder.onnx")
+                .url("https://huggingface.co/$hfRepo/raw/main/models/production/encoder.onnx")
                 .head()
                 .build()
             val response = httpClient.newCall(request).execute()
@@ -122,7 +168,7 @@ class TranslationClient(
     private fun downloadEncoderUpdate() {
         try {
             val request = Request.Builder()
-                .url("https://huggingface.co/$HF_REPO/resolve/main/models/production/encoder.onnx")
+                .url("https://huggingface.co/$hfRepo/resolve/main/models/production/encoder.onnx")
                 .get()
                 .build()
             val response = httpClient.newCall(request).execute()

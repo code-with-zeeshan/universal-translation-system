@@ -6,7 +6,7 @@ and other metrics for translation quality assessment.
 """
 
 from .evaluator import TranslationEvaluator, evaluate_translation_quality
-from .metrics import TranslationPair
+from .evaluator import TranslationPair
 
 __all__ = [
     "TranslationEvaluator",

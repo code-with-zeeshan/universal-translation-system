@@ -23,10 +23,4 @@ def find_schema_files() -> List[Path]:
                 p.suffix.lower() in {'.yaml', '.yml', '.json'} or p.suffix.lower() == '.proto'
             ):
                 candidates.append(p)
-    for p in [ROOT / 'openapi.yaml', ROOT / 'openapi.yml', ROOT / 'openapi.json']:
-        if p.exists():
-            candidates.append(p)
-    proto_dir = ROOT / 'proto'
-    if proto_dir.exists():
-        candidates.extend(list(proto_dir.rglob('*.proto')))
     return candidates

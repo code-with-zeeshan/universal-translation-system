@@ -67,12 +67,12 @@ def convert_models():
 
 def upload(repo_id: str):
     # Reuse existing upload script
-    run_py(str(ROOT / "scripts/upload_artifacts.py"), ["--repo_id", repo_id])
+    run_py(str(ROOT / "scripts/upload_artifacts.py"), ["--repo-id", repo_id])
 
 
 def main():
     parser = argparse.ArgumentParser(description="Build and upload artifacts pipeline")
-    parser.add_argument("--repo_id", required=True, help="HF Hub repo id, e.g. your-username/universal-translation-system")
+    parser.add_argument("--repo-id", required=True, dest="repo_id", help="HF Hub repo id, e.g. your-username/universal-translation-system")
     parser.add_argument("--create-vocabs", action="store_true", help="Create vocabulary packs before upload")
     parser.add_argument("--convert-models", action="store_true", help="Run model conversion before upload")
     parser.add_argument("--vocab-groups", nargs='*', help="Specific vocab groups to build (latin cjk arabic devanagari cyrillic thai)")

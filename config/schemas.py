@@ -416,7 +416,9 @@ def load_config(config_path: str = "config/base.yaml", base_config: Optional[Roo
 
             config_data['vocabulary'] = vocab_settings
 
-        if 'active_languages' not in config_data['data']:
+        if 'languages' in config_data['data'] and 'active_languages' not in config_data['data']:
+            config_data['data']['active_languages'] = config_data['data'].pop('languages')
+        elif 'active_languages' not in config_data['data']:
             training_dist = config_data['data'].get('training_distribution', {})
             languages = set()
             for pair in training_dist.keys():
