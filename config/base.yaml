@@ -202,7 +202,6 @@ monitoring:
 # Pipeline execution settings
 pipeline:
   enabled_stages:
-    - download_evaluation
     - download_training
     - sample_filter
     - augment

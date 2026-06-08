@@ -165,7 +165,7 @@ class UnifiedDataPipeline:
         """Extract relevant config sections per stage for fingerprinting."""
         c = self.config
         sections = {}
-        sections['download_evaluation'] = {'eval_pairs': list(c.data.evaluation_pairs)}
+        sections['download_evaluation'] = {'eval_pairs': list(getattr(c.data, 'evaluation_pairs', []))}
         sections['download_training'] = {
             'training_distribution': dict(c.data.training_distribution),
             'domain_data': list(getattr(c.data, 'domain_data', [])),
