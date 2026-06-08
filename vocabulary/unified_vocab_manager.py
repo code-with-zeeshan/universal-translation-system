@@ -50,6 +50,7 @@ class VocabularyPack:
     bloom_filter: Optional[Any] = None
     prefix_tree: Optional[Dict] = None
     compressed_data: Optional[bytes] = None
+    model_path: Optional[str] = None  # Path to SentencePiece .model file
 
     def __post_init__(self):
         """Initialize derived data structures"""
@@ -343,15 +344,21 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
                 data = self._safe_unpack_msgpack(f.read())
             
             # Create vocabulary pack
+            version = data.get('version', '1.0')
             pack = VocabularyPack(
                 name=data.get('name', pack_name),
-                version=data.get('version', '1.0'),
+                version=version,
                 languages=data.get('languages', []),
                 tokens=data.get('tokens', {}),
                 subwords=data.get('subwords', {}),
                 special_tokens=data.get('special_tokens', {}),
                 mode=self.mode
             )
+            
+            # Look for SentencePiece model file
+            model_path = self.vocab_dir / f"{pack_name}_v{version}.model"
+            if model_path.exists():
+                pack.model_path = str(model_path)
             
             # Validate
             is_valid, errors = pack.validate()
@@ -439,7 +446,19 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
             lang_pack_name = self.language_to_pack.get(language, 'latin')
             pack = self._load_pack_cached(lang_pack_name)
         
-        # Use optimized tokenization for EDGE mode
+        # EDGE mode: use SentencePiece .model file if available (identical to training)
+        if self.mode == VocabularyMode.EDGE and pack.model_path:
+            try:
+                import sentencepiece as spm
+                sp = spm.SentencePieceProcessor()
+                sp.Load(pack.model_path)
+                ids = sp.Encode(text)
+                lang_id = pack.special_tokens.get(f'<{language}>', pack.special_tokens.get('<s>', 2))
+                return [lang_id] + ids + [pack.special_tokens.get('</s>', 3)]
+            except Exception:
+                self.logger.warning("SentencePiece unavailable on edge, falling back to prefix tree")
+        
+        # Use optimized tokenization for EDGE mode (fallback)
         if self.mode == VocabularyMode.EDGE and pack.prefix_tree:
             return self._tokenize_with_prefix_tree(text, language, pack)
         

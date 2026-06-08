@@ -278,6 +278,15 @@ class UnifiedVocabularyCreator:
             # Save pack
             self._save_pack(pack, pack_name)
 
+            # Copy SentencePiece model with versioned name
+            version = pack['version']
+            model_src = self.output_dir / f"{pack_name}.model"
+            model_dst = self.output_dir / f"{pack_name}_v{version}.model"
+            if model_src.exists() and not model_dst.exists():
+                import shutil
+                shutil.copy2(model_src, model_dst)
+                logger.info(f"Saved SentencePiece model to {model_dst}")
+
             logger.info(f"Successfully created pack '{pack_name}'")
             self._log_pack_stats(pack)
 
@@ -393,7 +402,8 @@ class UnifiedVocabularyCreator:
                 'creation_mode': mode.value,
                 'domain': domain,
                     'compatible_decoder': '>=1.0.0',
-                'hash': hashlib.sha256(json.dumps(vocab_data, sort_keys=True).encode()).hexdigest()[:16],
+                'model_file': f'{pack_name}_v{version}.model',
+            'hash': hashlib.sha256(json.dumps(vocab_data, sort_keys=True).encode()).hexdigest()[:16],
                 'config': {
                     'vocab_size': self.config.vocab_size,
                     'model_type': self.config.model_type,
