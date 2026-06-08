@@ -2,81 +2,86 @@
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A flexible and scalable translation platform designed to support multiple languages across diverse applications. This system enables seamless text translation, making it easy to localize content for global audiences. Features include an innovative edge-cloud architecture, customizable language support, and extensible modules for adding new languages or translation engines. Ideal for developers and organizations looking to streamline multilingual communication and content delivery.
+A flexible and scalable translation platform supporting 20 languages via an edge-cloud architecture. A 42.7M-parameter encoder runs on-device (SDK), compressing text into embeddings; a 108.1M-parameter decoder in the cloud produces translations. A smart coordinator routes requests across a pool of decoder nodes.
 
-> **New**: Unified CLI — run `./uts` to discover every tool by workflow.
+> **New**: Terminal UI dashboard — `uts tui` to monitor pipeline + training in real time.
 
 ## Key Innovation
 
 Rather than bundling a huge model per language, the system splits the workflow for maximum efficiency and scalability:
 - **Edge Universal Encoder (42.7M params)**: 512-dim, 6-layer, 8-head encoder with RoPE + SwiGLU for on-device inference.
 - **On-demand Vocabulary Packs (2–4MB)**: 32K BPE vocabulary via SentencePiece, grouped by script (latin, cjk, cyrillic, arabic, devanagari, thai).
-- **Cloud Decoder (108.1M params)**: 768-dim, 8-layer, 12-head cross-attention decoder, served via FastAPI.
-- **Dual-Phase Training**: Phase 1 trains all 150.8M params for strong multilingual representations. Phase 2 freezes the backbone and trains only LoRA adapters (~7M params) when adding new languages — no full retraining needed.
-- **Smart Coordinator**: Routes to least-loaded decoders, performs health checks, supports elastic scaling.
-- **Multi-SDK**: Native Android/iOS/Flutter/React Native/Web SDKs under `sdk/`.
+- **Cloud Decoder (108.1M params)**: 768-dim, 8-layer, 12-head cross-attention decoder, served via FastAPI/LitServe.
+- **Dual-Phase Training**: Phase 1 trains all 150.8M params for strong multilingual representations. Phase 2 freezes the backbone and trains only LoRA adapters (~7M params) when adding new languages — no full retraining needed. Knowledge distillation supported (`--distill`).
+- **Smart Coordinator**: Routes to least-loaded decoders, circuit breaker, elastic scaling, 50ms batch window.
+- **Auto-Resume Pipeline**: Config-hash checkpointing across data→train→eval. Crashes resume from last completed step.
+- **Multi-SDK**: Native Android/iOS/Flutter/React Native/Web SDKs under `sdk/` with coordinator-aware routing + local decoder preference.
 
 ## Features
 
 - 20 language support with dynamic vocabulary loading (32K BPE, SentencePiece)
-- Native SDKs for Android, iOS, Flutter, React Native, and Web (under `sdk/`)
 - Edge encoding, cloud decoding architecture
-- **Dual-phase training**: Full backbone → LoRA adapters for new languages
+- Native SDKs for Android, iOS, Flutter, React Native, Web — coordinator-aware, local decoder auto-discovery
+- **Dual-phase training**: Full backbone → LoRA adapters + **knowledge distillation**
+- **Auto-resume pipeline**: Checkpointing with config-hash invalidation across data→train→eval
+- **Terminal UI dashboard**: `uts tui` for real-time pipeline + training + GPU monitoring
 - Full-system monitoring with Prometheus/Grafana
-- Docker and Kubernetes deployment support
+- Docker Compose, Kubernetes, Helm chart deployment
 - Redis integration for distributed decoder pool management
-- Comprehensive profiling system for performance optimization
+- mDNS auto-discovery for decoder nodes
+- Secret management (keyring + encrypted file + file-based bootstrap)
+- Centralized version management with semver compatibility checks
+- ONNX export + quantization pipeline for edge deployment
 
 ## Quick Start
 
 ```bash
-# Clone repository
+# Clone & install
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git
 cd universal-translation-system
-
-# One command to discover everything:
-./uts
-
-# Quick install + run on Lightning AI:
-export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"
+cp .env.example .env              # Edit: set UTS_HMAC_KEY, HF_TOKEN, etc.
 pip install -e ".[train]"
-./uts data --pipeline            # Download & process data (~25 min)
-./uts vocab --build              # Build vocabulary packs (~10 min)
-./uts train --full               # Train full model (~6h on A100)
-./uts eval --model               # Evaluate BLEU per language pair
+
+# Full pipeline (auto-resumes if interrupted)
+./uts data --pipeline             # ~30 min, $0.78 on A100
+./uts vocab --build               # ~15 min, $0.39
+./uts train --full --num-epochs 3 # ~1.8h, $2.79 (default 5 = ~3h)
+./uts eval --model                # Evaluate all language pairs
 ```
 
 See [SETUP_COMMANDS.md](SETUP_COMMANDS.md) for full GPU-tier-specific setup.
 
 ## Training Duration
 
-Training time varies by GPU, batch size, and number of epochs.
+Default is **5 epochs (~3h on A100, $4.65)**. Use `--num-epochs` to adjust.
 
-| GPU | Full model (10 epochs) | Notes |
-|---|---|---|
-| A100 40GB / H100 | Fastest | Sweet spot for full training |
-| L40s 48GB | Slightly faster | Overkill but quick |
-| L4 24GB | Slower | Viable with smaller batch |
-| T4 16GB | Slowest | Needs gradient checkpointing, long runtime |
+| GPU | 5 epochs | 10 epochs | Notes |
+|---|---|---|---|
+| A100 40GB | ~3h ($4.65) | ~6h ($9.30) | Sweet spot |
+| H100 | ~2h | ~4h | Fastest |
+| L4 24GB | ~5h | ~10h | Viable with gradient checkpointing |
+| T4 16GB | ~10h | ~20h | Needs gradient checkpointing |
 
-**Rule of thumb:** Full model trains 3-5× faster than LoRA-on-random-init (which produces poor quality — always prefer full training).
+**Auto-resume**: If interrupted, `uts data --pipeline` and `uts train --full` pick up where you left off. Use `--force` to re-run from scratch.
 
 See [SETUP_COMMANDS.md](SETUP_COMMANDS.md) for exact commands per GPU tier.
 
 ## Unified CLI: `./uts`
 
-All tools are organized into 8 workflow groups. Run `./uts <group> --help` for details:
+All tools are organized into 10 workflow groups. Run `./uts <group> --help` for details:
 
 | Group | Purpose |
 |---|---|
-| `./uts setup` | Environment check, config wizard, validate config |
-| `./uts data` | Download, sample, augment, validate pipeline |
+| `./uts setup` | Environment check, config wizard, validate config, verify deployment |
+| `./uts data` | Download, sample, augment, validate pipeline (auto-resume, `--force`, `--scale`) |
 | `./uts vocab` | Build or evolve vocabulary packs |
-| `./uts train` | Full model training / progressive / LoRA |
-| `./uts eval` | Evaluate model, benchmark, download test data |
+| `./uts train` | Full model / distillation / progressive / LoRA training (auto-resume, `--force`) |
+| `./uts eval` | Evaluate model, benchmark, download test data (per-file checkpoint, `--force`) |
+| `./uts publish` | Publish model to HF Hub (split, ONNX, quantize, upload) |
 | `./uts serve` | Start decoder server, coordinator, Redis |
-| `./uts tools` | Config validation, GPU check, secrets, upload, prefetch |
-| `./uts docs` | Open documentation by topic |
+| `./uts tui` | Terminal UI dashboard for live pipeline + training + GPU monitoring |
+| `./uts tools` | Config validation, GPU check, secrets rotation, prefetch, version, compatibility |
+| `./uts docs` | Open documentation by topic (`--list` for all 16 topics) |
 
 ## Language Expansion Strategy
 
@@ -124,29 +129,44 @@ See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for code examples.
 
 ## Documentation
 
-| Topic | Command | Link |
+Run `./uts docs --list` to see all 16 topics. Key ones:
+
+| Topic | Command | Covers |
 |---|---|---|
-| Full setup guide | `./uts docs --open setup` | [SETUP_COMMANDS.md](SETUP_COMMANDS.md) |
-| Training guide | `./uts docs --open train` | [docs/TRAINING.md](docs/TRAINING.md) |
-| Architecture | `./uts docs --open arch` | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
-| Onboarding | `./uts docs --open sdk` | [docs/ONBOARDING.md](docs/ONBOARDING.md) |
-| All docs | `./uts docs --list` | — |
+| Onboarding | `uts docs --open setup` | Full CLI reference, config, language expansion |
+| Training | `uts docs --open train` | Strategy, distillation, memory, monitoring |
+| Architecture | `uts docs --open arch` | System design, model specs, data flow |
+| API | `uts docs --open api` | Decoder + coordinator endpoints, auth |
+| Deployment | `uts docs --open deploy` | Docker Compose, K8s, Helm |
+| TUI Dashboard | `uts docs --open tui` | Live pipeline/training monitoring |
+| Publishing | `uts docs --open publish` | HF Hub split → ONNX → quantize → upload |
+| Version Mgmt | `uts docs --open version` | Semver, compatibility, release |
+| Secret Mgmt | `uts docs --open secret` | Bootstrap, credential manager, rotation |
+| Runtime Layout | `uts docs --open layout` | Every file/directory created during operation |
+| Testing | `uts docs --open test` | Test suite reference |
+| Environment Vars | `uts docs --open env` | All 150+ env vars with defaults |
 
 ## Component Status
 
 | Component | Status | Notes |
 |---|---|---|
-| Data Pipeline | ✅ Stable | Download, sample, augment, quality filter, validate |
+| Data Pipeline | ✅ Stable | Auto-resume, config-hash invalidation, per-pair sub-stage tracking |
 | Vocabulary System | ✅ Stable | 6 language packs (latin, cjk, arabic, devanagari, cyrillic, thai) |
-| Coordinator | ✅ Stable | Load balancing, Redis pool, health monitoring |
-| Training | ✅ Implemented | Full model + LoRA, progressive tiers |
+| Training | ✅ Stable | Full model, knowledge distillation, progressive, LoRA, auto-resume |
+| Evaluation | ✅ Stable | Per-file checkpoint, auto-resume, BLEU/COMET/chrF |
+| Coordinator | ✅ Stable | Circuit breaker, 50ms batcher, Redis/etcd pool, mDNS |
 | Encoder | ✅ Implemented | 42.7M params, RoPE + SwiGLU |
 | Decoder | ✅ Implemented | 108.1M params, cross-attention |
-| Android SDK | Scaffolded | Needs encoder binary |
-| iOS SDK | Scaffolded | Needs encoder binary |
-| Flutter SDK | Scaffolded | Needs encoder binary |
-| React Native SDK | Scaffolded | Needs encoder binary |
-| Web SDK | Scaffolded | WASM encoder is stub |
+| TUI Dashboard | ✅ Stable | Real-time pipeline + training + GPU monitoring |
+| Publishing | ✅ Stable | Split → ONNX → quantize → HF Hub upload |
+| Version Management | ✅ Stable | Centralized semver, compatibility checks, CI gate |
+| Secret Management | ✅ Stable | 3-layer: bootstrap → credential manager → secure serialization |
+| Auto-Resume Pipeline | ✅ Stable | Cross-stage data→train→eval with config-hash invalidation |
+| Android SDK | ✅ Enhanced | Coordinator-aware, local decoder + port auto-scan |
+| iOS SDK | ✅ Enhanced | Coordinator-aware, local decoder + port auto-scan |
+| Flutter SDK | ✅ Enhanced | Coordinator-aware, local decoder preference |
+| React Native SDK | ✅ Enhanced | Coordinator-aware, local decoder preference |
+| Web SDK | ✅ Enhanced | Coordinator-aware, WASM encoder |
 | Docker / K8s | ✅ Stable | Docker Compose, Kubernetes, Helm chart |
 | Monitoring | ✅ Stable | Prometheus/Grafana dashboards |
 
