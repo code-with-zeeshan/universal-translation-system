@@ -81,13 +81,19 @@ Downloads opus-100, samples, augments, validates. **Auto-resumes by default** if
 - `--stage sample_filter` — run a single stage
 - `--scale 5` — 5× training data targets (for larger training)
 
-**Performance tuning** (in `config/base.yaml` under `data:`):
+**Performance tuning** (in `config/base.yaml` under `data:`, or via CLI flags):
 ```yaml
 data:
   download_max_workers: 8          # parallel downloads (default 4)
   download_parallel_batches: true  # flatten all batches (default false)
-  datasets_cache_dir: /cache/hf    # HuggingFace datasets cache dir
+  # datasets_cache_dir: /path/to/hf/cache  # HF datasets cache (default: ~/.cache/huggingface/datasets)
 ```
+CLI equivalents: `--download-max-workers 8`, `--download-parallel-batches`, `--datasets-cache-dir /cache/hf`
+
+> **`datasets_cache_dir`**: Sets where HuggingFace `datasets` stores downloaded/processed datasets. Use it to point to a faster disk or a volume with more space. **Not required** — defaults to `~/.cache/huggingface/datasets/` which works fine on most setups. Set it if:
+> - Your home partition is small (<50 GB free)
+> - You have a dedicated SSD or mounted volume for cache
+> - You're running in a container/ephemeral environment that needs a custom path
 
 ### 6. Build vocabulary packs (~10 min, any GPU)
 

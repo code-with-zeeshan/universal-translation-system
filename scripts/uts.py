@@ -136,7 +136,10 @@ def cmd_data(args: argparse.Namespace):
     if args.pipeline:
         _run("data.unified_data_pipeline", config=config_path, resume=args.resume,
              force=args.force if hasattr(args, 'force') else False,
-             stage=args.stage, reset=args.reset)
+             stage=args.stage, reset=args.reset,
+             download_max_workers=args.download_max_workers,
+             download_parallel_batches=args.download_parallel_batches,
+             datasets_cache_dir=args.datasets_cache_dir)
         # Mark data pipeline complete in global state
         try:
             with open(config_path) as f:
@@ -146,7 +149,9 @@ def cmd_data(args: argparse.Namespace):
         except Exception:
             pass
     elif args.download_only:
-        _run("data.unified_data_pipeline", config=config, eval_only=True)
+        _run("data.unified_data_pipeline", config=config_path, eval_only=True,
+             download_max_workers=args.download_max_workers,
+             datasets_cache_dir=args.datasets_cache_dir)
     elif args.augment:
         _run_module("data/synthetic_augmentation.py")
     elif args.validate_data:
@@ -174,6 +179,12 @@ def build_data_parser(sub: argparse.ArgumentParser):
                      help="Clear checkpoint and re-run all stages from scratch")
     sub.add_argument("--reset", action="store_true", help="Reset pipeline state (start fresh)")
     sub.add_argument("--stage", help="Run a single pipeline stage")
+    sub.add_argument("--download-max-workers", type=int, default=None,
+                     help="Override max parallel downloads per batch (default: 4)")
+    sub.add_argument("--download-parallel-batches", action="store_true",
+                     help="Enable parallel batch downloads")
+    sub.add_argument("--datasets-cache-dir", type=str, default=None,
+                     help="HuggingFace datasets cache directory (default: HF default cache)")
 
 
 # ── vocab ────────────────────────────────────────────────────────────

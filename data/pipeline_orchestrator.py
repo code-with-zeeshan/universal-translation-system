@@ -932,15 +932,29 @@ def main():
     parser.add_argument('--stage', type=str, help='Run specific stage only')
     parser.add_argument('--reset', action='store_true', help='Reset pipeline state')
     parser.add_argument('--eval-only', action='store_true', help='Download evaluation data only, skip all other stages')
-    
+    parser.add_argument('--download-max-workers', type=int, default=None,
+                        help='Override max parallel downloads per batch')
+    parser.add_argument('--download-parallel-batches', action='store_true',
+                        help='Enable parallel batch downloads')
+    parser.add_argument('--datasets-cache-dir', type=str, default=None,
+                        help='HuggingFace datasets cache directory (default: HF default cache)')
+
     args = parser.parse_args()
-    
+
     # Setup logging
     setup_logging(log_dir=f"{LOG_DIR}/data", log_level="INFO")
-    
+
     # Load configuration
     from config.schemas import load_config
     config = load_config(args.config)
+
+    # Apply CLI overrides
+    if args.download_max_workers is not None:
+        config.data.download_max_workers = args.download_max_workers
+    if args.download_parallel_batches:
+        config.data.download_parallel_batches = True
+    if args.datasets_cache_dir is not None:
+        config.data.datasets_cache_dir = args.datasets_cache_dir
     
     # Create pipeline
     pipeline = UnifiedDataPipeline(config)
