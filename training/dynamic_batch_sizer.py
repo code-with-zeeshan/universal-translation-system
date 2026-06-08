@@ -25,6 +25,8 @@ class DynamicBatchSizer:
     ) -> int:
         """Find max batch size that fits in GPU memory via dummy forward/backward.
 
+        Probe range scales dynamically with GPU memory so high-end cards
+        (A100 80GB, H100) find their true limit rather than a hardcoded cap.
         Compile is temporarily disabled during probe to avoid 11× re-trace
         overhead — each probe batch size is a different tensor shape that
         would trigger a fresh compilation.
@@ -32,7 +34,13 @@ class DynamicBatchSizer:
         import torch._dynamo
         torch._dynamo.reset()
 
-        probe_sizes = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256]
+        total_gb = torch.cuda.get_device_properties(device).total_memory / 1e9
+        probe_limit = max(128, min(4096, int(total_gb * 10)))
+        step = max(4, probe_limit // 40)
+        step = (step // 4) * 4
+        probe_sizes = list(range(4, probe_limit + 1, step))
+        if probe_sizes[-1] < probe_limit:
+            probe_sizes.append(probe_limit)
         max_viable = self.min_batch_size
 
         encoder.train()
@@ -72,7 +80,7 @@ class DynamicBatchSizer:
 
         self.current_batch_size = max_viable
         self.max_batch_size = int(max_viable * 1.5)
-        logger.info(f"📊 Probed max batch size: {max_viable}")
+        logger.info(f"📊 Probed max batch size: {max_viable} (GPU: {total_gb:.0f}GB)")
         return max_viable
 
     def adjust_batch_size(self) -> int:

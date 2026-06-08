@@ -59,6 +59,8 @@ decoder:
 - **Download only eval**: `--eval-only` skips training data
 - **Incremental augment**: Add stages incrementally
 - **Parallel downloads**: Datasets downloaded concurrently where possible
+- **Auto-batched NLLB translation**: Pipeline probes max batch size at startup via progressive `model.generate()`, testing up to the GPU's limit (L4 24GB → ~1024, A100 40GB → ~1024, A100 80GB → ~2048, H100 → ~2048+)
+- **OOM recovery**: If a translation batch OOMs at runtime, batch size halves and retries automatically
 
 ## Evaluation Optimizations
 

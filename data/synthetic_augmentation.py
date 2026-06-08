@@ -1103,7 +1103,7 @@ class SyntheticDataAugmenter:
         self.languages = self.config.data.active_languages
         self.quality_threshold = self.config.data.quality_threshold
         self.output_dir = Path(self.config.data.processed_dir)
-        self.pipeline_batch_size = 512
+        self.pipeline_batch_size = 128
 
         self._model = None
         self._tokenizer = None
@@ -1137,6 +1137,8 @@ class SyntheticDataAugmenter:
     def translator(self):
         if self._translator is None:
             use_cuda = hasattr(torch, 'cuda') and torch.cuda.is_available()
+            if use_cuda:
+                self._probe_pipeline_batch_size()
             bs = self.pipeline_batch_size if use_cuda else 1
             self.logger.info(f"Creating NLLB pipeline with batch_size={bs}")
             pipe_kwargs = dict(
@@ -1157,22 +1159,81 @@ class SyntheticDataAugmenter:
             self._sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
         return self._sentence_model
 
+    def _probe_pipeline_batch_size(self) -> int:
+        """Probe max batch size for NLLB via progressive inference, mirroring DynamicBatchSizer."""
+        if not (hasattr(torch, 'cuda') and torch.cuda.is_available()):
+            self.pipeline_batch_size = 1
+            return 1
+
+        self.logger.info("Probing optimal NLLB pipeline batch size...")
+        total_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+        probe_limit = min(4096, int(total_gb * 25))
+        step = max(16, probe_limit // 48)
+        step = (step // 16) * 16
+        probe_sizes = list(range(16, probe_limit + 1, step))
+        if probe_sizes[-1] < probe_limit:
+            probe_sizes.append(probe_limit)
+        probe_text = "The quick brown fox jumps over the lazy dog."
+        max_viable = 16
+        device = torch.device("cuda")
+
+        model = self.model
+        tokenizer = self.tokenizer
+        tgt_id = tokenizer.convert_tokens_to_ids("spa_Latn")
+
+        model.eval()
+        for bs in probe_sizes:
+            try:
+                texts = [probe_text] * bs
+                inputs = tokenizer(
+                    texts, return_tensors="pt",
+                    padding=True, truncation=True, max_length=128,
+                ).to(device)
+                with torch.no_grad():
+                    _ = model.generate(
+                        **inputs,
+                        max_length=128,
+                        forced_bos_token_id=tgt_id,
+                    )
+                max_viable = bs
+                self.logger.info(f"  ✅ Probe batch_size={bs}: OK")
+                torch.cuda.empty_cache()
+            except Exception as e:
+                self.logger.info(f"  ❌ Probe batch_size={bs}: FAILED ({e})")
+                break
+
+        torch.cuda.empty_cache()
+
+        # Leave ~10% headroom — step back one probe size
+        idx = probe_sizes.index(max_viable)
+        if idx > 0:
+            max_viable = probe_sizes[idx - 1]
+
+        self.pipeline_batch_size = max_viable
+        self.logger.info(f"📊 NLLB optimal batch size: {max_viable} (GPU: {total_gb:.0f}GB)")
+        return max_viable
+
     def _nllb_code(self, lang: str) -> str:
         return NLLB_CODE_MAP.get(lang, lang)
 
     def _translate_batch(self, texts: List[str], src: str, tgt: str) -> List[str]:
         """Translate a batch using the NLLB pipeline."""
         try:
-            from datasets import Dataset
-            ds = Dataset.from_dict({"text": texts})
             results = self.translator(
-                ds,
+                texts,
                 src_lang=self._nllb_code(src),
                 tgt_lang=self._nllb_code(tgt),
                 max_length=512,
             )
             return [r['translation_text'] for r in results]
         except Exception as e:
+            is_oom = "out of memory" in str(e).lower()
+            if is_oom and torch.cuda.is_available() and self.pipeline_batch_size > 16:
+                new_bs = max(16, self.pipeline_batch_size // 2)
+                self.logger.warning(f"OOM at batch_size={self.pipeline_batch_size}, reducing to {new_bs} and retrying...")
+                self.pipeline_batch_size = new_bs
+                self._translator = None
+                return self._translate_batch(texts, src, tgt)
             self.logger.error(f"Batch translation failed: {e}")
             return [""] * len(texts)
 

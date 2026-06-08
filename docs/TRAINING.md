@@ -20,7 +20,7 @@ Train all 150.8M parameters on 20 languages. This builds strong multilingual rep
 | `num_epochs` | 5 (default) | Budget-friendly; use `--num-epochs 10` for full convergence |
 | `lr` | `3e-4` | Standard for full model training |
 | `warmup_steps` | 1000 | Quick warmup to target LR |
-| `batch_size` | 32 | Per-GPU, fits A100 40GB |
+| `batch_size` | auto-probed | Determined at startup by `DynamicBatchSizer.probe()` — dummy forward/backward at increasing sizes until OOM, then steps back one size for headroom. Typical results: A100 40GB → 64–96, A100 80GB → 128–192, H100 → 256+ |
 | `accumulation_steps` | 4 | Effective batch = 128 |
 
 **Expected loss trajectory (default 5 epochs):**

@@ -6,6 +6,9 @@ All notable changes to the Universal Translation System will be documented in th
 
 ### Added
 - **Auto-resume pipeline** (`utils/pipeline_checkpoint.py`): `PhaseCheckpoint` class with config-hash fingerprinting, cross-stage data→train→eval tracking via global `pipeline_state.json`, sub-stage per-pair completion tracking, and `invalidate_downstream()` for config-change detection
+- **Per-pair checkpointing** for data pipeline sub-stages: idiom, false-friend, dynamic, and backtranslation files tracked individually so partial runs skip only what's done
+- **Dynamic batch sizing for NLLB pipeline** (`data/synthetic_augmentation.py`): `_probe_pipeline_batch_size()` runs progressive `model.generate()` from 16→probe_limit at startup, finding the true max batch size for the GPU (L4 finds ~1024, A100 80GB finds ~2048)
+- **Dynamic batch sizing for training** (`training/dynamic_batch_sizer.py`): `probe()` now scales probe limit with GPU memory (`total_gb * 10`), allowing H100/A100 80GB to find batch sizes beyond the old 256 cap
 - **`--force` flags** on `uts data`, `uts train`, `uts eval` — re-run any stage from scratch, invalidating downstream
 - **Knowledge distillation** (`training/distillation_trainer.py`): KL-divergence loss from NLLB-200-3.3B teacher, configurable alpha/temperature, `uts train --distill`
 - **Evaluation per-file checkpointing**: tracks individual test file completion, auto-resumes mid-eval
