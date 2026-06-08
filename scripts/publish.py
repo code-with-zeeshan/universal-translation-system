@@ -138,6 +138,12 @@ def export_onnx(encoder_path: Path, output_dir: Path, hidden_dim: int = 512):
 
 def run_quantization(output_dir: Path):
     """Run the quantization pipeline on the saved encoder."""
+    encoder_path = output_dir / "encoder.pt"
+    master_path = output_dir / "encoder_master.pt"
+    if encoder_path.exists() and not master_path.exists():
+        import shutil
+        shutil.copy2(encoder_path, master_path)
+        logger.info(f"Copied {encoder_path} → {master_path} for quantization")
     try:
         subprocess.run(
             [sys.executable, "-m", "training.quantization_pipeline"],
