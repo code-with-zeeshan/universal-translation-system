@@ -259,6 +259,20 @@ class VersionManager:
                 pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding='utf-8')
                 updates['sdk/react-native/package.json'] = version
         
+        elif component == 'flutter-sdk':
+            # Update Flutter SDK pubspec.yaml
+            pubspec = self.root_dir / 'sdk' / 'flutter' / 'universal_translation_sdk' / 'pubspec.yaml'
+            if pubspec.exists():
+                content = pubspec.read_text(encoding='utf-8')
+                content = re.sub(
+                    r'^version:\s*.+$',
+                    f'version: {version}',
+                    content,
+                    flags=re.MULTILINE
+                )
+                pubspec.write_text(content, encoding='utf-8')
+                updates['sdk/flutter/pubspec.yaml'] = version
+
         elif component == 'root-python':
             # Update root setup.py
             setup_py = self.root_dir / 'setup.py'

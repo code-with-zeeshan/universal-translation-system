@@ -69,6 +69,14 @@
         "coordinator": ">=1.0.0 <2.0.0"
       }
     },
+    "flutter-sdk": {
+      "version": "1.0.0",
+      "compatibleWith": {
+        "encoder": ">=1.0.0 <2.0.0",
+        "decoder": ">=1.0.0 <2.0.0",
+        "coordinator": ">=1.0.0 <2.0.0"
+      }
+    },
     "root-python": {
       "version": "1.0.0",
       "compatibleWith": {

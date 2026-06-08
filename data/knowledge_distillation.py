@@ -19,7 +19,7 @@ TEACHER_MODEL = "facebook/nllb-200-3.3B"
 try:
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
     import torch
-except ImportError:
+except Exception:
     AutoModelForSeq2SeqLM = None
     AutoTokenizer = None
     pipeline = None

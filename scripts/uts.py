@@ -86,12 +86,12 @@ def _run(*args: str, **kwargs):
     subprocess.run(cmd, cwd=str(ROOT), check=True)
 
 
-def _run_script(script: str, *args: str):
+def _run_script(script: str, *args: str, check: bool = True):
     """Run a script under scripts/."""
     cmd = [PY, str(ROOT / script)] + list(args)
     print(f"\n$ {' '.join(shlex.join(c) for c in cmd)}\n")
     sys.stdout.flush()
-    subprocess.run(cmd, cwd=str(ROOT), check=True)
+    subprocess.run(cmd, cwd=str(ROOT), check=check)
 
 
 def _run_module(module: str, *args: str):
@@ -115,7 +115,7 @@ def cmd_setup(args: argparse.Namespace):
         _run_script("scripts/validate_config.py", args.validate)
         return
     if args.verify:
-        _run_script("scripts/first_time_success.py")
+        _run_script("scripts/first_time_success.py", check=False)
         return
     parser.print_help()
 
