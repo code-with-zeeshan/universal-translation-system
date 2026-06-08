@@ -81,6 +81,14 @@ Downloads opus-100, samples, augments, validates. **Auto-resumes by default** if
 - `--stage sample_filter` — run a single stage
 - `--scale 5` — 5× training data targets (for larger training)
 
+**Performance tuning** (in `config/base.yaml` under `data:`):
+```yaml
+data:
+  download_max_workers: 8          # parallel downloads (default 4)
+  download_parallel_batches: true  # flatten all batches (default false)
+  datasets_cache_dir: /cache/hf    # HuggingFace datasets cache dir
+```
+
 ### 6. Build vocabulary packs (~10 min, any GPU)
 
 ```bash
@@ -88,6 +96,11 @@ Downloads opus-100, samples, augments, validates. **Auto-resumes by default** if
 ```
 
 Creates 6 per-script packs at `vocabulary/vocab/`.
+
+**Advanced:** Restrict groups or change mode:
+```bash
+./uts vocab --build --vocab-size 32000 --mode research --groups latin cjk
+```
 
 ---
 

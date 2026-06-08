@@ -155,7 +155,7 @@ All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms:
 | `EMBEDDING_DIM` | `768` | Embedding dimension |
 | `MAX_SEQUENCE_LENGTH` | `512` | Max input sequence length |
 | `ENCODER_DEVICE` | `auto` | Encoder device (`cpu`, `cuda`, `mps`, `auto`) |
-| `DECODER_DEVICE` | `cuda` | Decoder device |
+| `DECODER_DEVICE` | `auto` | Decoder device (`cpu`, `cuda`, `auto`) |
 | `DECODER_BATCH_SIZE` | `32` | Decoder batch size |
 | `DECODER_BEAM_SIZE` | `5` | Beam search width |
 | `MAX_BATCH_TOKENS` | `8192` | Max tokens per batch |

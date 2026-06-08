@@ -68,8 +68,8 @@ let result = try await translator.translate(text: "Hello", from: "en", to: "zh")
 
 ### Creating Custom Vocabulary Packs
 ```bash
-# Via pipeline CLI
-python scripts/pipeline.py vocab --mode production --corpus-dir ./data/processed --output-dir vocabulary/vocab
+# Via unified CLI
+./uts vocab --build --vocab-size 32000 --mode production
 
 # Programmatic
 python -c "
