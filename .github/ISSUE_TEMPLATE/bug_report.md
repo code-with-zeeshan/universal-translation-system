@@ -1,38 +1,47 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report a bug in the translation system
 title: ''
-labels: ''
+labels: 'bug'
 assignees: ''
 
 ---
 
 **Describe the bug**
-A clear and concise description of what the bug is.
+A clear description of the bug.
+
+**Which component?**
+- [ ] Data pipeline (`uts data --pipeline`)
+- [ ] Training (`uts train --full`)
+- [ ] Evaluation (`uts eval --model`)
+- [ ] Serving / decoder (`uts serve --decoder`)
+- [ ] Coordinator (`uts serve --coordinator`)
+- [ ] CLI / tools (`uts *`)
+- [ ] TUI dashboard (`uts tui`)
+- [ ] SDK (Android / iOS / Flutter / React Native / Web)
+- [ ] Publishing (`uts publish`)
+- [ ] Documentation
+- [ ] CI / workflows
 
 **To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+Steps and the exact command run:
 
 **Expected behavior**
-A clear and concise description of what you expected to happen.
+What you expected to happen.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Actual behavior**
+What actually happened (include error output, logs).
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+**Environment:**
+- GPU: [A100 / L4 / T4 / CPU / none]
+- OS: [Linux (distro) / macOS / Windows]
+- Python version:
+- Command run (with flags):
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+**Checkpoint / resume info (if applicable):**
+- Was this a fresh run or a resume?
+- Did you use `--force`?
+- Is there a `.pipeline_state.json` or `.checkpoints/` directory?
 
 **Additional context**
-Add any other context about the problem here.
+Log files, config snippets, or screenshots (for TUI issues).

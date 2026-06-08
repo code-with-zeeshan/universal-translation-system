@@ -9,8 +9,12 @@
 
 ## Tag protection
 - Protect tags matching:
-  - v*  (Core/Web releases)
-  - rn-v* (React Native releases)
+  - v*  (Core + Web SDK releases)
+  - android-v* (Android SDK releases)
+  - ios-v* (iOS SDK releases)
+  - flutter-v* (Flutter SDK releases)
+  - rn-v* (React Native SDK releases)
+  - udn-v* (UDN decoder-node PyPI releases)
 - Restrict creation to maintainers/release automation only
 
 ## Environments with approvals

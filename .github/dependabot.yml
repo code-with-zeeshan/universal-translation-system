@@ -1,16 +1,43 @@
 version: 2
 updates:
   - package-ecosystem: "pip"
-    directory: "/requirements"
+    directory: "/"
     schedule:
       interval: "weekly"
-      open-pull-requests-limit: 10
+    open-pull-requests-limit: 10
     labels:
       - "dependencies"
-      - "security"
 
   - package-ecosystem: "docker"
-    directory: "/docker"
+    directory: "/universal-decoder-node"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "npm"
+    directory: "/sdk/web/universal-translation-sdk"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "sdk-web"
+
+  - package-ecosystem: "npm"
+    directory: "/sdk/react-native/UniversalTranslationSDK"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "sdk-rn"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "ci"

@@ -4,13 +4,13 @@
 
 **Choose your setup path based on available GPU:**
 
-| Your GPU | Full training? | Expected time | Recommended batch | Go to |
-|---|---|---|---|---|
-| **A100 40GB / H100** | ✅ Yes | ~6 hours | 32 | [Fast Track](#fast-track-a100h100-40gb) |
-| **L40s 48GB** | ✅ Yes | ~4 hours | 48 | [Fast Track](#fast-track-a100h100-40gb) |
-| **L4 24GB** | ✅ Yes | ~10 hours | 16 | [Mid-Range L4](#mid-range-l4-24gb) |
-| **T4 16GB (Colab / low-cost)** | ⚠️ Marginal | ~18 hours | 8 | [Low-End T4](#low-end-t4-16gb) |
-| **No GPU / CPU** | ❌ No | — | — | [No GPU / LoRA only](#no-gpu--lora-only) |
+| Your GPU | Full training? | Expected time (5 epochs) | Budget | Recommended batch | Go to |
+|---|---|---|---|---|---|---|
+| **A100 40GB / H100** | ✅ Yes | ~3 hours | ~$4.65 | 32 | [Fast Track](#fast-track-a100h100-40gb) |
+| **L40s 48GB** | ✅ Yes | ~2.5 hours | ~$5.50 | 48 | [Fast Track](#fast-track-a100h100-40gb) |
+| **L4 24GB** | ✅ Yes | ~8 hours | ~$4.00 | 16 | [Mid-Range L4](#mid-range-l4-24gb) |
+| **T4 16GB (Colab / low-cost)** | ⚠️ Marginal | ~15 hours | ~$0 | 8 | [Low-End T4](#low-end-t4-16gb) |
+| **No GPU / CPU** | ❌ No | — | — | — | [No GPU / LoRA only](#no-gpu--lora-only) |
 
 ---
 
@@ -46,14 +46,18 @@ This installs base + training + serving extras. Takes ~2 min.
 - `pip: command not found` → `conda install pip -y`
 - `error: externally-managed-environment` → Same fix
 
-### 3. Set HMAC key (required)
+### 3. Set up environment variables
 
 ```bash
+# Copy template and edit
+cp .env.example .env
+# Or set the minimum required:
 export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"
-echo 'export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"' >> ~/.bashrc
+export UTS_ROLE="master"
+export JWT_SECRET="dev-jwt-secret-change-in-production"
 ```
 
-**Must be set before every `python -m` command.** Adding to `~/.bashrc` makes it permanent.
+Add to `~/.bashrc` for permanence. See `docs/environment-variables.md` for all 150+ options.
 
 ### 4. Verify environment
 
@@ -69,12 +73,13 @@ Expected: GPU detected, Python OK, core imports OK.
 ./uts data --pipeline
 ```
 
-Downloads opus-100, samples, augments, validates. Skips already-downloaded files.
+Downloads opus-100, samples, augments, validates. **Auto-resumes by default** if interrupted.
 
 **Key flags:**
-- `--resume` — pick up where it left off (default)
-- `--reset` — start from scratch
+- `--force` — re-run from scratch (clears all checkpoints)
+- `--no-resume` — skip completed stages instead of resetting
 - `--stage sample_filter` — run a single stage
+- `--scale 5` — 5× training data targets (for larger training)
 
 ### 6. Build vocabulary packs (~10 min, any GPU)
 
@@ -88,7 +93,7 @@ Creates 6 per-script packs at `vocabulary/vocab/`.
 
 ## Fast Track (A100/H100 40GB+)
 
-**Best experience.** Full model training in ~6 hours.
+**Best experience.** Full model training in ~3 hours ($4.65).
 
 ### 7. Train full model
 
@@ -97,12 +102,10 @@ Creates 6 per-script packs at `vocabulary/vocab/`.
 ./uts train --full
 
 # Override for more epochs:
-./uts train --full --num-epochs 10 --batch-size 32
-```
+./uts train --full --num-epochs 10
 
-Or using the default config (already tuned for A100):
-```bash
-./uts train --full
+# With knowledge distillation (teacher NLLB-200-3.3B):
+./uts train --full --distill --alpha 0.5 --temperature 4.0
 ```
 
 **Config already optimized for A100** (`config/base.yaml`):
@@ -116,18 +119,19 @@ training:
   mixed_precision: true
 ```
 
+**Auto-resume:** Training saves checkpoints with config hashes. If interrupted, re-run `./uts train --full` to resume. Use `--force` to re-run from scratch. Config changes (epochs, LR, batch size) auto-invalidate the training checkpoint.
+
 **Expected loss trajectory:**
 - Epoch 1: ~8.5 → Epoch 3: ~5.5 → Epoch 5: ~4.0 → Epoch 10: ~3.0-3.5
 
 ### 8. Evaluate
 
 ```bash
-# Download evaluation test data
-./uts data --download-only
-
-# Evaluate trained model
+# Evaluation test data downloads on demand (no separate download step needed)
 ./uts eval --model --checkpoint checkpoints/*/best_model.pt
 ```
+
+**Auto-resume:** Evaluation tracks per-file completion. Re-run to skip already-evaluated files. Use `--force` to re-evaluate all.
 
 Results in `evaluation_reports/`.
 
@@ -245,21 +249,55 @@ Once the community publishes trained checkpoints, you can:
 ## Quick Reference
 
 ```bash
-# Full workflow (copy-paste for A100)
+# Full workflow (copy-paste for A100, ~$8 for full run)
 cd /teamspace/studios/this_studio && \
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git && \
 cd universal-translation-system && \
 pip install -e ".[train]" && \
-export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc" && \
+cp .env.example .env && \
+. .env && \
 ./uts data --pipeline && \
 ./uts vocab --build && \
 ./uts train --full
 
-# After training is complete:
+# After training is complete (eval data downloads on demand):
 ./uts eval --model --checkpoint checkpoints/*/best_model.pt
+
+# Monitor training:
+./uts tui --config config/base.yaml
+```
+
+## Quick Reference — CLI at a Glance
+
+```bash
+uts setup --check            # Verify environment readiness
+uts setup --verify           # Validate post-deployment setup
+uts data --pipeline          # Run full data pipeline (auto-resume)
+uts data --pipeline --force  # Re-run from scratch
+uts data --pipeline --scale 5  # 5× training data
+uts vocab --build            # Build vocabulary packs
+uts train --full             # Train (auto-resume, ~3h, $4.65)
+uts train --full --force     # Re-run training from scratch
+uts train --full --distill   # Knowledge distillation
+uts train --full --num-epochs 10  # Override epochs
+uts eval --model             # Evaluate (auto-resume, per-file)
+uts eval --model --force     # Re-evaluate all files
+uts serve --decoder          # Start decoder server
+uts serve --coordinator      # Start coordinator
+uts publish --repo-id ...    # Publish to HF Hub
+uts publish --optimize-decoder  # Quantize + ONNX optimize
+uts publish --preflight      # Validate before publishing
+uts tools --version          # Check component versions
+uts tools --check-compat     # Compatibility checks
+uts tools --rotate-secrets   # Rotate API secrets
+uts tools --build-encoder    # Build edge encoder ONNX
+uts tools --register-decoder # Register decoders
+uts docs --open layout       # View filesystem layout docs
 ```
 
 ## File Locations
+
+See `docs/RUNTIME_LAYOUT.md` for the complete filesystem reference (~40 dirs, ~130+ files).
 
 | What | Where |
 |---|---|
@@ -269,17 +307,22 @@ export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc" && \
 | Model checkpoints | `checkpoints/{experiment}/` |
 | Evaluation data | `data/evaluation/{pair}.tsv` |
 | Evaluation reports | `evaluation_reports/` |
+| Pipeline state (auto-resume) | `.pipeline_state.json`, `.checkpoints/` |
 | Pipeline logs | `data/log/data.log` |
 | Training logs | `logs/training/` |
+| Version config | `version-config.json` |
+| Secret config | `.secret_config.yaml` (encrypted) |
 
 ## Common Issues
 
 | Error | Cause | Fix |
 |---|---|---|
 | `HMAC key not configured` | Missing `UTS_HMAC_KEY` | `export UTS_HMAC_KEY=...` |
+| `JWT secret not configured` | Missing `JWT_SECRET` | `export JWT_SECRET=...` |
 | `CUDA out of memory` | Batch too large for your GPU | Reduce `batch_size` or check [your tier](#before-you-start) |
 | `No module named '...'` | Missing dependency | `pip install -e ".[train]"` |
-| `ConnectionError` | Network issue | Retry with `--resume` |
+| `ConnectionError` | Network issue | Retry; auto-resume picks up where it left off |
+| `Checkpoint conflict` | Config hash mismatch | Use `--force` to re-run with new config |
 | Loss is NaN | LR too high | Reduce `lr` to `1e-4` |
 | BLEU ~0.0 after training | Only 1 epoch completed | Train 5-10 epochs for usable quality |
 | BLEU ~0.0 after 10 epochs | LoRA on random init | Set `use_lora: false` for full training |

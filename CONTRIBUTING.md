@@ -31,6 +31,8 @@ Thank you for your interest in contributing!
 
 ### Testing
 
+See [docs/TESTING.md](docs/TESTING.md) for the complete test suite reference.
+
 ```bash
 # Run all tests
 pytest tests/
@@ -41,22 +43,47 @@ pytest tests/test_encoder.py
 # Run with coverage
 pytest --cov=. tests/
 
-# Web SDK
+# Standalone runner (subset of critical tests)
+python run_tests.py
+
+# SDK tests
 cd sdk/web/universal-translation-sdk && npm install && npm test
-
-# React Native SDK
 cd sdk/react-native/UniversalTranslationSDK && npm install && npm test
-
-# Android SDK (unit tests)
 cd sdk/android/UniversalTranslationSDK && ./gradlew test
-
-# iOS SDK (SwiftPM tests)
 cd sdk/ios/UniversalTranslationSDK && swift test
 ```
 
+### Development Workflow
+
+Use the unified CLI for all operations:
+
+```bash
+# Verify environment
+./uts setup --check
+
+# Run data pipeline (auto-resumes if interrupted)
+./uts data --pipeline
+
+# Build vocabulary
+./uts vocab --build
+
+# Train (auto-resumes, use --force to re-run)
+./uts train --full --num-epochs 3
+
+# Monitor with TUI dashboard
+./uts tui --config config/base.yaml
+
+# Evaluate
+./uts eval --model
+
+# Publish model to HF Hub
+./uts publish --repo-id your-org/uts
+```
+
 ### Publishing (SDKs)
-- See docs/SDK_PUBLISHING.md for publishing Android (Maven), iOS (CocoaPods/SPM), and RN linking.
+- See `docs/SDK_PUBLISHING.md` for publishing Android (Maven), iOS (CocoaPods/SPM), and RN linking.
 - Web SDK and PyPI packages are published via GitHub Actions (build-upload.yml, publish-pypi.yml).
+- Use `uts tools --version` to check all component versions before releasing.
 
 ### Areas We Need Help
 1. **Language Support**: Adding more languages and improving vocabulary packs
@@ -64,6 +91,8 @@ cd sdk/ios/UniversalTranslationSDK && swift test
 3. **Optimization**: Making models smaller/faster through quantization techniques
 4. **Documentation**: Improving guides and examples
 5. **Testing**: Adding more test cases and integration tests
+6. **TUI Dashboard**: Enhancing the Textual-based terminal UI
+7. **Auto-Resume**: Improving checkpoint/resume reliability across pipeline stages
 
 ### Development Setup
 

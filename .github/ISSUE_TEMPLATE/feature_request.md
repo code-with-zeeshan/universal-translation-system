@@ -1,20 +1,35 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
+about: Suggest a new feature or enhancement
 title: ''
-labels: ''
+labels: 'enhancement'
 assignees: ''
 
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+**Which area?**
+- [ ] New language / vocabulary pack
+- [ ] Data pipeline improvement
+- [ ] Training enhancement (distillation, LoRA, scheduling)
+- [ ] Evaluation / metrics
+- [ ] Serving / decoder performance
+- [ ] Coordinator / batching / routing
+- [ ] SDK (Android / iOS / Flutter / React Native / Web)
+- [ ] CLI / tools
+- [ ] TUI dashboard
+- [ ] Publishing / CI
+- [ ] Documentation
+- [ ] Auto-resume / checkpointing
+- [ ] Testing infrastructure
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+**Problem**
+What problem does this solve? Ex. "Training resumes are slow because..."
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+**Proposed solution**
+What you'd like to happen. Be specific about CLI flags, config changes, or API behavior.
+
+**Alternatives considered**
+What else have you considered?
 
 **Additional context**
-Add any other context or screenshots about the feature request here.
+References to existing docs (docs/TRAINING.md, docs/TUI.md, etc.), config files, or related issues.

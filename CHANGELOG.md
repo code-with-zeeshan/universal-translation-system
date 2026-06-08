@@ -5,6 +5,18 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
+- **Auto-resume pipeline** (`utils/pipeline_checkpoint.py`): `PhaseCheckpoint` class with config-hash fingerprinting, cross-stage data→train→eval tracking via global `pipeline_state.json`, sub-stage per-pair completion tracking, and `invalidate_downstream()` for config-change detection
+- **`--force` flags** on `uts data`, `uts train`, `uts eval` — re-run any stage from scratch, invalidating downstream
+- **Knowledge distillation** (`training/distillation_trainer.py`): KL-divergence loss from NLLB-200-3.3B teacher, configurable alpha/temperature, `uts train --distill`
+- **Evaluation per-file checkpointing**: tracks individual test file completion, auto-resumes mid-eval
+- **Coordinator batcher** (`coordinator/advanced_coordinator.py`): 50ms accumulation window per endpoint, concurrent forward to LitServe
+- **Coordinator `/api/status` endpoint**: returns `single_decoder: bool` — SDKs use this for routing decisions
+- **mDNS broadcast**: decoders advertise as `_universal-translate._tcp.local.`, SDKs auto-scan localhost ports
+- **Local decoder GPU detection** (`udn/cli.py`): detects CUDA/MPS, prompts user, saves to `decoder_config.yaml`
+- **Circuit breaker** integrated in coordinator (CLOSED/OPEN/HALF-OPEN states)
+- All 5 SDKs: coordinator-aware routing, local decoder preference, port auto-scan, configurable `hfRepo`
+- Flutter SDK: `translate()` uses `sourceLang`/`targetLang` (was `from`/`to`)
+- Android/iOS SDKs: `localDecoderUrl` + `checkLocalDecoder()` with fallback scan `[8000,8080,9000]`
 - TUI dashboard: `tui/` package with pipeline, training, GPU, and log panels
 - `uts` unified CLI (`scripts/uts.py`) — single entry point organizing all tools by workflow
 - `./uts` shell entry point at project root
@@ -12,8 +24,27 @@ All notable changes to the Universal Translation System will be documented in th
 - `vocab_size` field in `VocabularyConfig` schema (configurable from YAML)
 - `--vocab-size` CLI flag for vocabulary rebuild
 - Architecture doc with dual-phase strategy (full training → LoRA adaptation)
+- `uts publish` group: split checkpoint → ONNX export → quantize → HF Hub upload, with `--preflight` and `--optimize-decoder`
+- `uts tui` group: terminal UI dashboard for pipeline/training/GPU monitoring
+- `uts tools --register-decoder`, `--build-encoder`, `--check-compat`, `--set-env`, `--key-type`
+- `uts setup --verify`: post-deployment verification
+- `uts data --domains`, `--scale`, `--no-resume`, `--force`
+- `uts train --distill`, `--force`, `--start-tier`, `--validate-final`
+- `uts eval --force`
+- `docs/TUI.md`, `docs/PUBLISHING.md`, `docs/TESTING.md`, `docs/RUNTIME_LAYOUT.md`, `docs/VERSION_MANAGEMENT.md`, `docs/SECRET_MANAGEMENT.md`
+- Wired 9 tools into `uts`: `setup --verify`, `data --domains`, `train --distill`, `publish --preflight/--optimize-decoder`, `tools register-decoder/build-encoder/check-compat`
 
 ### Changed
+- **Default epochs: 10 → 5** (`config/base.yaml`), budget-friendly ($4.65 vs $9.30 on A100)
+- **Config-hash invalidation**: config change on any stage auto-invalidates that stage + all downstream
+- **Eval data downloads on demand** during `uts eval --model`, not during data pipeline
+- **Package renamed**: `universal_decoder_node` → `udn`, CLI command is `udn`
+- **HF Hub layout**: `models/production/encoder.pt, decoder.pt, encoder.onnx` → `models/production/`; `vocabulary/vocab/*.msgpack` → `vocabs/`; `models/adapters/*.pt` → `adapters/`
+- **Coordinator**: single decoder → SDK calls directly; multiple decoders → proxy through coordinator batcher
+- **`.env.example`**: added `UTS_ROLE`, `UTS_VOCAB_SIGNING_KEY`, `UTS_JWT_DEFAULT_ALG`, `JWT_SECRET`, `DECODER_CONFIG`, `EVOLVE_ANALYTICS_JSON`; removed dead `ENCODER_HOST`
+- `docs/environment-variables.md` rewritten from 54 vars to 150+ var complete reference
+- `README.md`: CLI groups (8→10), training timings (6h→3h budget), component status refreshed, doc section expanded, features list updated
+- `udn/__init__.py`: `__version__` 0.1.0 → 1.0.0 (was mismatched with pyproject.toml/setup.py/version-config.json)
 - **Config: Full model training** — `use_lora: false`, `num_epochs: 10`, `lr: 3e-4`, `warmup_steps: 1000`
 - **Vocabulary size**: 32K tokens per pack (was 25K), matching embedding table
 - `UnifiedVocabConfig.vocab_size` default: 25000 → 32000
@@ -25,6 +56,8 @@ All notable changes to the Universal Translation System will be documented in th
 - `frequency` → `frequency` dict key in `vocab_production.py` 
 
 ### Fixed
+- **Audit fixes**: C1 (import circular), C4 (phantom decoder stub), W1 (field mapping), W2 (Flutter params), W3 (Android/iOS local decoder), W5 (openapi/proto dead path), W7 (empty dir), W8 (docstring), W9 (3 dead-code files: `sensitive_filter.py`, `validation_decorators.py`, `training_validator.py`), I1 (HF repo configurable), I3 (CLI flag conventions `--repo-id` vs `--repo_id`)
+- **Training cross-stage fix**: `is_stage_complete("data", "")` → actual data config hash check
 - Vocabulary import path bugs, logging TypeErrors, auto-reduce `vocab_size` on RuntimeError
 - False friend generation: closed file bug, batching all translations before NLLB call
 - `vocabulary_creator.py` evolution save bug: `_create_pack_structure` + `_save_pack` no longer short-circuits
