@@ -6,7 +6,7 @@ This package provides a high-performance decoder service that runs on GPU-enable
 servers to handle translation decoding from compressed embeddings.
 """
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 __author__ = "Universal Translation System"
 __license__ = "Apache 2.0"
 
