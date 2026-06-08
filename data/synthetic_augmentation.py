@@ -1163,8 +1163,10 @@ class SyntheticDataAugmenter:
     def _translate_batch(self, texts: List[str], src: str, tgt: str) -> List[str]:
         """Translate a batch using the NLLB pipeline."""
         try:
+            from datasets import Dataset
+            ds = Dataset.from_dict({"text": texts})
             results = self.translator(
-                texts,
+                ds,
                 src_lang=self._nllb_code(src),
                 tgt_lang=self._nllb_code(tgt),
                 max_length=512,
@@ -1715,19 +1717,29 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
             DirectoryManager.create_directory(pair_dir)
 
             if has_ff:
-                # Use both template-based and dynamic generation
                 ff_out = str(pair_dir / "false_friends.txt")
-                results[f"ff_{pair_key}"] = augmenter.generate_false_friend_examples(src, tgt, ff_out)
+                if Path(ff_out).exists():
+                    logger.info(f"⏭️ False friends for {pair_key} already exists, skipping")
+                    results[f"ff_{pair_key}"] = {"generated": 0, "pair": pair_key, "skipped": True}
+                else:
+                    results[f"ff_{pair_key}"] = augmenter.generate_false_friend_examples(src, tgt, ff_out)
 
-                # Dynamic NLLB-based generation for more diverse examples
                 ff_dynamic_out = str(pair_dir / "false_friends_dynamic.txt")
-                results[f"ff_dynamic_{pair_key}"] = augmenter.generate_dynamic_false_friend_examples(
-                    src, tgt, ff_dynamic_out, max_examples=max_dynamic_ff
-                )
+                if Path(ff_dynamic_out).exists():
+                    logger.info(f"⏭️ Dynamic FF for {pair_key} already exists, skipping")
+                    results[f"ff_dynamic_{pair_key}"] = {"generated": 0, "pair": pair_key, "skipped": True}
+                else:
+                    results[f"ff_dynamic_{pair_key}"] = augmenter.generate_dynamic_false_friend_examples(
+                        src, tgt, ff_dynamic_out, max_examples=max_dynamic_ff
+                    )
 
             if has_idiom:
                 idiom_out = str(pair_dir / "idioms.txt")
-                results[f"idiom_{pair_key}"] = augmenter.generate_idiom_examples(src, tgt, idiom_out)
+                if Path(idiom_out).exists():
+                    logger.info(f"⏭️ Idioms for {pair_key} already exists, skipping")
+                    results[f"idiom_{pair_key}"] = {"generated": 0, "source_lang": src, "target_lang": tgt, "skipped": True}
+                else:
+                    results[f"idiom_{pair_key}"] = augmenter.generate_idiom_examples(src, tgt, idiom_out)
 
     total_generated = sum(v.get('generated', 0) for v in results.values())
     logger.info(
