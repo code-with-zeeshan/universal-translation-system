@@ -4,6 +4,7 @@ from pathlib import Path
 import logging
 
 from utils.exceptions import DataError
+from utils.constants import VOCAB_DIR
 
 
 class VocabularyConnector:
@@ -13,9 +14,11 @@ class VocabularyConnector:
         self.logger = logging.getLogger(__name__)
     
     def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed',
-                                           output_dir: str = 'vocabs',
+                                           output_dir: str = '',
                                            vocab_size: int = 32000):
         """Create vocabulary packs after data pipeline completes"""
+        if not output_dir:
+            output_dir = VOCAB_DIR
         from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
         from vocabulary.vocab_config import UnifiedVocabConfig
         
