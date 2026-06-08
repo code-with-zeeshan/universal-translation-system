@@ -36,6 +36,7 @@ from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
 from config.schemas import RootConfig, load_config as load_pydantic_config
 from utils.constants import LOG_DIR, MODELS_ENCODER_DIR, MODELS_DECODER_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, TEST_FINAL_FILENAME, EVALUATION_REPORT_FILENAME
+from utils.pipeline_checkpoint import PhaseCheckpoint, mark_stage_complete, is_stage_complete, invalidate_downstream, hash_config
 
 # Centralized logging for training
 setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -195,6 +196,22 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     return train_dataset, val_dataset
 
 
+def _training_config_hash(config) -> str:
+    """Fingerprint the config sections that affect training output."""
+    return hash_config({
+        'num_epochs': config.training.num_epochs,
+        'batch_size': config.training.batch_size,
+        'lr': config.training.lr,
+        'hidden_dim': config.model.hidden_dim,
+        'decoder_dim': config.model.decoder_dim,
+        'num_layers': config.model.num_layers,
+        'decoder_layers': config.model.decoder_layers,
+        'use_lora': config.training.use_lora,
+        'mixed_precision': config.training.mixed_precision,
+        'experiment_name': getattr(config.training, 'experiment_name', None),
+    })
+
+
 def launch_training(args: argparse.Namespace):
     """Main training launcher"""
     # Setup logging
@@ -221,6 +238,30 @@ def launch_training(args: argparse.Namespace):
     if args.num_epochs:
         config.training.num_epochs = args.num_epochs
     
+    # ── Training checkpoint auto-resume ──────────────────────────────
+    ckpt_mgr = PhaseCheckpoint("training")
+    ckpt_mgr.load()
+    cfg_hash = _training_config_hash(config)
+    
+    if args.force:
+        ckpt_mgr.reset()
+        logger.info("🔁 Force mode: training checkpoint cleared")
+    elif ckpt_mgr.is_up_to_date(cfg_hash):
+        logger.info(f"✅ Training already completed (config unchanged, {config.training.num_epochs} epochs).")
+        logger.info("   Use --force to re-train from scratch.")
+        return
+    elif ckpt_mgr.completed and ckpt_mgr.config_hash != cfg_hash:
+        logger.info("⚡ Training config changed — re-training")
+        ckpt_mgr.reset()
+    
+    # Check cross-stage dependencies: data must be complete
+    from utils.pipeline_checkpoint import load_pipeline_state
+    data_state = load_pipeline_state().get("data", {})
+    if not data_state.get("completed"):
+        logger.warning("⚠️ Data pipeline not yet complete. Run `uts data --pipeline` first.")
+    
+    invalidate_downstream("train")
+    
     # Initialize components
     encoder, decoder = initialize_models(config)
     train_dataset, val_dataset = load_datasets(config)
@@ -228,11 +269,10 @@ def launch_training(args: argparse.Namespace):
     # Setup shutdown handler
     def cleanup():
         logger.info("🛑 Graceful shutdown initiated...")
-        # Save emergency checkpoint handled by trainer
     
     shutdown_handler = GracefulShutdown(cleanup_func=cleanup)
     
-    # Setup model versioning (default directory: "models")
+    # Setup model versioning
     versioning = ModelVersion()
     
     # Determine experiment name
@@ -242,11 +282,9 @@ def launch_training(args: argparse.Namespace):
     with resource_monitor.monitor("training_session"):
         start_time = time.time()
         
-        # Launch training
         if args.distributed and torch.cuda.device_count() > 1:
             logger.info(f"🚀 Launching distributed training on {torch.cuda.device_count()} GPUs")
             world_size = torch.cuda.device_count()
-            
             mp.spawn(
                 distributed_worker,
                 args=(world_size, encoder, decoder, train_dataset, val_dataset, 
@@ -256,8 +294,6 @@ def launch_training(args: argparse.Namespace):
             )
         else:
             logger.info("🚀 Launching single GPU/CPU training")
-            
-            # Direct training
             results = train_intelligent(
                 encoder=encoder,
                 decoder=decoder,
@@ -290,6 +326,12 @@ def launch_training(args: argparse.Namespace):
             }
         )
         logger.info(f"📦 Model registered as version: {version}")
+    
+    # Mark training checkpoint complete
+    ckpt_mgr.completed = True
+    ckpt_mgr.config_hash = cfg_hash
+    ckpt_mgr.save(checkpoint_path=str(final_model_path) if final_model_path.exists() else None)
+    mark_stage_complete("train", cfg_hash, {"checkpoint": str(final_model_path) if final_model_path.exists() else None})
     
     # Generate resource report
     resource_summary = resource_monitor.get_summary()
@@ -443,6 +485,8 @@ def main():
                             help='Override learning rate')
     train_parser.add_argument('--num-epochs', type=int,
                             help='Override number of epochs')
+    train_parser.add_argument('--force', action='store_true',
+                            help='Ignore training checkpoint and re-train from scratch')
     train_parser.add_argument('--log-dir', type=str, default=LOG_DIR,
                             help='Directory for logs')
     train_parser.add_argument('--log-level', type=str, default='info',

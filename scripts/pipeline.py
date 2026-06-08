@@ -59,7 +59,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # ====================== COMMAND IMPLEMENTATIONS ======================
 
-def run_data_pipeline(config_path: str, stages: Optional[List[str]] = None, resume: bool = True) -> None:
+def run_data_pipeline(config_path: str, stages: Optional[List[str]] = None,
+                      resume: bool = True, force: bool = False) -> None:
     """Run the unified data pipeline with optional stage selection."""
     cfg: RootConfig = load_pydantic_config(config_path)
     pipeline = UnifiedDataPipeline(cfg)
@@ -74,7 +75,7 @@ def run_data_pipeline(config_path: str, stages: Optional[List[str]] = None, resu
             valid = ", ".join(sorted(name_to_stage.keys()))
             raise SystemExit(f"Invalid stage '{e.args[0]}'. Valid stages: {valid}")
 
-    asyncio.run(pipeline.run_pipeline(resume=resume, stages=selected_stages))
+    asyncio.run(pipeline.run_pipeline(resume=resume, force=force, stages=selected_stages))
 
 
 def run_vocab_creator(
@@ -235,7 +236,7 @@ def run_all(config_path: str) -> None:
     """Run full pipeline: data -> vocab -> bootstrap -> train -> convert (ONNX)."""
     # 1) Data
     logger.info("[ALL] Running data pipeline...")
-    run_data_pipeline(config_path, stages=None, resume=True)
+    run_data_pipeline(config_path, stages=None, resume=True, force=False)
 
     # 2) Vocabulary (defaults: all groups, production)
     logger.info("[ALL] Creating vocabulary packs...")
@@ -280,6 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--config', type=str, required=True, help='Path to config YAML')
     sp.add_argument('--stages', nargs='*', help='Subset of stages to run (names). Omit to run all.')
     sp.add_argument('--no-resume', action='store_true', help='Do not resume from checkpoint')
+    sp.add_argument('--force', action='store_true', help='Clear checkpoint and re-run all stages from scratch')
 
     # vocab
     sp = sub.add_parser('vocab', help='Create vocabulary packs')
@@ -363,6 +365,7 @@ def main(argv: Optional[List[str]] = None) -> None:
             config_path=args.config,
             stages=args.stages,
             resume=(not args.no_resume),
+            force=args.force,
         )
     elif args.command == 'vocab':
         run_vocab_creator(

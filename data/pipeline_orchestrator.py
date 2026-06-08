@@ -18,7 +18,7 @@ from data.unified_data_downloader import UnifiedDataDownloader, DatasetType
 from data.smart_sampler import SmartDataSampler
 from data.synthetic_augmentation import SyntheticDataAugmenter
 from data.custom_samplers import TemperatureSampler, BalancedLanguageSampler
-from data.pipeline_state import PipelineStage, PipelineState
+from data.pipeline_state import PipelineStage, PipelineState, _hash_config_section, STAGE_ORDER
 from data.wikipedia_backtranslation import WikipediaBacktranslator
 from data.knowledge_distillation import KnowledgeDistillator
 from connector.pipeline_connector import PipelineConnector
@@ -84,6 +84,9 @@ class UnifiedDataPipeline:
             # Load checkpoint if exists
             self._load_checkpoint()
             
+            # Pre-compute config sections for fingerprinting
+            self._config_sections = self._build_config_sections()
+            
             span.set_attribute("pipeline.initialized", True)
             self.logger.info("✅ Unified data pipeline initialized")
     
@@ -134,16 +137,8 @@ class UnifiedDataPipeline:
         """Save pipeline state for resume capability"""
         checkpoint_path = self.dirs['base'] / 'pipeline_checkpoint.json'
         
-        checkpoint_data = {
-            'completed_stages': self.state.completed_stages,
-            'current_stage': self.state.current_stage.value if self.state.current_stage else None,
-            'total_sentences': self.state.total_sentences,
-            'total_size_gb': self.state.total_size_gb,
-            'error_count': self.state.error_count
-        }
-        
         with open(checkpoint_path, 'w') as f:
-            json.dump(checkpoint_data, f, indent=2)
+            json.dump(self.state.to_dict(), f, indent=2)
         
         self.logger.debug(f"Saved checkpoint: {self.state.get_progress():.1f}% complete")
     
@@ -156,29 +151,71 @@ class UnifiedDataPipeline:
                 with open(checkpoint_path, 'r') as f:
                     checkpoint_data = json.load(f)
                 
-                self.state.completed_stages = checkpoint_data['completed_stages']
-                self.state.total_sentences = checkpoint_data.get('total_sentences', 0)
-                self.state.total_size_gb = checkpoint_data.get('total_size_gb', 0.0)
-                self.state.error_count = checkpoint_data.get('error_count', 0)
+                self.state = PipelineState.from_dict(checkpoint_data)
                 
-                if checkpoint_data.get('current_stage'):
-                    self.state.current_stage = PipelineStage(checkpoint_data['current_stage'])
-                
-                self.logger.info(f"Loaded checkpoint: {self.state.get_progress():.1f}% complete")
+                self.logger.info(
+                    f"Loaded checkpoint: {self.state.get_progress():.1f}% complete"
+                    f"{' (pipeline fully completed)' if self.state.pipeline_complete else ''}"
+                )
                 
             except Exception as e:
                 self.logger.warning(f"Could not load checkpoint: {e}")
     
+    def _build_config_sections(self) -> Dict[str, object]:
+        """Extract relevant config sections per stage for fingerprinting."""
+        c = self.config
+        sections = {}
+        sections['download_evaluation'] = {'eval_pairs': list(c.data.evaluation_pairs)}
+        sections['download_training'] = {
+            'training_distribution': dict(c.data.training_distribution),
+            'domain_data': list(getattr(c.data, 'domain_data', [])),
+        }
+        sections['sample_filter'] = {'training_distribution': dict(c.data.training_distribution)}
+        sections['augment'] = {
+            'augmentation_pairs': list(c.data.augmentation_pairs),
+            'active_languages': list(c.data.active_languages),
+        }
+        sections['create_ready'] = {'train_val_split': getattr(c.data, 'train_val_split', 0.9)}
+        sections['validate'] = {
+            'total_size_gb': c.data.total_size_gb,
+            'active_languages': list(c.data.active_languages),
+        }
+        sections['vocabulary'] = {
+            'vocab_size': c.vocabulary.vocab_size,
+            'vocab_dir': c.vocabulary.vocab_dir,
+        }
+        sections['comet_quality'] = {
+            'comet_threshold': c.pipeline.comet_quality_threshold if c.pipeline else 0.7,
+        }
+        sections['wikipedia_backtranslation'] = {'active_languages': list(c.data.active_languages)}
+        sections['knowledge_distillation'] = {'max_pairs_per_pair': 50_000}
+        sections['direct_opus'] = {'training_distribution': list(c.data.training_distribution.keys())}
+        return sections
+
+    def _compute_stage_hash(self, stage: PipelineStage) -> str:
+        """Hash the config section relevant to a pipeline stage."""
+        section = self._config_sections.get(stage.value, {})
+        return _hash_config_section(section)
+
+    def _validate_stage_fingerprint(self, stage: PipelineStage) -> bool:
+        """Check if a completed stage's input config has changed since it ran."""
+        stored = self.state.stage_input_hashes.get(stage.value)
+        if stored is None:
+            return False
+        return stored == self._compute_stage_hash(stage)
+
     # ============= MAIN PIPELINE EXECUTION =============
     
     async def run_pipeline(self, 
                           resume: bool = True,
+                          force: bool = False,
                           stages: Optional[List[PipelineStage]] = None) -> Dict[str, Any]:
         """
         Execute the complete data pipeline.
         
         Args:
-            resume: Whether to resume from checkpoint
+            resume: Whether to resume from checkpoint (default: True, auto-detect)
+            force: If True, ignore checkpoint and re-run all stages
             stages: Specific stages to run (None = all)
             
         Returns:
@@ -186,7 +223,21 @@ class UnifiedDataPipeline:
         """
         with tracer.start_as_current_span("UnifiedDataPipeline.run_pipeline") as span:
             span.set_attribute("resume", resume)
+            span.set_attribute("force", force)
             span.set_attribute("dry_run", getattr(self, 'dry_run', False))
+            
+            # If pipeline fully completed and not forced, short-circuit
+            if self.state.pipeline_complete and not force and resume:
+                self.logger.info("✅ Pipeline already fully completed. Use --force to re-run from scratch.")
+                return self._generate_summary(0)
+            
+            if force:
+                self.logger.info("🔁 Force mode: re-running all stages from scratch")
+                self.state = PipelineState(
+                    completed_stages={stage.value: False for stage in PipelineStage},
+                    current_stage=None
+                )
+                self._save_checkpoint()
             
             self.logger.info("🚀 Starting unified data pipeline")
             start_time = asyncio.get_event_loop().time()
@@ -202,10 +253,24 @@ class UnifiedDataPipeline:
             
             # Execute pipeline stages
             for stage in stages_to_run:
-                if not resume or not self.state.completed_stages.get(stage.value, False):
+                stage_completed = self.state.completed_stages.get(stage.value, False)
+                
+                if not resume or not stage_completed:
+                    await self._execute_stage(stage)
+                elif stage_completed and not self._validate_stage_fingerprint(stage):
+                    self.logger.warning(
+                        f"⚡ Config changed for '{stage.value}' — re-running it "
+                        f"and invalidating downstream stages"
+                    )
+                    self.state.invalidate_downstream(stage)
                     await self._execute_stage(stage)
                 else:
-                    self.logger.info(f"⏩ Skipping {stage.value} (already completed)")
+                    self.logger.info(f"⏩ Skipping {stage.value} (already completed, config unchanged)")
+            
+            # Mark pipeline fully complete when all stages pass
+            if self.state.is_complete():
+                self.state.pipeline_complete = True
+                self._save_checkpoint()
             
             # Calculate execution time
             execution_time = asyncio.get_event_loop().time() - start_time
@@ -216,7 +281,10 @@ class UnifiedDataPipeline:
             span.set_attribute("pipeline.completed", True)
             span.set_attribute("pipeline.execution_time", execution_time)
             
-            self.logger.info("✅ Pipeline completed successfully!")
+            if self.state.pipeline_complete:
+                self.logger.info("✅ Pipeline fully completed!")
+            else:
+                self.logger.info(f"📌 Pipeline progress: {self.state.get_progress():.1f}%")
             self._log_summary(summary)
             
             return summary
@@ -320,6 +388,7 @@ class UnifiedDataPipeline:
                 if handler:
                     await handler()
                     self.state.completed_stages[stage.value] = True
+                    self.state.stage_input_hashes[stage.value] = self._compute_stage_hash(stage)
                     self._save_checkpoint()
                 else:
                     raise ValueError(f"Unknown stage: {stage}")
@@ -376,17 +445,26 @@ class UnifiedDataPipeline:
             # Merge existing domain data before any skip check
             self._merge_domain_data()
 
-            # Skip download only if ALL expected pair files already exist
             expected_pairs = list(self.config.data.training_distribution.keys())
             raw_dir = self.dirs['base'] / 'raw'
-            if raw_dir.exists():
-                existing = [p for p in expected_pairs if (raw_dir / f"{p}.txt").exists()]
-                if len(existing) == len(expected_pairs):
-                    self.logger.info(f"⏭️ All {len(expected_pairs)} pairs exist in {raw_dir}, skipping download")
-                    span.set_attribute("skipped", True)
-                    return
-            
-            self.logger.info("📥 Downloading training data...")
+
+            # Check per-pair completion to skip already-downloaded pairs
+            pairs_to_download = []
+            for p in expected_pairs:
+                if self.state.is_sub_stage_done('download_training', p):
+                    self.logger.info(f"⏩ Already downloaded: {p}")
+                elif (raw_dir / f"{p}.txt").exists():
+                    self.state.mark_sub_stage('download_training', p)
+                    self.logger.info(f"⏩ Already exists: {p}")
+                else:
+                    pairs_to_download.append(p)
+
+            if not pairs_to_download:
+                self.logger.info(f"⏭️ All {len(expected_pairs)} pairs already downloaded")
+                span.set_attribute("skipped", True)
+                return
+
+            self.logger.info(f"📥 Downloading {len(pairs_to_download)} missing pairs...")
             
             # Use strategy-based download
             schedule = self.downloader.get_download_schedule(DatasetType.TRAINING)
@@ -397,6 +475,12 @@ class UnifiedDataPipeline:
                 output_dir=str(self.dirs['base']),
                 dataset_types=[DatasetType.TRAINING]
             )
+            
+            # Mark each pair as done after successful download
+            for p in pairs_to_download:
+                self.state.mark_sub_stage('download_training', p)
+            self._save_checkpoint()
+            
             span.set_attribute("training_data.pairs", stats.get('downloaded_pairs', 0))
 
             # Merge domain-specific data into raw training files
@@ -433,6 +517,10 @@ class UnifiedDataPipeline:
             total_sampled = 0
             
             for pair_str, target_size in distribution.items():
+                if self.state.is_sub_stage_done('sample_filter', pair_str):
+                    self.logger.info(f"⏩ Already sampled: {pair_str}")
+                    continue
+                    
                 source, target = pair_str.split('-')
                 input_file = self.dirs['raw'] / f"{pair_str}.txt"
                 output_file = self.dirs['sampled'] / f"{pair_str}_sampled.txt"
@@ -446,6 +534,8 @@ class UnifiedDataPipeline:
                         target_lang=target
                     )
                     total_sampled += stats['written_count']
+                    self.state.mark_sub_stage('sample_filter', pair_str)
+                    self._save_checkpoint()
                     self.logger.info(f"✅ Sampled {pair_str}: {stats['written_count']:,} sentences")
             
             self.state.total_sentences += total_sampled
@@ -818,13 +908,13 @@ class UnifiedDataPipeline:
         await self._execute_stage(stage)
     
     def reset_pipeline(self):
-        """Reset pipeline state"""
+        """Reset pipeline state — clears completion, sub-progress, fingerprints, and complete flag."""
         self.state = PipelineState(
             completed_stages={stage.value: False for stage in PipelineStage},
             current_stage=None
         )
         self._save_checkpoint()
-        self.logger.info("Pipeline state reset")
+        self.logger.info("🔄 Pipeline state fully reset")
 
 
 def main():
@@ -833,7 +923,12 @@ def main():
     
     parser = argparse.ArgumentParser(description='Unified Data Pipeline')
     parser.add_argument('--config', default=f"{CONFIG_DIR}/{BASE_CONFIG_FILENAME}", help='Config file')
-    parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')
+    parser.add_argument('--resume', action='store_true', default=True,
+                        help='Resume from checkpoint (default: auto-detect)')
+    parser.add_argument('--no-resume', action='store_false', dest='resume',
+                        help='Ignore checkpoint and run all stages')
+    parser.add_argument('--force', action='store_true',
+                        help='Clear checkpoint and re-run from scratch')
     parser.add_argument('--stage', type=str, help='Run specific stage only')
     parser.add_argument('--reset', action='store_true', help='Reset pipeline state')
     parser.add_argument('--eval-only', action='store_true', help='Download evaluation data only, skip all other stages')
@@ -853,8 +948,13 @@ def main():
     # Handle reset
     if args.reset:
         pipeline.reset_pipeline()
-        print("Pipeline state reset")
+        print("🔄 Pipeline state reset")
         return
+    
+    # Handle force (clear checkpoint, then run fresh)
+    if args.force:
+        pipeline.reset_pipeline()
+        print("🔁 Force mode: checkpoint cleared, starting fresh")
     
     # Run pipeline
     if args.eval_only:
@@ -867,12 +967,13 @@ def main():
         stage = PipelineStage(args.stage)
         asyncio.run(pipeline.run_single_stage(stage))
     else:
-        # Run full pipeline
-        summary = asyncio.run(pipeline.run_pipeline(resume=args.resume))
+        # Run full pipeline (auto-resume by default)
+        summary = asyncio.run(pipeline.run_pipeline(resume=args.resume, force=args.force))
         
         # Print summary
-        print(f"\nPipeline completed in {summary['execution_time_hours']:.2f} hours")
-        print(f"Total data: {summary['total_sentences']:,} sentences ({summary['total_size_gb']:.2f} GB)")
+        if summary['execution_time_hours'] > 0:
+            print(f"\nPipeline completed in {summary['execution_time_hours']:.2f} hours")
+            print(f"Total data: {summary['total_sentences']:,} sentences ({summary['total_size_gb']:.2f} GB)")
 
 
 if __name__ == "__main__":

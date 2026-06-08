@@ -19,6 +19,7 @@ from utils.constants import (
     VOCAB_DIR, EVALUATION_REPORT_FILENAME
 )
 from utils.logging_config import setup_logging
+from utils.pipeline_checkpoint import PhaseCheckpoint, mark_stage_complete, is_stage_complete, invalidate_downstream, hash_config, load_pipeline_state
 
 setup_logging(log_dir=LOG_DIR, log_level="INFO")
 logger = logging.getLogger(__name__)
@@ -180,10 +181,16 @@ def evaluate_file(
         return {'error': str(e), 'file': test_file.name}
 
 
+def _eval_config_hash(checkpoint_path: str, test_data: str) -> str:
+    """Fingerprint the inputs that affect eval output."""
+    return hash_config({"checkpoint": checkpoint_path, "test_data": test_data})
+
+
 def main(
     config: Optional[str] = None,
     checkpoint: Optional[str] = None,
     test_data: Optional[str] = None,
+    force: bool = False,
 ) -> bool:
     """Run full evaluation pipeline.
 
@@ -191,12 +198,13 @@ def main(
         config: Path to config YAML
         checkpoint: Path to model checkpoint (.pt file)
         test_data: Path to test data directory or file
+        force: Clear checkpoint and re-evaluate from scratch
 
     Returns:
         True on success, False on failure
     """
     # Default paths — try published model first, then fall back to latest checkpoint
-    config = config or 'config/base.yaml'
+    config_path = config or 'config/base.yaml'
     if not checkpoint:
         published = Path('models/production/best_model.pt')
         if published.exists():
@@ -209,6 +217,27 @@ def main(
             else:
                 checkpoint = 'models/production/best_model.pt'
     test_data = test_data or 'data/evaluation'
+
+    # ── Eval checkpoint auto-resume ──────────────────────────────────
+    ckpt_mgr = PhaseCheckpoint("eval")
+    ckpt_mgr.load()
+    cfg_hash = _eval_config_hash(checkpoint, test_data)
+
+    if force:
+        ckpt_mgr.reset()
+        logger.info("🔁 Force mode: eval checkpoint cleared")
+    elif ckpt_mgr.is_up_to_date(cfg_hash):
+        logger.info("✅ Evaluation already completed for this checkpoint + test data.")
+        logger.info("   Use --force to re-evaluate.")
+        return True
+    elif ckpt_mgr.completed and ckpt_mgr.config_hash != cfg_hash:
+        logger.info("⚡ Eval inputs changed — re-evaluating")
+        ckpt_mgr.reset()
+
+    # Cross-stage dependency: training must be complete
+    train_state = load_pipeline_state().get("train", {})
+    if not train_state.get("completed"):
+        logger.warning("⚠️ Training not yet complete. Run `uts train --full` first.")
 
     # Load config
     logger.info(f"📄 Loading config from {config}")
@@ -299,19 +328,39 @@ def main(
     output_dir = Path('evaluation_reports')
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Evaluate each file
+    # Compute test-data hash for sub-stage tracking
+    import hashlib
+    td_hash = hashlib.md5(str(test_data).encode()).hexdigest()[:8]
+    completed_files_set = set(ckpt_mgr.data.get("completed_files", []))
+
+    ## Evaluate each file (skip completed ones on resume)
     all_reports = []
     for test_file in test_files:
+        file_key = f"{td_hash}:{test_file.name}"
+        if file_key in completed_files_set and not force:
+            logger.info(f"⏩ Skipping already-evaluated: {test_file.name}")
+            # Load prior report
+            report_path = output_dir / f"report_{test_file.stem}.json"
+            if report_path.exists():
+                with open(report_path) as f:
+                    all_reports.append(json.load(f))
+            continue
+
         report = evaluate_file(evaluator, test_file, output_dir)
         all_reports.append(report)
 
+        if 'error' not in report:
+            completed_files_set.add(file_key)
+            ckpt_mgr.save(completed_files=list(completed_files_set))
+            logger.info(f"💾 Saved eval progress ({len(completed_files_set)}/{len(test_files)} files)")
+
     # Generate combined report
     combined = {
-        'config': config,
+        'config': config_path,
         'checkpoint': checkpoint,
         'test_data': str(test_data),
         'num_files': len(test_files),
-        'files_evaluated': [str(f) for f in test_files],
+        'files_evaluated': sorted(completed_files_set),
         'reports': all_reports,
         'best_val_loss': float(ckpt.get('best_val_loss', 0)),
         'global_step': ckpt.get('global_step', 0),
@@ -335,6 +384,14 @@ def main(
                 logger.info(f"    {metric}: {value:.4f}")
     logger.info("="*60)
 
+    # Mark eval checkpoint complete
+    all_done = len(completed_files_set) >= len(test_files) or all('error' not in r for r in all_reports)
+    if all_done:
+        ckpt_mgr.completed = True
+        ckpt_mgr.config_hash = cfg_hash
+        ckpt_mgr.save(completed_files=list(completed_files_set))
+        mark_stage_complete("eval", cfg_hash)
+
     return True
 
 
@@ -351,10 +408,12 @@ if __name__ == "__main__":
     parser.add_argument('--config', default='config/base.yaml')
     parser.add_argument('--checkpoint', default='models/production/best_model.pt')
     parser.add_argument('--test-data', default='data/evaluation')
+    parser.add_argument('--force', action='store_true', help='Re-evaluate all files')
     args = parser.parse_args()
     success = main(
         config=args.config,
         checkpoint=args.checkpoint,
         test_data=args.test_data,
+        force=args.force,
     )
     sys.exit(0 if success else 1)

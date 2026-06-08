@@ -19,12 +19,14 @@ Run without arguments for an overview, or use subcommands.
   uts docs --open <topic>      Open documentation in browser
 """
 import argparse
+import json
 import os
 import shlex
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from utils.pipeline_checkpoint import mark_stage_complete, hash_config
 
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
@@ -75,9 +77,9 @@ def _run(*args: str, **kwargs):
     cmd = [PY, "-m"] + list(args)
     if kwargs:
         for k, v in kwargs.items():
-            if v is not None:
+            if v is not None and v is not False:
                 cmd.append(f"--{k.replace('_', '-')}")
-                if not isinstance(v, bool):
+                if v is not True:
                     cmd.append(str(v))
     print(f"\n$ {' '.join(shlex.join(c) for c in cmd)}\n")
     sys.stdout.flush()
@@ -128,12 +130,21 @@ def build_setup_parser(sub: argparse.ArgumentParser):
 # ── data ─────────────────────────────────────────────────────────────
 
 def cmd_data(args: argparse.Namespace):
-    config = args.config
+    config_path = args.config
     if args.scale and args.scale != 1.0:
-        config = _scale_config(config, args.scale)
+        config_path = _scale_config(config_path, args.scale)
     if args.pipeline:
-        _run("data.unified_data_pipeline", config=config, resume=args.resume,
+        _run("data.unified_data_pipeline", config=config_path, resume=args.resume,
+             force=args.force if hasattr(args, 'force') else False,
              stage=args.stage, reset=args.reset)
+        # Mark data pipeline complete in global state
+        try:
+            with open(config_path) as f:
+                raw = json.load(f)
+            dh = hash_config(raw.get("data", {}))
+            mark_stage_complete("data", dh)
+        except Exception:
+            pass
     elif args.download_only:
         _run("data.unified_data_pipeline", config=config, eval_only=True)
     elif args.augment:
@@ -155,7 +166,12 @@ def build_data_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--config", default="config/base.yaml", help="Config file path")
     sub.add_argument("--scale", type=float, default=1.0,
                      help="Scale training_distribution by factor (e.g., --scale 5 for 5× data)")
-    sub.add_argument("--resume", action="store_true", help="Resume from last checkpoint")
+    sub.add_argument("--resume", action="store_true", default=True,
+                     help="Resume from last checkpoint (default: auto-detect)")
+    sub.add_argument("--no-resume", action="store_false", dest="resume",
+                     help="Ignore checkpoint and run all stages")
+    sub.add_argument("--force", action="store_true",
+                     help="Clear checkpoint and re-run all stages from scratch")
     sub.add_argument("--reset", action="store_true", help="Reset pipeline state (start fresh)")
     sub.add_argument("--stage", help="Run a single pipeline stage")
 
@@ -187,6 +203,17 @@ def build_vocab_parser(sub: argparse.ArgumentParser):
 
 # ── train ────────────────────────────────────────────────────────────
 
+def _data_config_hash(config_path: str) -> str:
+    """Fingerprint the data pipeline config."""
+    try:
+        with open(config_path) as f:
+            cfg = json.load(f)
+        data_section = cfg.get("data", {})
+        return hash_config(data_section)
+    except Exception:
+        return ""
+
+
 def cmd_train(args: argparse.Namespace):
     if args.full:
         checkpoint = args.checkpoint or _find_latest_checkpoint()
@@ -198,7 +225,8 @@ def cmd_train(args: argparse.Namespace):
              batch_size=args.batch_size,
              learning_rate=args.lr,
              experiment_name=args.experiment_name,
-             checkpoint=checkpoint)
+             checkpoint=checkpoint,
+             force=args.force if hasattr(args, 'force') else False)
     elif args.distill:
         _run_module("training/distillation_trainer.py",
                      config=args.config,
@@ -233,6 +261,8 @@ def build_train_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--lr", type=float, help="Override learning rate")
     sub.add_argument("--experiment-name", help="Experiment name for logging")
     sub.add_argument("--checkpoint", help="Resume from checkpoint path")
+    sub.add_argument("--force", action="store_true",
+                     help="Ignore training checkpoint and re-train from scratch")
     sub.add_argument("--start-tier", choices=["tier1", "tier2", "tier3", "tier4"],
                      help="Progressive: start from a specific tier")
     sub.add_argument("--validate-final", action="store_true",
@@ -247,10 +277,12 @@ def cmd_eval(args: argparse.Namespace):
         if not eval_dir.exists() or not any(eval_dir.iterdir()):
             print("→ Eval data missing, downloading...")
             _run("data.unified_data_pipeline", config=args.config, eval_only=True)
-        _run_module("evaluation/evaluate_model.py",
-                     config=args.config,
-                     checkpoint=args.checkpoint,
-                     test_data=args.test_data)
+        eval_args = [f"--config={args.config}",
+                     f"--checkpoint={args.checkpoint}",
+                     f"--test-data={args.test_data}"]
+        if hasattr(args, 'force') and args.force:
+            eval_args.append("--force")
+        _run_module("evaluation/evaluate_model.py", *eval_args)
     elif args.download:
         _run("data.unified_data_pipeline", config=args.config, eval_only=True)
     elif args.benchmark:
@@ -272,6 +304,8 @@ def build_eval_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--test-data", default="data/evaluation", help="Test data directory")
     sub.add_argument("--profile-steps", type=int, default=10, help="Steps to profile")
     sub.add_argument("--output-dir", default="profiling", help="Profiling output directory")
+    sub.add_argument("--force", action="store_true",
+                     help="Re-evaluate all files even if previously completed")
 
 
 # ── publish ─────────────────────────────────────────────────────────
