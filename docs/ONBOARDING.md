@@ -41,6 +41,7 @@ Run `./uts <group> --help` for full options.
 | `--check` | Run GPU/environment readiness check |
 | `--config-wizard` | Interactive config file creator |
 | `--validate CONFIG` | Validate a config YAML file |
+| `--verify` | Verify post-deployment setup (all services reachable, env vars set) |
 
 ### `./uts data` — Data Pipeline
 
@@ -50,8 +51,12 @@ Run `./uts <group> --help` for full options.
 | `--download-only` | Download evaluation test data only (skip training data) |
 | `--augment` | Run synthetic data augmentation only |
 | `--validate-data` | Validate pipeline output |
+| `--domains` | Download domain-specific data for supported domains |
 | `--config PATH` | Config file (default: `config/base.yaml`) |
-| `--resume` | Resume from last checkpoint |
+| `--scale N` | Scale training data targets by factor N (e.g., `--scale 5` for 5× data, ~$42 total) |
+| `--resume` | Resume from last checkpoint (default behavior) |
+| `--no-resume` | Run all stages without checking checkpoint state |
+| `--force` | Clear checkpoint and re-run all stages from scratch |
 | `--reset` | Reset pipeline state (start fresh) |
 | `--stage NAME` | Run a single pipeline stage |
 
@@ -80,6 +85,7 @@ Run `./uts <group> --help` for full options.
 | Flag | Description |
 |---|---|
 | `--full` | Full model training (all 150.8M params) |
+| `--distill` | Knowledge distillation from a teacher model (see TRAINING.md) |
 | `--progressive` | Progressive multi-tier training (curriculum) |
 | `--lora` | Show LoRA adapter training instructions |
 | `--config PATH` | Config file (default: `config/base.yaml`) |
@@ -89,6 +95,12 @@ Run `./uts <group> --help` for full options.
 | `--lr FLOAT` | Override learning rate |
 | `--experiment-name NAME` | Experiment name for logging |
 | `--checkpoint PATH` | Resume training from checkpoint |
+| `--force` | Ignore training checkpoint, re-train from scratch |
+| `--start-tier TIER` | Progressive: start from specific tier (`tier1`–`tier4`) |
+| `--validate-final` | Progressive: run validation on final model |
+| `--teacher MODEL` | Teacher model for distillation (default: `facebook/nllb-200-3.3B`) |
+| `--distill-alpha FLOAT` | CE vs KD loss weight, 0–1 (default: `0.5`) |
+| `--distill-temp FLOAT` | Distillation temperature (default: `4.0`) |
 
 **Config reference (key settings in `config/base.yaml`):**
 
@@ -126,6 +138,7 @@ data:
 | `--test-data PATH` | Test data directory (default: `data/evaluation`) |
 | `--profile-steps N` | Steps to profile (default: 10) |
 | `--output-dir PATH` | Profiling output directory (default: `profiling`) |
+| `--force` | Re-evaluate all files even if previously completed |
 
 ### `./uts serve` — Serving Infrastructure
 
@@ -152,8 +165,15 @@ data:
 | `--packs [list]` | Vocab packs for prefetch (e.g., `latin cjk`) |
 | `--repo-id ID` | Hugging Face Hub repository ID |
 | `--rotate-secrets` | Rotate JWT secrets |
+| `--key-type TYPE` | Key type for rotation (e.g., `hmac`, `jwt`) |
+| `--set-env FILE` | Set environment variables from a template file |
 | `--upload [REPO]` | Upload artifacts to Hugging Face Hub |
+| `--register-decoder` | Register a decoder node with the coordinator |
+| `--build-encoder` | Build the encoder core for edge deployment |
+| `--build-target TARGET` | Build target (e.g., `wasm`, `android`, `ios`) |
+| `--check-compat` | Check decoder node compatibility with current coordinator |
 | `--version` | Show component versions |
+| `--version-config PATH` | Show version info for specific config file |
 | `--install` | Install system dependencies |
 | `--train` | Install training dependencies |
 | `--serve` | Install serving dependencies |

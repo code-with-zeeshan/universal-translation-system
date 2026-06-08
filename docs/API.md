@@ -131,7 +131,10 @@ FastAPI app in `coordinator/advanced_coordinator.py`.
 - POST `/admin/add_decoder` (auth required)
 - POST `/admin/remove_decoder` (auth required)
 - Login: `POST /login` with `COORDINATOR_TOKEN`
+- Logout: `POST /logout` (clears admin session)
+- Token Revocation: `POST /api/revoke` (revoke an API key or JWT)
 - Dashboard: `GET /` (HTML)
+- JWKS: `GET /.well-known/jwks.json` (public JWK set for JWT verification — available on both coordinator and decoder)
 
 ### Error Handling
 - `502 Bad Gateway` -- decoder error or unreachable
