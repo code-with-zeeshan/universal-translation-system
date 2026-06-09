@@ -204,6 +204,40 @@ class UnifiedDataPipeline:
             return False
         return stored == self._compute_stage_hash(stage)
 
+    def _verify_stage_outputs(self, stage: PipelineStage) -> bool:
+        """Verify that a stage's actual output files exist on disk.
+
+        Prevents skipping stages whose checkpoint metadata says 'done'
+        but whose artifacts were deleted or never created.
+        """
+        VERIFIERS = {
+            PipelineStage.VOCABULARY: lambda c: (
+                Path(c.vocabulary.vocab_dir).is_dir()
+                and bool(list(Path(c.vocabulary.vocab_dir).glob("*_v*.msgpack")))
+            ),
+            PipelineStage.DOWNLOAD_TRAIN: lambda c: (
+                Path(c.data.processed_dir).is_dir()
+                and any(Path(c.data.processed_dir).glob("*_corpus.txt"))
+            ),
+            PipelineStage.SAMPLE_FILTER: lambda c: (
+                (Path(c.data.processed_dir) / "sampled").is_dir()
+                and any((Path(c.data.processed_dir) / "sampled").glob("*_sampled.txt"))
+            ),
+            PipelineStage.AUGMENT: lambda c: (
+                (Path(c.data.processed_dir) / "augmented").is_dir()
+            ),
+            PipelineStage.CREATE_READY: lambda c: (
+                (Path(c.data.processed_dir) / "ready").is_dir()
+                and any((Path(c.data.processed_dir) / "ready").iterdir())
+            ),
+            PipelineStage.VALIDATE: lambda c: True,
+            PipelineStage.COMET_QUALITY: lambda c: True,
+        }
+        check = VERIFIERS.get(stage)
+        if check is None:
+            return True
+        return check(self.config)
+
     # ============= MAIN PIPELINE EXECUTION =============
     
     async def run_pipeline(self, 
@@ -254,6 +288,12 @@ class UnifiedDataPipeline:
             # Execute pipeline stages
             for stage in stages_to_run:
                 stage_completed = self.state.completed_stages.get(stage.value, False)
+                if stage_completed and not self._verify_stage_outputs(stage):
+                    self.logger.warning(
+                        f"🔄 Checkpoint marks '{stage.value}' as complete "
+                        f"but output files are missing — re-running"
+                    )
+                    stage_completed = False
                 
                 if not resume or not stage_completed:
                     await self._execute_stage(stage)
