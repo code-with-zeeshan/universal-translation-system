@@ -36,9 +36,14 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
 
     def _load_or_build_token_cache(self, vocab_dir: str):
         src_path = self._cache_path('source_ids.npy')
-        if Path(src_path).exists():
+        meta_path = self._cache_path('metadata.pkl')
+        if Path(src_path).exists() and Path(meta_path).exists():
             self._load_token_cache()
         else:
+            if Path(src_path).exists():
+                logger.warning("Cache incomplete (metadata missing), rebuilding...")
+                for f in Path(self.cache_dir).glob(f"{self.data_path.stem}_tokens_ml{self.max_length}_*"):
+                    f.unlink()
             self._build_token_cache(vocab_dir)
 
     def _load_token_cache(self):

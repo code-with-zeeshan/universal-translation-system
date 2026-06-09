@@ -71,6 +71,8 @@ Run `./uts <group> --help` for full options.
 
 ### `./uts vocab` — Vocabulary Management
 
+> **Note:** The data pipeline already creates vocabulary packs automatically during its `create_ready` stage. You only need `uts vocab --build` for custom builds (different vocab size, mode, or groups). The command is **idempotent** — it skips if the config and corpus files haven't changed.
+
 | Flag | Description |
 |---|---|
 | `--build` | Build vocabulary packs from processed data |

@@ -117,8 +117,12 @@ data/processed/
 data/raw/
 data/training/
 data/evaluation/
+data/cache/
+data/essential/
+data/log/
 data/download_strategy.json
 data/pipeline_checkpoint.json
+data/pipeline_state.json
 
 # Downloaded archives
 *.zip
@@ -135,6 +139,11 @@ evaluation_reports/
 # Runtime GPU config (auto-detected)
 decoder_config.yaml
 universal-decoder-node/decoder_config.yaml
+
+# Cloud decoder runtime (created by build_and_run.sh)
+cloud_decoder/models/
+cloud_decoder/vocabs/
+cloud_decoder/logs/
 
 # opencode config
 .opencode/

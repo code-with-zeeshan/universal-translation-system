@@ -159,6 +159,57 @@ class UnifiedVocabularyCreator:
             )
         }
 
+    def _build_fingerprint(
+        self,
+        mode: Optional[CreationMode] = None,
+        groups_to_create: Optional[List[str]] = None,
+    ) -> str:
+        """SHA-256 fingerprint of config + corpus state to detect changes."""
+        h = hashlib.sha256()
+        h.update(str(self.config.vocab_size).encode())
+        h.update(str(self.config.vocab_type).encode())
+        h.update(str(mode).encode() if mode else b'')
+        h.update(str(sorted(groups_to_create or list(self.language_groups.keys()))).encode())
+        for lang in sorted(self.corpus_paths):
+            path = Path(self.corpus_paths[lang])
+            if path.exists():
+                s = path.stat()
+                h.update(f"{lang}:{s.st_size}:{s.st_mtime_ns}".encode())
+        return h.hexdigest()
+
+    def _fingerprint_path(self) -> Path:
+        return self.output_dir / '.vocab_fingerprint.json'
+
+    def _skip_unchanged(
+        self,
+        mode: Optional[CreationMode] = None,
+        groups_to_create: Optional[List[str]] = None,
+    ) -> bool:
+        """Return True if vocab is already built with this exact config + corpus."""
+        fp_path = self._fingerprint_path()
+        if not fp_path.exists():
+            return False
+        try:
+            old = json.loads(fp_path.read_text())
+        except Exception:
+            return False
+        cur = self._build_fingerprint(mode, groups_to_create)
+        return old.get('fingerprint') == cur
+
+    def _save_fingerprint(
+        self,
+        mode: Optional[CreationMode] = None,
+        groups_to_create: Optional[List[str]] = None,
+    ) -> None:
+        """Persist fingerprint so future runs can skip."""
+        fp = self._build_fingerprint(mode, groups_to_create)
+        self._fingerprint_path().write_text(json.dumps({
+            'fingerprint': fp,
+            'vocab_size': self.config.vocab_size,
+            'groups': sorted(groups_to_create or list(self.language_groups.keys())),
+        }, indent=2))
+        logger.debug(f"Saved vocab fingerprint: {fp[:12]}...")
+
     def create_all_packs(
         self,
         mode: Optional[CreationMode] = None,
@@ -167,6 +218,9 @@ class UnifiedVocabularyCreator:
         """
         Create all or specified vocabulary packs.
 
+        Skips if existing packs match the current config + corpus fingerprint,
+        so re-running after the pipeline (or with identical settings) is a no-op.
+
         Args:
             mode: Override creation mode (None = use recommended)
             groups_to_create: List of group names (None = all)
@@ -174,6 +228,11 @@ class UnifiedVocabularyCreator:
         Returns:
             Dictionary of created packs
         """
+        # ── Skip if unchanged ──────────────────────────────────────
+        if self._skip_unchanged(mode, groups_to_create):
+            logger.info("Vocabulary packs are already up-to-date (config and corpus unchanged).")
+            return {}
+
         created_packs = {}
         failed_packs = []
 
@@ -207,6 +266,10 @@ class UnifiedVocabularyCreator:
         logger.info(f"Successfully created: {len(created_packs)} packs")
         if failed_packs:
             logger.warning(f"Failed: {failed_packs}")
+
+        # Save fingerprint so future identical runs skip
+        if created_packs:
+            self._save_fingerprint(mode, groups_to_create)
 
         return created_packs
 

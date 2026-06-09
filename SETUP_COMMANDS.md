@@ -95,18 +95,24 @@ CLI equivalents: `--download-max-workers 8`, `--download-parallel-batches`, `--d
 > - You have a dedicated SSD or mounted volume for cache
 > - You're running in a container/ephemeral environment that needs a custom path
 
-### 6. Build vocabulary packs (~10 min, any GPU)
+### 6. Vocabulary packs
+
+Vocabulary packs are **automatically created** by the data pipeline's `create_ready` stage — you typically don't need this step after `uts data --pipeline`.
+
+Use `uts vocab --build` only when you need a **custom build** (e.g., different vocab size, mode, or language groups) without re-running the full pipeline:
 
 ```bash
 ./uts vocab --build --vocab-size 32000
 ```
 
-Creates 6 per-script packs at `vocabulary/vocab/`.
+This command is **idempotent** — if the config and corpus files haven't changed, it skips immediately.
 
 **Advanced:** Restrict groups or change mode:
 ```bash
 ./uts vocab --build --vocab-size 32000 --mode research --groups latin cjk
 ```
+
+Creates 6 per-script packs at `vocabulary/vocab/`.
 
 ---
 
