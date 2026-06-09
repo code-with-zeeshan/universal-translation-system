@@ -49,7 +49,6 @@ class DirectoryManager:
         
         directories = {
             'base': base_path,
-            'log': base_path / 'log',
             'raw': base_path / 'raw',
             'processed': processed_path,
             'sampled': processed_path / 'sampled',
