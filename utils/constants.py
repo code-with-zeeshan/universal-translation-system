@@ -19,6 +19,9 @@ import os
 import json
 from typing import Any, List
 
+from dotenv import load_dotenv
+load_dotenv()
+
 
 def _get_env_raw(key: str, default: Any = None) -> Any:
     """Get raw env value, checking UTS_<KEY> first, then <KEY>."""

@@ -18,13 +18,20 @@ Run without arguments for an overview, or use subcommands.
   uts <group> --help    Detailed help for a group
   uts docs --open <topic>      Open documentation in browser
 """
-import argparse
-import json
-import os
-import shlex
-import subprocess
+
 import sys
+import os
+from pathlib import Path
+import subprocess
+import shlex
+import json
+import yaml
+import argparse
+import shutil
 import tempfile
+
+from dotenv import load_dotenv
+load_dotenv()
 from pathlib import Path
 from utils.pipeline_checkpoint import mark_stage_complete, hash_config
 
