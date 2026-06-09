@@ -1276,7 +1276,7 @@ class SyntheticDataAugmenter:
         with open(output_path, 'w', encoding='utf-8') as f:
             for src_sentence, tgt in zip(batch_src, translations):
                 if tgt:
-                    f.write(f"{src_sentence}\t{tgt}\n")
+                    f.write(f"{src_sentence}\t{tgt}\t{source_lang}\t{target_lang}\n")
                     count += 1
 
         self.logger.info(f"Generated {count} false-friend examples for {pair}")
@@ -1308,7 +1308,7 @@ class SyntheticDataAugmenter:
         with open(output_path, 'w', encoding='utf-8') as f:
             for src, tgt in zip(probes, translations):
                 if tgt:
-                    f.write(f"{src}\t{tgt}\n")
+                    f.write(f"{src}\t{tgt}\t{source_lang}\t{target_lang}\n")
                     count += 1
 
         self.logger.info(f"Generated {count} idiom examples for {source_lang}→{target_lang}")
@@ -1538,7 +1538,7 @@ class SyntheticDataAugmenter:
                         tgt_results = self._translate_batch(valid_src, source_lang, target_lang)
                         for src_s, tgt in zip(valid_src, tgt_results):
                             if tgt:
-                                f.write(f"{src_s}\t{tgt}\n")
+                                f.write(f"{src_s}\t{tgt}\t{source_lang}\t{target_lang}\n")
                                 count += 1
                     except Exception as e:
                         self.logger.error(f"Dynamic FF batch failed: {e}")
@@ -1597,7 +1597,7 @@ class SyntheticDataAugmenter:
                         results = self._process_backtranslation_batch(batch_texts, source_lang, target_lang)
                         for original, translated, back_translated in results:
                             if translated and self._is_quality_translation(original, back_translated):
-                                f_out.write(f"{original}\t{translated}\n")
+                                f_out.write(f"{original}\t{translated}\t{source_lang}\t{target_lang}\n")
                                 stats['augmented'] += 1
                             else:
                                 stats['filtered_quality'] += 1
@@ -1608,7 +1608,7 @@ class SyntheticDataAugmenter:
                     results = self._process_backtranslation_batch(batch_texts, source_lang, target_lang)
                     for original, translated, back_translated in results:
                         if translated and self._is_quality_translation(original, back_translated):
-                            f_out.write(f"{original}\t{translated}\n")
+                            f_out.write(f"{original}\t{translated}\t{source_lang}\t{target_lang}\n")
                             stats['augmented'] += 1
                         else:
                             stats['filtered_quality'] += 1
@@ -1719,7 +1719,7 @@ class SyntheticDataAugmenter:
         with open(output_file, 'w', encoding='utf-8') as f_out:
             for en_text in common_en:
                 try:
-                    f_out.write(f"{en_to_lang1[en_text]}\t{en_to_lang2[en_text]}\n")
+                    f_out.write(f"{en_to_lang1[en_text]}\t{en_to_lang2[en_text]}\t{lang1}\t{lang2}\n")
                     pairs_created += 1
                 except Exception as e:
                     self.logger.error(f"Failed to create pivot pair: {e}")
@@ -1754,7 +1754,7 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
         max_dynamic_ff = getattr(config.pipeline, 'max_dynamic_ff_per_pair', 5000)
 
     augmenter = SyntheticDataAugmenter(config)
-    base_dir = Path(config.data.processed_dir) / "augmented"
+    base_dir = Path(config.data.processed_dir) / "final"
     results = {}
 
     total_pairs = 0

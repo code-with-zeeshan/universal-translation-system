@@ -65,6 +65,26 @@ class PipelineConnector:
                 self.logger.error(f"Error processing {file_path}: {e}")
                 continue
 
+        # Also extract from augmented data (now in 4-column format)
+        final_dir = Path(self.config.data.processed_dir) / DATA_FINAL_DIR
+        if final_dir.exists():
+            aug_files = list(final_dir.glob('*.txt')) + list(final_dir.glob('*/*.txt'))
+            for file_path in aug_files:
+                try:
+                    self.logger.info(f"Processing augmented {file_path}")
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            parts = line.strip().split('\t')
+                            if len(parts) == 4:
+                                _, _, src_lang, tgt_lang = parts
+                                if src_lang not in language_texts:
+                                    language_texts[src_lang] = []
+                                if tgt_lang not in language_texts:
+                                    language_texts[tgt_lang] = []
+                except Exception as e:
+                    self.logger.warning(f"Skipping {file_path}: {e}")
+                    continue
+
         # Write monolingual files with deduplication
         corpus_dir = processed_dir / DATA_CORPUS_DIR
         corpus_dir.mkdir(parents=True, exist_ok=True)
@@ -86,13 +106,14 @@ class PipelineConnector:
         
         # Collect all files to merge
         files_to_merge = []
-        
+
         # Sampled files
         files_to_merge.extend(sampled_dir.glob('*_sampled.txt'))
-        
-        # Augmented files
+
+        # Augmented files (backtranslations, idioms, false friends, etc.)
         if final_dir.exists():
-            files_to_merge.extend(final_dir.glob('augmented_*.txt'))
+            files_to_merge.extend(final_dir.glob('*.txt'))
+            files_to_merge.extend(final_dir.glob('*/*.txt'))
             files_to_merge.extend(final_dir.glob('pivot_pairs/*.txt'))
         
         # Merge all

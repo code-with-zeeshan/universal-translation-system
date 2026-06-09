@@ -23,7 +23,7 @@ from data.wikipedia_backtranslation import WikipediaBacktranslator
 from data.knowledge_distillation import KnowledgeDistillator
 from connector.pipeline_connector import PipelineConnector
 from connector.vocabulary_connector import VocabularyConnector
-from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, LOG_DIR
+from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, LOG_DIR, TRAIN_FINAL_FILENAME
 
 tracer = trace.get_tracer(__name__)
 
@@ -224,11 +224,10 @@ class UnifiedDataPipeline:
                 and any((Path(c.data.processed_dir) / "sampled").glob("*_sampled.txt"))
             ),
             PipelineStage.AUGMENT: lambda c: (
-                (Path(c.data.processed_dir) / "augmented").is_dir()
+                (Path(c.data.processed_dir) / "final").is_dir()
             ),
             PipelineStage.CREATE_READY: lambda c: (
-                (Path(c.data.processed_dir) / "ready").is_dir()
-                and any((Path(c.data.processed_dir) / "ready").iterdir())
+                (Path(c.data.processed_dir) / TRAIN_FINAL_FILENAME).is_file()
             ),
             PipelineStage.VALIDATE: lambda c: True,
             PipelineStage.COMET_QUALITY: lambda c: True,
@@ -626,7 +625,8 @@ class UnifiedDataPipeline:
             # 3) Pivot translations
             try:
                 pivot_stats = self.augmenter.generate_pivot_translations(
-                    english_pairs_dir=str(self.dirs['sampled'])
+                    english_pairs_dir=str(self.dirs['sampled']),
+                    output_dir=str(self.dirs['final'] / 'pivot_pairs')
                 )
                 if isinstance(pivot_stats, dict):
                     augmented_total += int(pivot_stats.get('total_pivot_pairs', 0))

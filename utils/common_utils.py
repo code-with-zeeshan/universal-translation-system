@@ -54,7 +54,6 @@ class DirectoryManager:
             'corpus': processed_path / 'corpus',
             'sampled': processed_path / 'sampled',
             'final': processed_path / 'final',
-            'ready': processed_path / 'ready',
             'opus': base_path / 'raw' / 'opus',
             'pivot_pairs': processed_path / 'final' / 'pivot_pairs'
         }

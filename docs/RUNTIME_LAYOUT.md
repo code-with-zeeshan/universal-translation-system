@@ -43,15 +43,15 @@ data/
 │   │   ├── {stem}_cache.json                 Dataset cache metadata
 │   │   └── {stem}_tokens_ml{max}_{src/tgt/mask}.npy  Tokenized memmap
 │   ├── sampled/{pair}_sampled.txt             Smart-sampled data
-│   ├── ready/                                 Training-ready formatted
+│   ├── pivot_pairs/{src}-{tgt}_pivot.txt      Pivot translations
 │   └── final/
-│       ├── augmented_{pair}.txt               Standard augmentation
-│       ├── ff_{pair}.txt                      False friends
-│       ├── idiom_{lang}.txt                   Idiom examples
+│       ├── augmented_{pair}.txt               Backtranslation
+│       ├── {src}_{tgt}/
+│       │   ├── ff_{pair}.txt / ff_dynamic_{pair}.txt  False friends
+│       │   └── idiom_{src}_{tgt}.txt          Idiom examples
 │       ├── formal_{pair}.txt / casual_{pair}.txt  Register variants
 │       ├── tone_{pair}.txt / bt_{pair}.txt    Backtranslation
 │       ├── noised_{pair}.txt                  Noise augmentation
-│       ├── pivot_pairs/*.txt                  Pivot translations
 │       └── distilled/{pair}_distilled.txt     Knowledge-distilled
 ├── evaluation/
 │   └── {pair}.tsv                            Eval test sets
