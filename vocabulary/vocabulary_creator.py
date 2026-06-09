@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 import msgpack
 
-from utils.constants import LOG_DIR, DATA_PROCESSED_DIR, VOCAB_DIR
+from utils.constants import LOG_DIR, DATA_PROCESSED_DIR, DATA_CORPUS_DIR, VOCAB_DIR
 from utils.exceptions import VocabularyError
 from utils.logging_config import setup_logging
 
@@ -67,7 +67,7 @@ class UnifiedVocabularyCreator:
 
     def __init__(
         self,
-        corpus_dir: str = DATA_PROCESSED_DIR,
+        corpus_dir: str = str(Path(DATA_PROCESSED_DIR) / DATA_CORPUS_DIR),
         output_dir: str = VOCAB_DIR,
         config: Optional[UnifiedVocabConfig] = None,
         default_mode: CreationMode = CreationMode.PRODUCTION

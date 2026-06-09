@@ -34,7 +34,7 @@ data/
 │   ├── mono_{lang}.txt                        Wikipedia monolingual data
 │   └── opus/{pair}.txt                        Direct OPUS download
 ├── processed/
-│   ├── {lang}_corpus.txt                      Monolingual corpora
+│   ├── corpus/{lang}_corpus.txt                 Monolingual corpora
 │   ├── {pair}.txt                             Tiny dry-run samples
 │   ├── train_final.txt                        Final training data
 │   ├── val_final.txt                          Validation split

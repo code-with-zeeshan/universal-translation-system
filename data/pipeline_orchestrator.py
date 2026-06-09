@@ -216,8 +216,8 @@ class UnifiedDataPipeline:
                 and bool(list(Path(c.vocabulary.vocab_dir).glob("*_v*.msgpack")))
             ),
             PipelineStage.DOWNLOAD_TRAIN: lambda c: (
-                Path(c.data.processed_dir).is_dir()
-                and any(Path(c.data.processed_dir).glob("*_corpus.txt"))
+                (Path(c.data.processed_dir) / "corpus").is_dir()
+                and any((Path(c.data.processed_dir) / "corpus").glob("*_corpus.txt"))
             ),
             PipelineStage.SAMPLE_FILTER: lambda c: (
                 (Path(c.data.processed_dir) / "sampled").is_dir()
@@ -360,9 +360,11 @@ class UnifiedDataPipeline:
                         f.write(f"{src}\t{tgt}\n")
 
         # Create minimal single-language corpora for vocab creator
+        corpus_dir = processed_dir / "corpus"
+        corpus_dir.mkdir(parents=True, exist_ok=True)
         for lang, lines in [('en', ['hello world', 'this is a test']),
                             ('es', ['hola mundo', 'esto es una prueba'])]:
-            corp = processed_dir / f"{lang}_corpus.txt"
+            corp = corpus_dir / f"{lang}_corpus.txt"
             if not corp.exists():
                 with open(corp, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(lines))
@@ -836,7 +838,7 @@ class UnifiedDataPipeline:
         required_languages = set(self.config.data.active_languages)
         found_languages = set()
         
-        for file in self.dirs['processed'].glob('*_corpus.txt'):
+        for file in self.dirs['corpus'].glob('*_corpus.txt'):
             lang = file.stem.replace('_corpus', '')
             found_languages.add(lang)
         

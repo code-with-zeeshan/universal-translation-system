@@ -237,7 +237,7 @@ class UniversalTranslationSystem:
 
                 # Create vocabulary packs
                 creator = VocabularyPackCreator(
-                    corpus_dir=f"{self.config.data_dir}/processed",
+                    corpus_dir=f"{self.config.data_dir}/processed/corpus",
                     output_dir=self.config.vocab_dir
                 )
                 creator.create_all_packs()

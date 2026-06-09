@@ -11,7 +11,7 @@ from data.data_utils import merge_datasets
 from utils.common_utils import DirectoryManager
 from utils.exceptions import DataError
 from config.schemas import RootConfig
-from utils.constants import DATA_SAMPLED_DIR, DATA_FINAL_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME
+from utils.constants import DATA_SAMPLED_DIR, DATA_FINAL_DIR, DATA_CORPUS_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME
 
 class PipelineConnector:
     """Connects all pipeline stages"""
@@ -66,8 +66,10 @@ class PipelineConnector:
                 continue
 
         # Write monolingual files with deduplication
+        corpus_dir = processed_dir / DATA_CORPUS_DIR
+        corpus_dir.mkdir(parents=True, exist_ok=True)
         for lang, texts in language_texts.items():
-            output_file = processed_dir / f"{lang}_corpus.txt"
+            output_file = corpus_dir / f"{lang}_corpus.txt"
             # Deduplicate texts
             unique_texts = list(dict.fromkeys(texts))  # Preserves order
 

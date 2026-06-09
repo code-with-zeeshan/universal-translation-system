@@ -4,7 +4,7 @@ from pathlib import Path
 import logging
 
 from utils.exceptions import DataError
-from utils.constants import VOCAB_DIR
+from utils.constants import VOCAB_DIR, DATA_CORPUS_DIR
 
 
 class VocabularyConnector:
@@ -31,7 +31,7 @@ class VocabularyConnector:
         
         # Create vocabulary packs with requested vocab size per pack
         creator = VocabularyPackCreator(
-            corpus_dir=processed_dir,
+            corpus_dir=str(Path(processed_dir) / DATA_CORPUS_DIR),
             output_dir=output_dir,
             config=UnifiedVocabConfig(vocab_size=vocab_size),
         )

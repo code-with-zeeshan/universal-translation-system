@@ -242,7 +242,7 @@ def run_all(config_path: str) -> None:
     logger.info("[ALL] Creating vocabulary packs...")
     cfg = load_pydantic_config(config_path)
     run_vocab_creator(
-        corpus_dir=cfg.data.processed_dir,
+        corpus_dir=str(Path(cfg.data.processed_dir) / "corpus"),
         output_dir=cfg.vocabulary.vocab_dir,
         mode="production",
         groups=None,

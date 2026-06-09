@@ -51,6 +51,7 @@ class DirectoryManager:
             'base': base_path,
             'raw': base_path / 'raw',
             'processed': processed_path,
+            'corpus': processed_path / 'corpus',
             'sampled': processed_path / 'sampled',
             'final': processed_path / 'final',
             'ready': processed_path / 'ready',
