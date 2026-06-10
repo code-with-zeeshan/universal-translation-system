@@ -224,7 +224,7 @@ class UnifiedDataPipeline:
                 and any((Path(c.data.processed_dir) / "sampled").glob("*_sampled.txt"))
             ),
             PipelineStage.AUGMENT: lambda c: (
-                (Path(c.data.processed_dir) / "final").is_dir()
+                (Path(c.data.processed_dir) / "augment").is_dir()
             ),
             PipelineStage.CREATE_READY: lambda c: (
                 (Path(c.data.processed_dir) / TRAIN_FINAL_FILENAME).is_file()

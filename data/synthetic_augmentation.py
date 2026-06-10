@@ -38,6 +38,7 @@ except Exception:
         float32 = None
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set
+from utils.constants import DATA_FINAL_DIR
 from tqdm import tqdm
 import numpy as np
 import json
@@ -1754,7 +1755,7 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
         max_dynamic_ff = getattr(config.pipeline, 'max_dynamic_ff_per_pair', 5000)
 
     augmenter = SyntheticDataAugmenter(config)
-    base_dir = Path(config.data.processed_dir) / "final"
+    base_dir = Path(config.data.processed_dir) / DATA_FINAL_DIR
     results = {}
 
     total_pairs = 0

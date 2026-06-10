@@ -44,7 +44,7 @@ data/
 │   │   └── {stem}_tokens_ml{max}_{src/tgt/mask}.npy  Tokenized memmap
 │   ├── sampled/{pair}_sampled.txt             Smart-sampled data
 │   ├── pivot_pairs/{src}-{tgt}_pivot.txt      Pivot translations
-│   └── final/
+│   └── augment/
 │       ├── augmented_{pair}.txt               Backtranslation
 │       ├── {src}_{tgt}/
 │       │   ├── ff_{pair}.txt / ff_dynamic_{pair}.txt  False friends

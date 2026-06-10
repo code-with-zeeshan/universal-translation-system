@@ -53,9 +53,9 @@ class DirectoryManager:
             'processed': processed_path,
             'corpus': processed_path / 'corpus',
             'sampled': processed_path / 'sampled',
-            'final': processed_path / 'final',
+            'final': processed_path / 'augment',
             'opus': base_path / 'raw' / 'opus',
-            'pivot_pairs': processed_path / 'final' / 'pivot_pairs'
+            'pivot_pairs': processed_path / 'augment' / 'pivot_pairs'
         }
         
         # Create all directories
