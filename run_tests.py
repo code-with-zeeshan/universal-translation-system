@@ -27,6 +27,7 @@ import tests.test_training_analytics
 import tests.test_training_utils
 import tests.test_system_health
 import tests.test_translation_api
+import tests.test_pipeline_data_flow
 
 loader = TestLoader()
 suite = TestSuite()
@@ -38,6 +39,7 @@ for mod in [
     tests.test_training_utils,
     tests.test_system_health,
     tests.test_translation_api,
+    tests.test_pipeline_data_flow,
 ]:
     suite.addTests(loader.loadTestsFromModule(mod))
 
