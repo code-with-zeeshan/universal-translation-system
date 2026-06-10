@@ -24,6 +24,7 @@ class DataConfig(BaseModel):
     download_max_workers: int = Field(4, description="Max parallel downloads per batch")
     download_parallel_batches: bool = Field(False, description="Run download batches concurrently")
     datasets_cache_dir: Optional[str] = Field(None, description="Cache directory for HuggingFace datasets")
+    seed: int = Field(42, description="Random seed for reproducible train/val split and sampling")
 
     class Config:
         extra = "allow"

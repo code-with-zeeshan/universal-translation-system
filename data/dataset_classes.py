@@ -34,17 +34,47 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
     def _cache_path(self, suffix: str) -> str:
         return str(self.cache_dir / f"{self.data_path.stem}_tokens_ml{self.max_length}_{suffix}")
 
+    def _cache_fingerprint(self) -> Dict[str, Any]:
+        """Return a dict fingerprinting the source data file for cache
+        invalidation.  When the source file is modified (e.g. COMET filtering
+        removes lines) the fingerprint changes and the cache is rebuilt."""
+        import os as _os
+        st = _os.stat(self.data_path)
+        return {
+            'mtime_ns': st.st_mtime_ns,
+            'size': st.st_size,
+            'max_length': self.max_length,
+        }
+
     def _load_or_build_token_cache(self, vocab_dir: str):
+        import json as _json
+        fingerprint_path = self.cache_dir / '.cache_fingerprint.json'
+
         src_path = self._cache_path('source_ids.npy')
         meta_path = self._cache_path('metadata.pkl')
-        if Path(src_path).exists() and Path(meta_path).exists():
+        cache_valid = (Path(src_path).exists() and Path(meta_path).exists()
+                       and fingerprint_path.exists())
+
+        if cache_valid:
+            current = self._cache_fingerprint()
+            try:
+                with open(fingerprint_path) as f:
+                    cached = _json.load(f)
+                if current != cached:
+                    logger.info("Source data changed — invalidating token cache")
+                    cache_valid = False
+            except Exception:
+                cache_valid = False
+
+        if cache_valid:
             self._load_token_cache()
         else:
-            if Path(src_path).exists():
-                logger.warning("Cache incomplete (metadata missing), rebuilding...")
-                for f in Path(self.cache_dir).glob(f"{self.data_path.stem}_tokens_ml{self.max_length}_*"):
-                    f.unlink()
+            for f in Path(self.cache_dir).glob(f"{self.data_path.stem}_tokens_ml{self.max_length}_*"):
+                f.unlink(missing_ok=True)
+            fingerprint_path.unlink(missing_ok=True)
             self._build_token_cache(vocab_dir)
+            with open(fingerprint_path, 'w') as f:
+                _json.dump(self._cache_fingerprint(), f)
 
     def _load_token_cache(self):
         if not hasattr(self, '_metadata'):
@@ -141,6 +171,7 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
 
     def _load_raw_data(self):
         data = []
+        skipped = 0
         with open(self.data_path, 'r', encoding='utf-8') as f:
             for line_no, line in enumerate(f, 1):
                 try:
@@ -153,8 +184,12 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
                             'target_lang': parts[3].strip(),
                             'line_no': line_no
                         })
+                    else:
+                        skipped += 1
                 except Exception as e:
                     logger.warning(f"⚠️ Error processing line {line_no}: {e}")
+        if skipped:
+            logger.warning(f"⚠️ Skipped {skipped:,} lines with <4 columns in {self.data_path.name}")
         return data
 
     def __len__(self):

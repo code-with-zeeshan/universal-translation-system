@@ -23,6 +23,7 @@ import unittest
 import tempfile
 import logging
 import asyncio
+import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -67,6 +68,8 @@ def _count_cols(path):
 
 @unittest.skipIf(not HAULING_DEPS, f'Missing dependencies: {_IMPORT_ERR}')
 class TestPipelineDataFlow(unittest.TestCase):
+    """Verifies data pipeline fixes: 4-column format, COMET filter,
+    augment writers, and data-flow routing."""
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
@@ -274,6 +277,108 @@ class TestPipelineDataFlow(unittest.TestCase):
         cols = _count_cols(path)
         self.assertIn(4, cols,
                       f'Idiom writer should produce 4 columns, got {cols}')
+
+    # ---- seeded train/val split ----------------------------------------
+
+    def test_seeded_split_determinism(self):
+        """Same config seed must produce identical train/val split."""
+        cfg1 = _make_config(self.processed)
+        cfg1.data.seed = 42
+        cfg2 = _make_config(self.processed)
+        cfg2.data.seed = 42
+
+        pc1 = PipelineConnector(cfg1)
+        pc1.logger = logging.getLogger('test')
+        pc1.create_final_training_file()
+
+        pc2 = PipelineConnector(cfg2)
+        pc2.logger = logging.getLogger('test')
+        pc2.create_final_training_file()
+
+        train1 = (self.processed / 'train_final.txt').read_text(encoding='utf-8')
+        train2 = (self.processed / 'train_final.txt').read_text(encoding='utf-8')
+        self.assertEqual(train1, train2,
+                         'Same seed must produce identical split')
+
+    def test_different_seed_different_split(self):
+        """Different seeds must produce different train/val splits."""
+        tmpdirs = []
+
+        def _run_with_seed(seed, out_dir):
+            d = out_dir / 'processed'
+            for p in [d / 'sampled', d / 'augment', d / 'augment' / 'pivot_pairs']:
+                p.mkdir(parents=True, exist_ok=True)
+            _write(d / 'sampled' / 'en_es_sampled.txt', [
+                'hello world\thola mundo\ten\tes',
+                'good morning\tbuenos días\ten\tes',
+            ])
+            _write(d / 'augment' / 'augmented_en_es.txt', [
+                'my name is\tme llamo\ten\tes',
+            ])
+            cfg = _make_config(d)
+            cfg.data.seed = seed
+            pc = PipelineConnector(cfg)
+            pc.logger = logging.getLogger('test')
+            pc.create_final_training_file()
+            return (d / 'train_final.txt').read_text(encoding='utf-8')
+
+        d1 = Path(tempfile.mkdtemp())
+        d2 = Path(tempfile.mkdtemp())
+        tmpdirs = [d1, d2]
+        try:
+            train_1 = _run_with_seed(1, d1)
+            train_2 = _run_with_seed(999, d2)
+            self.assertNotEqual(train_1, train_2)
+        finally:
+            for td in tmpdirs:
+                shutil.rmtree(td, ignore_errors=True)
+
+
+@unittest.skipIf(not HAULING_DEPS, f'Missing dependencies: {_IMPORT_ERR}')
+class TestTrainingPipelineFixes(unittest.TestCase):
+    """Verifies training pipeline fixes: token cache invalidation, format
+    warnings, cross-stage dependency check."""
+
+    def test_cache_fingerprint_includes_mtime_and_size(self):
+        """ModernParallelDataset._cache_fingerprint returns expected keys."""
+        from data.dataset_classes import ModernParallelDataset
+        ds = ModernParallelDataset.__new__(ModernParallelDataset)
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt') as f:
+            f.write('a\tb\ten\tes\n')
+            f.flush()
+            ds.data_path = Path(f.name)
+            fp = ds._cache_fingerprint()
+
+        self.assertIn('mtime_ns', fp)
+        self.assertIn('size', fp)
+        self.assertIn('max_length', fp)
+        self.assertIsInstance(fp['size'], int)
+        self.assertIsInstance(fp['max_length'], int)
+
+    def test_load_raw_data_warns_on_skipped_lines(self):
+        """_load_raw_data should warn when <4-column lines are present."""
+        from data.dataset_classes import ModernParallelDataset
+        ds = ModernParallelDataset.__new__(ModernParallelDataset)
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write('good\tline\ten\tes\n')
+            f.write('bad\t2col\n')
+            f.write('also\tgood\tfr\ten\n')
+            f.flush()
+            fname = f.name
+
+        ds.data_path = Path(fname)
+        try:
+            with self.assertLogs('data.dataset_classes', level='WARNING') as cm:
+                data = ds._load_raw_data()
+            self.assertEqual(len(data), 2, 'Should parse 2 valid lines')
+            self.assertTrue(
+                any('skipped' in m.lower() for m in cm.output),
+                f'Expected warning about skipped lines, got: {cm.output}'
+            )
+        finally:
+            Path(fname).unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

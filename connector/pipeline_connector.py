@@ -125,7 +125,8 @@ class PipelineConnector:
         temp_file = processed_dir / 'train_temp.txt'
         with open(output_file, 'r', encoding='utf-8') as f_in:
             lines = f_in.readlines()
-        random.shuffle(lines)
+        rng = random.Random(getattr(self.config.data, 'seed', 42))
+        rng.shuffle(lines)
         split_idx = int(len(lines) * 0.9)
         with open(temp_file, 'w', encoding='utf-8') as f_train:
             f_train.writelines(lines[:split_idx])

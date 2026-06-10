@@ -258,7 +258,8 @@ def launch_training(args: argparse.Namespace):
     from utils.pipeline_checkpoint import load_pipeline_state
     data_state = load_pipeline_state().get("data", {})
     if not data_state.get("completed"):
-        logger.warning("⚠️ Data pipeline not yet complete. Run `uts data --pipeline` first.")
+        logger.error("Data pipeline not yet complete. Run `uts data --pipeline` first.")
+        sys.exit(1)
     
     invalidate_downstream("train")
     
