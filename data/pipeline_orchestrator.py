@@ -757,11 +757,49 @@ class UnifiedDataPipeline:
     
     # ============= COMET QUALITY FILTER =============
 
+    def _comet_filter_file(
+        self, path: Path, comet_model: Any, threshold: float
+    ) -> int:
+        """Score one file with COMET and rewrite it in-place, keeping only
+        pairs above *threshold*. Preserves the full 4-column line format."""
+        if not path.exists():
+            self.logger.warning(f"COMET: file not found, skipping: {path}")
+            return 0
+
+        lines: list[str] = []
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = [line.rstrip('\n') for line in f]
+
+        if not lines:
+            self.logger.info(f"COMET: {path.name} is empty, skipping")
+            return 0
+
+        self.logger.info(f"Scoring {len(lines):,} pairs from {path.name} with COMET...")
+        pairs = [line.split('\t') for line in lines]
+        comet_data = [{"src": p[0], "mt": p[1], "ref": p[1]} for p in pairs]
+        scores = comet_model.predict(comet_data, batch_size=64, gpus=1)
+
+        kept_lines: list[str] = []
+        for line, score in zip(lines, scores.scores):
+            if score >= threshold:
+                kept_lines.append(line)
+
+        with open(path, 'w', encoding='utf-8') as f:
+            for line in kept_lines:
+                f.write(line + '\n')
+
+        self.logger.info(
+            f"COMET {path.name}: kept {len(kept_lines):,}/{len(lines):,} "
+            f"(threshold={threshold:.2f})"
+        )
+        return len(kept_lines)
+
     async def _comet_quality_filter(self):
         """Filter training-ready data by COMET quality score.
 
-        Reads the final training file, scores each pair with COMET,
-        and writes a filtered version keeping only pairs above the threshold.
+        Scores every source→target pair with COMET and drops pairs below
+        the quality threshold. Preserves the full 4-column row format.
+        Filters both train_final.txt and val_final.txt for consistency.
         """
         with tracer.start_as_current_span("comet_quality_filter") as span:
             from evaluation.evaluator import COMET_AVAILABLE
@@ -771,10 +809,11 @@ class UnifiedDataPipeline:
                 span.set_attribute("skipped", True)
                 return
 
-            final_path = Path(self.config.data.processed_dir) / 'train_final.txt'
-            filtered_path = Path(self.config.data.processed_dir) / 'train_final_filtered.txt'
-            if not final_path.exists():
-                self.logger.warning(f"Final training file not found: {final_path}")
+            processed = Path(self.config.data.processed_dir)
+            train_path = processed / 'train_final.txt'
+            val_path = processed / 'val_final.txt'
+            if not train_path.exists():
+                self.logger.warning(f"Training file not found: {train_path}")
                 return
 
             threshold = 0.7
@@ -787,33 +826,11 @@ class UnifiedDataPipeline:
                 model_path = download_model("Unbabel/wmt22-comet-da")
                 comet_model = load_from_checkpoint(model_path)
 
-                pairs = []
-                with open(final_path, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        parts = line.strip().split('\t')
-                        if len(parts) >= 2:
-                            pairs.append((parts[0], parts[1]))
+                train_kept = self._comet_filter_file(train_path, comet_model, threshold)
+                val_kept = self._comet_filter_file(val_path, comet_model, threshold)
 
-                self.logger.info(f"Scoring {len(pairs):,} pairs with COMET...")
-                comet_data = [{"src": s, "mt": t, "ref": t} for s, t in pairs]
-                scores = comet_model.predict(comet_data, batch_size=64, gpus=1)
-
-                kept = 0
-                with open(filtered_path, 'w', encoding='utf-8') as f:
-                    for (src, tgt), score in zip(pairs, scores.scores):
-                        if score >= threshold:
-                            f.write(f"{src}\t{tgt}\n")
-                            kept += 1
-
-                # Replace original with filtered
-                filtered_path.replace(final_path)
-
-                self.logger.info(
-                    f"COMET filter: kept {kept:,}/{len(pairs):,} pairs "
-                    f"(threshold={threshold:.2f})"
-                )
-                span.set_attribute("comet.total", len(pairs))
-                span.set_attribute("comet.kept", kept)
+                span.set_attribute("comet.train_kept", train_kept)
+                span.set_attribute("comet.val_kept", val_kept)
 
             except Exception as e:
                 self.logger.warning(f"COMET filtering failed: {e}")
