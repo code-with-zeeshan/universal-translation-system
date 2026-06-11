@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
   s.authors      = package["author"]
 
   s.platforms    = { :ios => "15.0" }
-  s.source       = { :git => "https://github.com/yourusername/universal-translation-system.git", :tag => "#{s.version}" }
+  s.source       = { :git => "https://github.com/code-with-zeeshan/universal-translation-system.git", :tag => "#{s.version}" }
 
   s.source_files = "ios/**/*.{h,m,mm,swift}"
   s.requires_arc = true

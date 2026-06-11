@@ -33,7 +33,16 @@ Rather than bundling a huge model per language, the system splits the workflow f
 - Centralized version management with semver compatibility checks
 - ONNX export + quantization pipeline for edge deployment
 
-## Quick Start
+## Getting Started
+
+Choose your path:
+
+| You want to... | Start here |
+|---|---|
+| Clone on a fresh GPU machine and train from scratch | [docs/GETTING_STARTED.md — Path A: Builder](docs/GETTING_STARTED.md) |
+| Use pre-trained models, vocabs, and SDKs without training | [docs/GETTING_STARTED.md — Path B: Consumer](docs/GETTING_STARTED.md) |
+
+Quick reference for builders:
 
 ```bash
 # Clone & install
@@ -43,13 +52,12 @@ cp .env.example .env              # Edit: set UTS_HMAC_KEY, HF_TOKEN, etc.
 pip install -e ".[train]"
 
 # Full pipeline (auto-resumes if interrupted)
-./uts data --pipeline             # ~30 min, $0.78 on A100
-./uts vocab --build               # ~15 min, $0.39
-./uts train --full --num-epochs 3 # ~1.8h, $2.79 (default 5 = ~3h)
+./uts data --pipeline             # ~30 min
+./uts train --full                # ~6h on A100 for 10 epochs
 ./uts eval --model                # Evaluate all language pairs
 ```
 
-See [SETUP_COMMANDS.md](SETUP_COMMANDS.md) for full GPU-tier-specific setup.
+See [SETUP_COMMANDS.md](SETUP_COMMANDS.md) for GPU-tier-specific batch sizes and config.
 
 ## Training Duration
 
@@ -81,7 +89,7 @@ All tools are organized into 10 workflow groups. Run `./uts <group> --help` for 
 | `./uts serve` | Start decoder server, coordinator, Redis |
 | `./uts tui` | Terminal UI dashboard for live pipeline + training + GPU monitoring |
 | `./uts tools` | Config validation, GPU check, secrets rotation, prefetch, version, compatibility |
-| `./uts docs` | Open documentation by topic (`--list` for all 16 topics) |
+| `./uts docs` | Open documentation by topic (`--list` for 28 topics) |
 
 ## Language Expansion Strategy
 
@@ -129,10 +137,11 @@ See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for code examples.
 
 ## Documentation
 
-Run `./uts docs --list` to see all 16 topics. Key ones:
+Run `./uts docs --list` for all 28 topics. Key ones:
 
 | Topic | Command | Covers |
 |---|---|---|
+| Getting Started | `uts docs --open start` | Builder (scratch) vs Consumer (pre-built) paths |
 | Onboarding | `uts docs --open setup` | Full CLI reference, config, language expansion |
 | Training | `uts docs --open train` | Strategy, distillation, memory, monitoring |
 | Architecture | `uts docs --open arch` | System design, model specs, data flow |

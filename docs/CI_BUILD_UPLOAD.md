@@ -36,7 +36,7 @@ git push --tags
 ## Local pipeline (optional)
 ```bash
 python scripts/build_and_upload_pipeline.py \
-  --repo_id your-username/universal-translation-system \
+  --repo_id code-with-zeeshan/universal-translation-system \
   --create-vocabs --convert-models \
   --vocab-groups latin cjk --vocab-mode production
 ```
@@ -44,7 +44,7 @@ python scripts/build_and_upload_pipeline.py \
 ## Decoder prefetch guidelines
 Add to `.env` on decoder nodes:
 ```ini
-HF_HUB_REPO_ID=your-username/universal-translation-system
+HF_HUB_REPO_ID=code-with-zeeshan/universal-translation-system
 PREFETCH_VOCAB_GROUPS=latin,cjk
 PREFETCH_ADAPTERS=es,fr,ja
 ```

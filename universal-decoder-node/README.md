@@ -89,7 +89,7 @@ decoder:
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/universal-translation-system
+git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-decoder-node
 pip install -e .[dev]
 pytest

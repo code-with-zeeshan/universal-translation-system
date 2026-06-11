@@ -48,14 +48,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yourusername/universal-translation-system.git"
+    "url": "git+https://github.com/code-with-zeeshan/universal-translation-system.git"
   },
-  "author": "Your Name <your.email@example.com> (https://github.com/yourusername)",
+  "author": "Mohammad Zeeshan <mohammad.zeeshan@code-with-zeeshan.com> (https://github.com/code-with-zeeshan)",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/yourusername/universal-translation-system/issues"
+    "url": "https://github.com/code-with-zeeshan/universal-translation-system/issues"
   },
-  "homepage": "https://github.com/yourusername/universal-translation-system#readme",
+  "homepage": "https://github.com/code-with-zeeshan/universal-translation-system#readme",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
   },

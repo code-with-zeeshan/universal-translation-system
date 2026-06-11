@@ -8,7 +8,7 @@ setup(
     name="universal-decoder-node",
     version="1.0.0",
     author="Universal Translation System",
-    author_email="your.email@example.com",
+    author_email="mohammad.zeeshan@code-with-zeeshan.com",
     description="High-performance translation decoder service for Universal Translation System",
     long_description=long_description,
     long_description_content_type="text/markdown",

@@ -31,8 +31,30 @@ If you haven't yet, run `./uts` — it organizes every tool into workflow groups
 
 ## CLI Reference
 
-The `./uts` command organizes all tools into 8 groups.
+The `./uts` command organizes all tools into 10 groups.
 Run `./uts <group> --help` for full options.
+
+### Quick Decision Guide
+
+| When you want to... | Run this first | Then... |
+|---|---|---|
+| Set up a new machine/studio | `./uts setup --check` | See [SETUP_COMMANDS.md](../SETUP_COMMANDS.md) by GPU tier |
+| Download & process training data | `./uts data --pipeline` | Add `--scale 5` for more data, `--force` to restart |
+| Build vocabulary packs | `./uts vocab --build` | Only needed for custom builds (pipeline auto-builds) |
+| Train a full model | `./uts train --full` | Add `--num-epochs N`, `--batch-size N`, or `--distill` |
+| Resume interrupted training | `./uts train --full` (same command, auto-detects checkpoint) | Add `--force` to restart from scratch |
+| Evaluate a trained model | `./uts eval --model --checkpoint <path>` | Add `--benchmark` for latency/throughput |
+| Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
+| Deploy decoder server | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
+| Publish model to HF Hub | `./uts publish --preflight` | Then `./uts publish --optimize-decoder` |
+| Monitor pipeline/training live | `./uts tui --dashboard` | Or `--pipeline` / `--training` for focused views |
+| Add a new language (#21+) | Edit `config/base.yaml` → `use_lora: true`, add language code | Then `./uts train --full --experiment-name "lang-21-adapter"` |
+| Fix CUDA out-of-memory | Reduce `batch_size` or increase `accumulation_steps` | Check GPU tier in SETUP_COMMANDS.md |
+| Validate config file | `./uts tools --validate-config <path>` | Also `--check-references` and `--check-consistency` |
+| Rotate API secrets | `./uts tools --rotate-secrets` | Updates `.secret_config.yaml` |
+| Check component versions | `./uts tools --version` | Or `--version-config <path>` for a specific config |
+| Browse docs by topic | `./uts docs --list` | Then `./uts docs --open <topic>` |
+| Verify post-deployment setup | `./uts setup --verify` | Checks all services, env vars, connectivity |
 
 ### `./uts setup` — Environment & Validation
 
@@ -61,13 +83,13 @@ Run `./uts <group> --help` for full options.
 | `--stage NAME` | Run a single pipeline stage |
 
 **Pipeline stages (in order):**
-1. `download_evaluation` — opus-100 test splits (19 pairs, 2000 each)
-2. `download_training` — opus-100 + extra sources
-3. `sample_filter` — Deduplicate, filter length/content
-4. `augment` — False friends, idioms, backtranslation
-5. `create_ready` — Format for training
-6. `comet_quality` — Quality filter with COMET
-7. `validate` — Validate output data
+1. `download_training` — opus-100 + extra sources, evaluation test splits
+2. `sample_filter` — Deduplicate, filter length/content
+3. `augment` — False friends, idioms, backtranslation, pivots
+4. `comet_quality` — Quality filter with COMET (preserves 4-column format)
+5. `create_ready` — Merge all sources into train_final.txt / val_final.txt
+6. `validate` — Validate output data and vocabulary files
+7. `vocabulary` — Build vocabulary packs from monolingual corpora
 
 ### `./uts vocab` — Vocabulary Management
 
@@ -116,7 +138,7 @@ model:
 
 training:
   use_lora: false                 # false = train full model
-  num_epochs: 5                   # Default epochs (override: --num-epochs 10)
+  num_epochs: 10                  # Default epochs (override: --num-epochs)
   lr: 3e-4                        # Learning rate
   warmup_steps: 1000              # LR warmup
   batch_size: 32                  # Per-GPU batch
@@ -152,6 +174,31 @@ data:
 | `--all` | Setup all serving components |
 | `--redis MODE` | Manage Redis: `install`, `start`, `stop`, `status` |
 
+### `./uts publish` — Model Publishing
+
+Publish a trained model to Hugging Face Hub with optional ONNX export and quantization.
+
+| Flag | Description |
+|---|---|
+| `--preflight` | Run preflight checks before publishing |
+| `--optimize-decoder` | Optimize decoder for deployment |
+| `--checkpoint PATH` | Path to trained model checkpoint |
+| `--no-onnx` | Skip ONNX export |
+| `--no-quantize` | Skip quantization |
+| `--upload-only` | Upload existing artifacts without rebuilding |
+
+See [docs/PUBLISHING.md](docs/PUBLISHING.md) for details.
+
+### `./uts tui` — Terminal Dashboard
+
+| Flag | Description |
+|---|---|
+| `--dashboard` | Open the main TUI dashboard (live pipeline + training + GPU) |
+| `--pipeline` | Show pipeline progress view |
+| `--training` | Show training metrics view |
+
+See [docs/TUI.md](docs/TUI.md) for keyboard shortcuts and layout.
+
 ### `./uts tools` — Utilities
 
 | Flag | Description |
@@ -168,7 +215,7 @@ data:
 | `--repo-id ID` | Hugging Face Hub repository ID |
 | `--rotate-secrets` | Rotate JWT secrets |
 | `--key-type TYPE` | Key type for rotation (e.g., `hmac`, `jwt`) |
-| `--set-env FILE` | Set environment variables from a template file |
+| `--set-env` | Set environment variables from `.env` template |
 | `--upload [REPO]` | Upload artifacts to Hugging Face Hub |
 | `--register-decoder` | Register a decoder node with the coordinator |
 | `--build-encoder` | Build the encoder core for edge deployment |
@@ -187,7 +234,9 @@ data:
 | `--open TOPIC` | Open documentation for a topic |
 | `--list` | List available documentation topics |
 
-Available topics: `setup`, `train`, `arch`, `vocab`, `deploy`, `api`, `env`, `sdk`, `monitor`, `faq`, `trouble`, `roadmap`, `vision`, `layout`, `version`, `secret`, `tui`, `publish`, `test`
+Available topics: `start`, `setup`, `train`, `arch`, `vocab`, `deploy`, `api`, `env`, `sdk`, `monitor`, `faq`, `trouble`, `vision`, `layout`, `version`, `secret`, `tui`, `publish`, `test`, `ci`, `ci_build`, `decoder_pool`, `redis`, `autoscale`, `new_lang`, `security`, `sdk_publish`, `perf`
+
+Run `./uts docs --list` to see the latest list with descriptions.
 
 ## Language Expansion Strategy (Adding Languages Beyond 20)
 

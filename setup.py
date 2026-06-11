@@ -42,7 +42,7 @@ setup(
     version="1.0.0",
     description="Universal Translation System: Edge encoding, cloud decoding, multi-platform SDKs",
     author="Mohammad Zeeshan",
-    author_email="your.email@example.com",
+    author_email="mohammad.zeeshan@code-with-zeeshan.com",
     url="https://github.com/code-with-zeeshan/universal-translation-system",
     packages=find_packages(),
     install_requires=base_requires,

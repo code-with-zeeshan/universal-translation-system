@@ -2,8 +2,8 @@
 name: universal_translation_sdk
 description: Flutter SDK for Universal Translation System with on-device encoding and cloud decoding
 version: 1.0.0
-homepage: https://github.com/yourusername/universal-translation-system
-repository: https://github.com/yourusername/universal-translation-system/tree/main/flutter
+homepage: https://github.com/code-with-zeeshan/universal-translation-system
+repository: https://github.com/code-with-zeeshan/universal-translation-system/tree/main/flutter
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

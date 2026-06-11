@@ -4,7 +4,7 @@ Artifact store utilities for pulling models, vocabulary packs, and adapters
 from Hugging Face Hub on demand and ensuring they exist locally.
 
 Environment variables:
-- HF_HUB_REPO_ID: e.g., your-username/universal-translation-system
+- HF_HUB_REPO_ID: e.g., code-with-zeeshan/universal-translation-system
 - HF_TOKEN (optional): token for private repos or uploads
 - HF_HUB_REVISION (optional): branch/tag/commit to target (default: main)
 - MODELS_DIR (optional): default local models dir (default: models)

@@ -50,7 +50,7 @@ pod 'UniversalTranslationSDK', :path => '../sdk/ios/UniversalTranslationSDK'
 ```
 
 ### Swift Package Manager
-Add via Xcode: File → Add Packages → `https://github.com/yourusername/universal-translation-system`
+Add via Xcode: File → Add Packages → `https://github.com/code-with-zeeshan/universal-translation-system`
 
 ## Documentation
 - [SDK Integration](../../docs/SDK_INTEGRATION.md)

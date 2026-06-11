@@ -9,10 +9,10 @@ Pod::Spec.new do |s|
     and cloud decoding. Supports 20+ languages with dynamic vocabulary loading.
   DESC
   
-  s.homepage         = 'https://github.com/yourusername/universal-translation-system'
+  s.homepage         = 'https://github.com/code-with-zeeshan/universal-translation-system'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
-  s.author           = { 'Your Name' => 'your.email@example.com' }
-  s.source           = { :git => 'https://github.com/yourusername/universal-translation-system.git', :tag => s.version.to_s }
+  s.author           = { 'Mohammad Zeeshan' => 'mohammad.zeeshan@code-with-zeeshan.com' }
+  s.source           = { :git => 'https://github.com/code-with-zeeshan/universal-translation-system.git', :tag => s.version.to_s }
   
   s.ios.deployment_target = '15.0'
   s.osx.deployment_target = '12.0'

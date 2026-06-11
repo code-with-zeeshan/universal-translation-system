@@ -48,7 +48,7 @@ def upload_artifacts(repo_id: str, local_base_dir: str = "."):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Upload Universal Translation System artifacts to Hugging Face Hub.")
-    parser.add_argument("--repo-id", type=str, required=True, dest="repo_id", help="The Hugging Face Hub repository ID (e.g., 'your-username/your-repo-name').")
+    parser.add_argument("--repo-id", type=str, required=True, dest="repo_id", help="The Hugging Face Hub repository ID (e.g., 'code-with-zeeshan/universal-translation-system').")
     args = parser.parse_args()
     
     if not HfFolder.get_token():

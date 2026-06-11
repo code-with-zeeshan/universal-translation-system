@@ -99,7 +99,7 @@ Use the unified CLI for all operations:
 #### Using Docker (Recommended)
 ```bash
 # Clone repo
-git clone https://github.com/yourusername/universal-translation-system
+git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-translation-system
 
 # Copy and configure environment variables
@@ -122,7 +122,7 @@ bash scripts/install.sh --all
 #### Manual Setup
 ```bash
 # Clone repo
-git clone https://github.com/yourusername/universal-translation-system
+git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-translation-system
 
 # Create virtual environment
@@ -210,8 +210,8 @@ We believe communication is a human right, not a luxury.
 
 ## Community & Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/universal-translation-system/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/universal-translation-system/discussions)
+- **Issues**: [GitHub Issues](https://github.com/code-with-zeeshan/universal-translation-system/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/code-with-zeeshan/universal-translation-system/discussions)
 
 **[Code of Conduct](CODE_OF_CONDUCT.md)**
 Please be respectful and constructive in all interactions.

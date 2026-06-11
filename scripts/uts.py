@@ -460,6 +460,7 @@ def build_tools_parser(sub: argparse.ArgumentParser):
 # ── docs ─────────────────────────────────────────────────────────────
 
 DOCS = {
+    "start": "docs/GETTING_STARTED.md",
     "setup": "SETUP_COMMANDS.md",
     "train": "docs/TRAINING.md",
     "arch": "docs/ARCHITECTURE.md",
@@ -478,6 +479,15 @@ DOCS = {
     "tui": "docs/TUI.md",
     "publish": "docs/PUBLISHING.md",
     "test": "docs/TESTING.md",
+    "ci": "docs/CI_CD.md",
+    "ci_build": "docs/CI_BUILD_UPLOAD.md",
+    "decoder_pool": "docs/DECODER_POOL.md",
+    "redis": "docs/REDIS_INTEGRATION.md",
+    "autoscale": "docs/autoscaling.md",
+    "new_lang": "docs/Adding_New_languages.md",
+    "security": "docs/SECURITY_BEST_PRACTICES.md",
+    "sdk_publish": "docs/SDK_PUBLISHING.md",
+    "perf": "docs/PERFORMANCE_OPTIMIZATION.md",
 }
 
 TOPICS = {

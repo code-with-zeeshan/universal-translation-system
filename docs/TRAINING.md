@@ -17,17 +17,17 @@ Train all 150.8M parameters on 20 languages. This builds strong multilingual rep
 | Setting | Value | Why |
 |---|---|---|---|
 | `use_lora` | `false` | Train ALL params, not just adapters |
-| `num_epochs` | 5 (default) | Budget-friendly; use `--num-epochs 10` for full convergence |
+| `num_epochs` | 10 (default) | Override with `--num-epochs` for shorter/longer training |
 | `lr` | `3e-4` | Standard for full model training |
 | `warmup_steps` | 1000 | Quick warmup to target LR |
 | `batch_size` | auto-probed | Determined at startup by `DynamicBatchSizer.probe()` — dummy forward/backward at increasing sizes until OOM, then steps back one size for headroom. Typical results: A100 40GB → 64–96, A100 80GB → 128–192, H100 → 256+ |
 | `accumulation_steps` | 4 | Effective batch = 128 |
 
-**Expected loss trajectory (default 5 epochs):**
+**Expected loss trajectory (default 10 epochs):**
 - Epoch 0: ~11.0 (random init)
 - Epoch 1: ~8.5
 - Epoch 3: ~5.5
-- Epoch 5: ~4.0 (default stop; `--num-epochs 10` continues to ~3.5)
+- Epoch 5: ~4.0
 - Epoch 10: ~3.0-3.5
 
 **Expected BLEU after 10 epochs:** 15-25 (varies by language pair)
@@ -126,7 +126,7 @@ model:
 
 training:
   use_lora: false
-  num_epochs: 5               # Default; --num-epochs 10 for longer
+  num_epochs: 10
   lr: 3e-4
   warmup_steps: 1000
   weight_decay: 0.01

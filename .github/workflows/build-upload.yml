@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       repo_id:
-        description: 'HF repo id (e.g., your-username/universal-translation-system)'
+        description: 'HF repo id (e.g., code-with-zeeshan/universal-translation-system)'
         required: true
       create_vocabs:
         description: 'Create vocabulary packs before upload'
