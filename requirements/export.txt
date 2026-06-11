@@ -1,7 +1,7 @@
 # Export / optimization extras (install only when exporting models)
 coremltools>=7.0
 onnx>=1.14.0
-onnx-simplifier>=0.4.35
+onnx-simplifier>=0.5.0
 # Align with C++ core (1.16.3) and Web (1.16.x)
 onnxruntime>=1.16.0,<1.17.0
 # Optional backends
