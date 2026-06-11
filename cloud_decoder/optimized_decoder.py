@@ -46,7 +46,7 @@ from collections import OrderedDict
 from .decoder_core import OptimizedUniversalDecoder, OptimizedDecoderLayer, ContinuousBatcher
 
 # Import vocabulary manager
-from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
 
 # Use OPTIMIZED mode for cloud deployment
 VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)

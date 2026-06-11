@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from training.training_utils import (
+from pipeline.training.utils import (
     BaseTrainer,
     check_convergence,
     find_convergence_step,

@@ -65,7 +65,7 @@ Only needed packs are downloaded to the edge device. The embedding table dynamic
 ### Phase 1: Full Backbone (current)
 - All 150.8M parameters train
 - 20 languages jointly
-- ~3 hours on A100 (5 epochs default), ~6 hours (10 epochs for full convergence)
+- ~6 hours on A100 (10 epochs default), ~3 hours (5 epochs for quick testing)
 - Target: BLEU 15-25 per pair
 
 ### Phase 2: LoRA Adapters (future languages)

@@ -40,10 +40,10 @@ class TestCompleteIntegration(unittest.TestCase):
         files_to_check = [
             'data/download_curated_data.py',
             'data/download_training_data.py',
-            'data/unified_data_downloader.py',
-            'data/unified_data_pipeline.py',
-            'data/data_utils.py',
-            'training/bootstrap_from_pretrained.py'
+            'pipeline/data/downloader.py',
+            'pipeline/data/orchestrator.py',
+            'pipeline/data/utils.py',
+            'pipeline/training/bootstrap.py'
         ]
         
         for file_path in files_to_check:
@@ -58,7 +58,7 @@ class TestCompleteIntegration(unittest.TestCase):
         try:
             # Test critical imports
             from integration.connect_all_systems import UniversalTranslationSystem
-            from vocabulary.unified_vocab_manager import UnifiedVocabularyManager
+            from runtime.vocabulary.manager import UnifiedVocabularyManager
             from monitoring.metrics_collector import track_translation_request
             from utils.exceptions import UniversalTranslationError
             
@@ -145,7 +145,7 @@ class TestCompleteIntegration(unittest.TestCase):
     
     def test_vocabulary_system(self):
         """Test the unified vocabulary manager with current API"""
-        from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+        from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
         from config.schemas import RootConfig, DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
         import msgpack
 
@@ -253,11 +253,11 @@ class TestCompleteIntegration(unittest.TestCase):
         try:
             from utils.security import validate_model_source
             from utils.base_classes import BaseDataProcessor
-            from data.dataset_classes import ModernParallelDataset
+            from pipeline.training.datasets import ModernParallelDataset
             from utils.unified_validation import ConfigValidator
             # Test module imports
-            from connector.pipeline_connector import PipelineConnector
-            from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+            from pipeline.connectors.data import PipelineConnector
+            from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
             from integration.connect_all_systems import UniversalTranslationSystem
             # Use OPTIMIZED mode for testing
             VocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
@@ -270,13 +270,13 @@ class TestCompleteIntegration(unittest.TestCase):
         # This would need more sophisticated testing in practice
         try:
             # Import in different orders
-            from connector.vocabulary_connector import VocabularyConnector
-            from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+            from pipeline.connectors.vocabulary import VocabularyConnector
+            from pipeline.vocabulary.creator import UnifiedVocabularyCreator as VocabularyPackCreator
             
             # Try reverse order
             import importlib
-            importlib.reload(sys.modules['vocabulary.unified_vocabulary_creator'])
-            importlib.reload(sys.modules['connector.vocabulary_connector'])
+            importlib.reload(sys.modules['pipeline.vocabulary.creator'])
+            importlib.reload(sys.modules['pipeline.connectors.vocabulary'])
             
             self.assertTrue(True, "No circular dependency detected")
         except ImportError as e:
@@ -311,12 +311,13 @@ class TestCompleteIntegration(unittest.TestCase):
         """Test training modules are properly integrated"""
         try:
             # Test imports (updated to intelligent trainer)
-            from training.intelligent_trainer import IntelligentTrainer
-            from training.memory_efficient_training import MemoryOptimizedTrainer, MemoryConfig
-            from training.quantization_pipeline import EncoderQuantizer, QuantizationConfig
-            from training.progressive_training import ProgressiveTrainingStrategy
-            from training.training_validator import TrainingValidator
-            from training.training_utils import get_optimal_batch_size
+            from pipeline.training.trainer import IntelligentTrainer
+            from pipeline.training.memory.trainer import MemoryOptimizedTrainer
+            from pipeline.training.memory.config import MemoryConfig
+            from pipeline.training.quantization.encoder import EncoderQuantizer
+            from pipeline.training.quantization.common import QuantizationConfig
+            from pipeline.training.progressive import ProgressiveTrainingStrategy
+            from pipeline.training.utils import get_optimal_batch_size
         
             # Instantiate minimal objects to ensure imports and init
             self.assertIsNotNone(IntelligentTrainer)
@@ -325,7 +326,6 @@ class TestCompleteIntegration(unittest.TestCase):
             self.assertIsNotNone(EncoderQuantizer)
             self.assertIsNotNone(QuantizationConfig)
             self.assertIsNotNone(ProgressiveTrainingStrategy)
-            self.assertIsNotNone(TrainingValidator)
             self.assertIsNotNone(get_optimal_batch_size)
         
         except ImportError as e:
@@ -366,7 +366,7 @@ class TestCompleteIntegration(unittest.TestCase):
         # This would need static analysis tools in practice
         # For now, just test critical imports work
     
-        from training.quantization_pipeline import EncoderQuantizer
+        from pipeline.training.quantization.pipeline import EncoderQuantizer
         quantizer = EncoderQuantizer()
     
         # Check methods exist
@@ -411,14 +411,14 @@ def mock_external_dependencies():
 @pytest.fixture(autouse=True)
 def mock_data_pipeline_components():
     with (
-        patch('data.unified_data_downloader.UnifiedDataDownloader', autospec=True) as MockUnifiedDataDownloader,
-        patch('data.smart_sampler.SmartDataSampler', autospec=True) as MockSmartDataSampler,
-        patch('data.synthetic_augmentation.SyntheticDataAugmenter', autospec=True) as MockSyntheticAugmenter,
-        patch('data.data_utils.DataProcessor', autospec=True) as MockDataProcessor,
+        patch('pipeline.data.downloader.UnifiedDataDownloader', autospec=True) as MockUnifiedDataDownloader,
+        patch('pipeline.data.sampler.SmartDataSampler', autospec=True) as MockSmartDataSampler,
+        patch('pipeline.data.augmentation.SyntheticDataAugmenter', autospec=True) as MockSyntheticAugmenter,
+        patch('pipeline.data.utils.DataProcessor', autospec=True) as MockDataProcessor,
         patch('utils.common_utils.DirectoryManager', autospec=True) as MockDirectoryManager,
         patch('utils.resource_monitor.resource_monitor', autospec=True) as MockResourceMonitor,
-        patch('connector.pipeline_connector.PipelineConnector', autospec=True) as MockPipelineConnector,
-        patch('connector.vocabulary_connector.VocabularyConnector', autospec=True) as MockVocabularyConnector,
+        patch('pipeline.connectors.data.PipelineConnector', autospec=True) as MockPipelineConnector,
+        patch('pipeline.connectors.vocabulary.VocabularyConnector', autospec=True) as MockVocabularyConnector,
     ):
 
         # Configure mocks
@@ -448,8 +448,8 @@ def mock_data_pipeline_components():
 @pytest.fixture(autouse=True)
 def mock_vocabulary_system_components():
     with (
-        patch('vocabulary.unified_vocab_manager.UnifiedVocabularyManager', autospec=True) as MockUnifiedVocabManager,
-        patch('vocabulary.unified_vocabulary_creator.UnifiedVocabularyCreator', autospec=True) as MockVocabularyPackCreator,
+        patch('runtime.vocabulary.manager.UnifiedVocabularyManager', autospec=True) as MockUnifiedVocabManager,
+        patch('pipeline.vocabulary.creator.UnifiedVocabularyCreator', autospec=True) as MockVocabularyPackCreator,
     ):
         MockUnifiedVocabManager.return_value.tokenize.return_value = [1, 2]
         MockUnifiedVocabManager.return_value.loaded_packs = {'latin': {'version': '1.0'}}
@@ -483,9 +483,9 @@ def mock_decoder_components():
 @pytest.fixture(autouse=True)
 def mock_training_components():
     with (
-        patch('training.progressive_training.ProgressiveTrainingStrategy', autospec=True) as MockProgressiveTrainingStrategy,
-        patch('training.memory_efficient_training.MemoryOptimizedTrainer', autospec=True) as MockMemoryOptimizedTrainer,
-        patch('data.dataset_classes.ModernParallelDataset', autospec=True) as MockModernParallelDataset,
+        patch('pipeline.training.progressive.ProgressiveTrainingStrategy', autospec=True) as MockProgressiveTrainingStrategy,
+        patch('pipeline.training.memory.trainer.MemoryOptimizedTrainer', autospec=True) as MockMemoryOptimizedTrainer,
+        patch('pipeline.training.datasets.ModernParallelDataset', autospec=True) as MockModernParallelDataset,
     ):
         MockProgressiveTrainingStrategy.return_value.train_progressive.return_value = None
         MockMemoryOptimizedTrainer.return_value = MagicMock()
@@ -577,9 +577,9 @@ async def test_setup_data_pipeline_no_processed_data(universal_translation_syste
     # Mock Path.exists to return False for processed_dir
     with patch('pathlib.Path.exists', side_effect=lambda p: False if "processed" in str(p) else True):
         # Mock the prepare_all_data method of PracticalDataPipeline
-        with patch('data.unified_data_pipeline.UnifiedDataPipeline.prepare_all_data', return_value=None) as mock_prepare_all_data, \
-             patch('connector.pipeline_connector.PipelineConnector.create_monolingual_corpora', return_value=None) as mock_create_monolingual, \
-             patch('connector.pipeline_connector.PipelineConnector.create_final_training_file', return_value=None) as mock_create_final:
+        with patch('pipeline.data.orchestrator.UnifiedDataPipeline.prepare_all_data', return_value=None) as mock_prepare_all_data, \
+             patch('pipeline.connectors.data.PipelineConnector.create_monolingual_corpora', return_value=None) as mock_create_monolingual, \
+             patch('pipeline.connectors.data.PipelineConnector.create_final_training_file', return_value=None) as mock_create_final:
             
             result = system.setup_data_pipeline()
             assert result is True
@@ -593,7 +593,7 @@ async def test_setup_data_pipeline_processed_data_exists(universal_translation_s
     
     # Mock Path.exists to return True for processed_dir
     with patch('pathlib.Path.exists', return_value=True):
-        with patch('data.unified_data_pipeline.UnifiedDataPipeline.prepare_all_data') as mock_prepare_all_data:
+        with patch('pipeline.data.orchestrator.UnifiedDataPipeline.prepare_all_data') as mock_prepare_all_data:
             result = system.setup_data_pipeline()
             assert result is True
             mock_prepare_all_data.assert_not_called()
@@ -674,7 +674,7 @@ def test_importlib_reload_paths(universal_translation_system):
     # The actual reload behavior is mocked by autouse fixtures
     
     # Simulate a scenario where the module is already loaded
-    sys.modules['connector.vocabulary_connector'] = MagicMock()
+    sys.modules['pipeline.connectors.vocabulary'] = MagicMock()
     
     # Call a method that would trigger the reload (e.g., setup_vocabulary_system)
     # We need to ensure that the setup_vocabulary_system method is called

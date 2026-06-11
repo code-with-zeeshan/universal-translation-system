@@ -2,4 +2,4 @@
 """
 Re-exports from data/dataset_classes.py for backward compatibility.
 """
-from data.dataset_classes import ModernParallelDataset  # noqa: F401
+from pipeline.training.datasets import ModernParallelDataset  # noqa: F401

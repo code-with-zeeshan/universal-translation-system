@@ -57,14 +57,14 @@ class TestIntegrationFixes(unittest.TestCase):
     
     def test_specific_exception_handling(self):
         """Test that specific exception handling is implemented in unified vocab manager"""
-        with open('vocabulary/unified_vocab_manager.py', 'r', encoding='utf-8') as f:
+        with open('runtime/vocabulary/manager.py', 'r', encoding='utf-8') as f:
             content = f.read()
             self.assertIn('except msgpack.exceptions.UnpackException', content)
             self.assertIn('Failed to load pack', content)
     
     def test_memory_cleanup_implementation(self):
         """Ensure unified vocab manager manages cache and eviction logic"""
-        with open('vocabulary/unified_vocab_manager.py', 'r', encoding='utf-8') as f:
+        with open('runtime/vocabulary/manager.py', 'r', encoding='utf-8') as f:
             content = f.read()
             self.assertIn('_vocabulary_cache', content)
             self.assertIn('_cache_order', content)

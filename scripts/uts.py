@@ -141,7 +141,7 @@ def cmd_data(args: argparse.Namespace):
     if args.scale and args.scale != 1.0:
         config_path = _scale_config(config_path, args.scale)
     if args.pipeline:
-        _run("data.unified_data_pipeline", config=config_path, resume=args.resume,
+        _run("pipeline.data.orchestrator", config=config_path, resume=args.resume,
              force=args.force if hasattr(args, 'force') else False,
              stage=args.stage, reset=args.reset,
              download_max_workers=args.download_max_workers,
@@ -156,15 +156,15 @@ def cmd_data(args: argparse.Namespace):
         except Exception:
             pass
     elif args.download_only:
-        _run("data.unified_data_pipeline", config=config_path, eval_only=True,
+        _run("pipeline.data.orchestrator", config=config_path, eval_only=True,
              download_max_workers=args.download_max_workers,
              datasets_cache_dir=args.datasets_cache_dir)
     elif args.augment:
-        _run_module("data/synthetic_augmentation.py")
+        _run_module("pipeline/data/augmentation.py")
     elif args.validate_data:
-        _run("data.unified_data_pipeline", config=config, stage="validate")
+        _run("pipeline.data.orchestrator", config=config, stage="validate")
     elif args.domains:
-        _run_module("data/acquire_domain_data.py", "--domains", args.domains)
+        _run_module("tools/domain_data.py", "--domains", args.domains)
     else:
         print("See: uts data --help")
 
@@ -199,8 +199,8 @@ def build_data_parser(sub: argparse.ArgumentParser):
 def cmd_vocab(args: argparse.Namespace):
     if args.build:
         code = (
-            "from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode;"
-            "from vocabulary.vocab_config import UnifiedVocabConfig;"
+            "from pipeline.vocabulary.creator import UnifiedVocabularyCreator, CreationMode;"
+            "from pipeline.vocabulary.config import UnifiedVocabConfig;"
             "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab',"
             "config=UnifiedVocabConfig(vocab_size=%d));" % (args.vocab_size or 32000)
             + ("mode=CreationMode.%s;" % args.mode.upper() if args.mode else "mode=None;")
@@ -211,7 +211,7 @@ def cmd_vocab(args: argparse.Namespace):
         sys.stdout.flush()
         subprocess.run([PY, "-c", code], check=True, cwd=str(ROOT))
     elif args.evolve:
-        _run_module("vocabulary/evolve_vocabulary.py",
+        _run_module("pipeline/vocabulary/evolve.py",
                      *(("--pack", args.pack) if args.pack else []))
     else:
         print("See: uts vocab --help")
@@ -242,7 +242,7 @@ def _data_config_hash(config_path: str) -> str:
 def cmd_train(args: argparse.Namespace):
     if args.full:
         checkpoint = args.checkpoint or _find_latest_checkpoint()
-        _run("training.trainer" if args.distributed else "training.launch",
+        _run("pipeline.training.trainer" if args.distributed else "pipeline.training.launch",
              "train",
              config=args.config,
              distributed=args.distributed,
@@ -253,14 +253,14 @@ def cmd_train(args: argparse.Namespace):
              checkpoint=checkpoint,
              force=args.force if hasattr(args, 'force') else False)
     elif args.distill:
-        _run_module("training/distillation_trainer.py",
+        _run_module("pipeline/training/distillation.py",
                      config=args.config,
                      teacher=args.teacher or "facebook/nllb-200-3.3B",
                      alpha=args.distill_alpha,
                      temperature=args.distill_temp,
                      num_epochs=args.num_epochs)
     elif args.progressive:
-        _run_module("training/progressive_training.py",
+        _run_module("pipeline/training/progressive.py",
                      *(("--start-from-tier", args.start_tier) if args.start_tier else []),
                      *(("--validate-final",) if args.validate_final else []))
     elif args.lora:
@@ -301,7 +301,7 @@ def cmd_eval(args: argparse.Namespace):
         eval_dir = Path(args.test_data or "data/evaluation")
         if not eval_dir.exists() or not any(eval_dir.iterdir()):
             print("→ Eval data missing, downloading...")
-            _run("data.unified_data_pipeline", config=args.config, eval_only=True)
+            _run("pipeline.data.orchestrator", config=args.config, eval_only=True)
         eval_args = [f"--config={args.config}",
                      f"--checkpoint={args.checkpoint}",
                      f"--test-data={args.test_data}"]
@@ -309,9 +309,9 @@ def cmd_eval(args: argparse.Namespace):
             eval_args.append("--force")
         _run_module("evaluation/evaluate_model.py", *eval_args)
     elif args.download:
-        _run("data.unified_data_pipeline", config=args.config, eval_only=True)
+        _run("pipeline.data.orchestrator", config=args.config, eval_only=True)
     elif args.benchmark:
-        _run("training.launch", "profile",
+        _run("pipeline.training.launch", "profile",
              config=args.config,
              profile_steps=args.profile_steps,
              benchmark=True,

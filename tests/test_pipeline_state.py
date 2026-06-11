@@ -5,7 +5,7 @@ Tests for data.pipeline_state - pipeline execution state tracking.
 import json
 import dataclasses
 import pytest
-from data.pipeline_state import PipelineStage, PipelineState
+from pipeline.data.state import PipelineStage, PipelineState
 
 
 class TestPipelineStage:

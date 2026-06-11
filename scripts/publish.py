@@ -146,7 +146,7 @@ def run_quantization(output_dir: Path):
         logger.info(f"Copied {encoder_path} → {master_path} for quantization")
     try:
         subprocess.run(
-            [sys.executable, "-m", "training.quantization_pipeline"],
+            [sys.executable, "-m", "pipeline.training.quantization.pipeline"],
             cwd=str(ROOT), check=True, capture_output=True, text=True,
         )
         logger.info("Quantization pipeline completed")

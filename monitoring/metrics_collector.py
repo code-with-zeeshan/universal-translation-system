@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 try:
-    from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+    from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
     HAS_VOCAB_MANAGER = True
 except ImportError:
     HAS_VOCAB_MANAGER = False

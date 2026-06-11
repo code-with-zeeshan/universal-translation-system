@@ -7,13 +7,13 @@ Relies on conftest.py for numpy mock.
 import unittest
 from unittest.mock import patch
 
-from training.training_analytics import TrainingAnalytics
+from pipeline.training.analytics import TrainingAnalytics
 
 
 class TestTrainingAnalyticsInit(unittest.TestCase):
     """Test TrainingAnalytics initialization."""
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_init(self, mock_time):
         mock_time.time.return_value = 1000.0
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -27,7 +27,7 @@ class TestTrainingAnalyticsInit(unittest.TestCase):
 class TestTrainingAnalyticsLogStep(unittest.TestCase):
     """Test log_step method."""
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_log_step_appends_metrics(self, mock_time):
         mock_time.time.side_effect = [1000.0, 1001.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -43,7 +43,7 @@ class TestTrainingAnalyticsLogStep(unittest.TestCase):
         self.assertEqual(len(ta.metrics['timestamp']), 1)
         self.assertEqual(ta.metrics['timestamp'][0], 1.0)
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_log_step_updates_training_history(self, mock_time):
         mock_time.time.side_effect = [1000.0, 1002.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -54,7 +54,7 @@ class TestTrainingAnalyticsLogStep(unittest.TestCase):
         self.assertEqual(history['gradient_norms'], [0.1])
         self.assertEqual(history['memory_snapshots'], [1.5])
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_multiple_log_steps(self, mock_time):
         mock_time.time.side_effect = [1000.0, 1001.0, 1002.0, 1003.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -70,7 +70,7 @@ class TestTrainingAnalyticsLogStep(unittest.TestCase):
 class TestTrainingAnalyticsLogEpochSummary(unittest.TestCase):
     """Test log_epoch_summary if it exists."""
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_log_epoch_summary_exists(self, mock_time):
         mock_time.time.side_effect = [1000.0, 1001.0, 1002.0, 1003.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -84,7 +84,7 @@ class TestTrainingAnalyticsLogEpochSummary(unittest.TestCase):
 class TestTrainingAnalyticsGenerateReport(unittest.TestCase):
     """Test generate_report method."""
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_generate_report_empty(self, mock_time):
         mock_time.time.side_effect = [1000.0, 2000.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -102,7 +102,7 @@ class TestTrainingAnalyticsGenerateReport(unittest.TestCase):
         self.assertEqual(report['gradient_norm_stats']['mean'], 0)
         self.assertEqual(report['gradient_norm_stats']['std'], 0)
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_generate_report_with_data(self, mock_time):
         mock_time.time.side_effect = [1000.0, 1005.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}
@@ -125,7 +125,7 @@ class TestTrainingAnalyticsGenerateReport(unittest.TestCase):
         self.assertAlmostEqual(report['gradient_norm_stats']['mean'], 0.5)
         self.assertAlmostEqual(report['gradient_norm_stats']['max'], 0.8)
 
-    @patch('training.training_analytics.time')
+    @patch('pipeline.training.analytics.time')
     def test_generate_report_single_step(self, mock_time):
         mock_time.time.side_effect = [1000.0, 1005.0]
         history = {'gradient_norms': [], 'memory_snapshots': []}

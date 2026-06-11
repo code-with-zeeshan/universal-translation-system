@@ -7,7 +7,7 @@ Relies on conftest.py for all heavy dependency mocks (torch, numpy, etc.).
 import unittest
 from unittest.mock import MagicMock, patch
 
-from training.quality_comparator import QualityComparator
+from pipeline.training.quantization.quality import QualityComparator
 
 
 class TestQualityComparatorInit(unittest.TestCase):
@@ -33,7 +33,7 @@ class TestQualityComparatorFakeQuantize(unittest.TestCase):
         self.assertIs(result, tensor)
 
     def test_fake_quantize_enabled(self):
-        with patch('training.quality_comparator.fake_quantize_tensor') as mock_fqt:
+        with patch('pipeline.training.quantization.quality.fake_quantize_tensor') as mock_fqt:
             qc = QualityComparator()
             qc.enable_quantization_aware_training()
             tensor = MagicMock()
@@ -132,8 +132,8 @@ class TestQualityComparatorTranslate(unittest.TestCase):
     def setUp(self):
         self.qc = QualityComparator()
 
-    @patch('vocabulary.unified_vocab_manager.UnifiedVocabularyManager')
-    @patch('vocabulary.unified_vocab_manager.VocabularyMode')
+    @patch('runtime.vocabulary.manager.UnifiedVocabularyManager')
+    @patch('runtime.vocabulary.manager.VocabularyMode')
     def test_translate_tuple_model(self, mock_mode, mock_vm_cls):
         mock_vm = MagicMock()
         mock_vm_cls.return_value = mock_vm
@@ -152,8 +152,8 @@ class TestQualityComparatorTranslate(unittest.TestCase):
         result = self.qc._translate((encoder, decoder), "hello world", "es", "en")
         self.assertIsInstance(result, str)
 
-    @patch('vocabulary.unified_vocab_manager.UnifiedVocabularyManager')
-    @patch('vocabulary.unified_vocab_manager.VocabularyMode')
+    @patch('runtime.vocabulary.manager.UnifiedVocabularyManager')
+    @patch('runtime.vocabulary.manager.VocabularyMode')
     def test_translate_combined_model(self, mock_mode, mock_vm_cls):
         mock_vm = MagicMock()
         mock_vm_cls.return_value = mock_vm

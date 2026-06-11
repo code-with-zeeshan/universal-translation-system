@@ -36,21 +36,21 @@ if str(ROOT) not in sys.path:
 from config.schemas import load_config as load_pydantic_config, RootConfig
 
 # Data pipeline
-from data.unified_data_pipeline import UnifiedDataPipeline, PipelineStage
+from pipeline.data.orchestrator import UnifiedDataPipeline, PipelineStage
 
 # Vocabulary
-from vocabulary.unified_vocabulary_creator import (
+from pipeline.vocabulary.creator import (
     UnifiedVocabularyCreator,
     UnifiedVocabConfig,
     CreationMode,
 )
 
 # Training launcher (for train/evaluate/profile/compare)
-from training import launch as training_launch
+from pipeline.training import launch as training_launch
 
 # Bootstrap & Conversion
-from training.bootstrap_from_pretrained import PretrainedModelBootstrapper
-from training.convert_models import ModelConverter
+from pipeline.training.bootstrap import PretrainedModelBootstrapper
+from tools.convert import ModelConverter
 from utils.constants import LOG_DIR
 
 logger = logging.getLogger("pipeline")
@@ -188,7 +188,7 @@ def run_profile(config_path: str, profile_steps: int, benchmark: bool, output_di
 def run_compare(experiments: List[str], output_dir: str) -> None:
     comparator = training_launch
     # Use the launcher subcommand pathway for consistency
-    from training.comparison import ExperimentComparator
+    from tools.compare import ExperimentComparator
     comp = ExperimentComparator(experiments, output_dir)
     comp.generate_comparison_report()
     comp.plot_learning_curves()

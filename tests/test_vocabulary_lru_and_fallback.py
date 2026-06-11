@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from config.schemas import RootConfig, DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
-from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
 
 
 def _write_pack(dir_path: Path, name: str, version: str = "1.0", languages=None, tokens=None, subwords=None, special_tokens=None):

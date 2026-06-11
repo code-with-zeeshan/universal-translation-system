@@ -4,9 +4,9 @@ Tests for training.training_strategy - training strategy dataclass.
 
 import torch
 import pytest
-from training.training_strategy import TrainingStrategy
-from training.hardware_profile import HardwareProfile
-from training.memory_config import MemoryConfig
+from pipeline.training.strategy import TrainingStrategy
+from pipeline.training.hardware import HardwareProfile
+from pipeline.training.memory.config import MemoryConfig
 
 
 class TestTrainingStrategy:

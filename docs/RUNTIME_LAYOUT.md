@@ -58,7 +58,7 @@ data/
 └── pipeline_checkpoint.json                   Per-stage resume state
 ```
 
-**Created by:** `data/pipeline_orchestrator.py`, `data/pipeline_state.py`, `data/connector/`
+**Created by:** `pipeline/data/orchestrator.py`, `pipeline/data/state.py`, `pipeline/connectors/`
 
 ---
 
@@ -81,7 +81,7 @@ checkpoints/
         └── best_model.pt                      Per-tier best model
 ```
 
-**Created by:** `training/trainer.py`, `training/memory_trainer.py`, `training/progressive_training.py`
+**Created by:** `pipeline/training/trainer.py`, `pipeline/training/memory/trainer.py`, `pipeline/training/progressive.py`
 
 ---
 
@@ -107,7 +107,7 @@ models/
     └── encoder.onnx                           ONNX export
 ```
 
-**Created by:** `training/launch.py`, `training/train_adapters.py`, `training/quantization_pipeline.py`, `scripts/publish.py`
+**Created by:** `pipeline/training/launch.py`, `pipeline/training/peft.py`, `pipeline/training/quantization/pipeline.py`, `scripts/publish.py`
 
 ---
 
@@ -154,7 +154,7 @@ vocabulary/vocab/
 └── temp_{pack_name}.vocab                     SP vocab temp (deleted)
 ```
 
-**Created by:** `vocabulary/vocab_production.py`, `vocabulary/vocab_validation.py`
+**Created by:** `pipeline/vocabulary/production.py`, `pipeline/vocabulary/validation.py`
 
 ---
 

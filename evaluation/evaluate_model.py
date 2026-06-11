@@ -56,7 +56,7 @@ def wrap_with_lora(encoder, decoder, config) -> tuple:
     if not getattr(config.training, 'use_lora', False):
         return encoder, decoder
 
-    from training.peft_integration import wrap_encoder_with_lora, wrap_decoder_with_lora
+    from pipeline.training.peft import wrap_encoder_with_lora, wrap_decoder_with_lora
 
     encoder = wrap_encoder_with_lora(
         encoder,
@@ -279,13 +279,13 @@ def main(
     # Load vocabulary manager
     logger.info("📚 Loading vocabulary...")
     try:
-        from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+        from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
         vocab_dir = cfg.vocabulary.vocab_dir
         vocab_path = Path(vocab_dir)
         if not vocab_path.exists() or not list(vocab_path.glob('*_v*.msgpack')):
             logger.error(f"❌ Vocabulary packs not found at {vocab_dir}")
             logger.error("   Run vocabulary creation first:")
-            logger.error(f"     python -m data.pipeline_orchestrator --stage vocabulary")
+            logger.error(f"     python -m pipeline.data.orchestrator --stage vocabulary")
             logger.error("   Or transfer existing vocab packs:")
             logger.error(f"     cp /path/to/vocab/*.msgpack {vocab_dir}/")
             return False
@@ -321,7 +321,7 @@ def main(
         test_files = find_test_files(test_data)
 
     if not test_files:
-        logger.error("❌ No test files found. Run `python -m data.pipeline_orchestrator --eval-only` to download evaluation data.")
+        logger.error("❌ No test files found. Run `python -m pipeline.data.orchestrator --eval-only` to download evaluation data.")
         return False
 
     # Create output directory for reports

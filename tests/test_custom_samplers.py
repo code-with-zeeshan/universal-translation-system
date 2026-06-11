@@ -5,7 +5,7 @@ Tests for data.custom_samplers - custom sampling strategies.
 import pytest
 import torch
 from torch.utils.data import Dataset
-from data.custom_samplers import TemperatureSampler
+from pipeline.training.samplers import TemperatureSampler
 
 
 class MockDataset(Dataset):

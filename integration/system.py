@@ -151,8 +151,8 @@ class UniversalTranslationSystem:
             logger.info("📊 Setting up data pipeline...")
 
             # Import data components
-            from connector.pipeline_connector import PipelineConnector
-            from data.unified_data_pipeline import UnifiedDataPipeline as PracticalDataPipeline
+            from pipeline.connectors.data import PipelineConnector
+            from pipeline.data.orchestrator import UnifiedDataPipeline as PracticalDataPipeline
             from config.schemas import RootConfig, DataConfig, ModelConfig, TrainingConfig, MemoryConfig, VocabularyConfig
 
             # Build a RootConfig from SystemConfig for pipeline compatibility
@@ -224,8 +224,8 @@ class UniversalTranslationSystem:
             logger.info("📚 Setting up vocabulary system...")
 
             # Import vocabulary components
-            from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
-            from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+            from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
+            from pipeline.vocabulary.creator import UnifiedVocabularyCreator as VocabularyPackCreator
 
             # Use OPTIMIZED mode for integration
             OptimizedVocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
@@ -316,11 +316,11 @@ class UniversalTranslationSystem:
             logger.info("🎯 Setting up training system...")
 
             # Import training components
-            from training.progressive_training import ProgressiveTrainingStrategy
-            from training.memory_efficient_training import MemoryOptimizedTrainer, MemoryConfig
+            from pipeline.training.progressive import ProgressiveTrainingStrategy
+            from pipeline.training.memory import MemoryOptimizedTrainer, MemoryConfig
 
             # Create datasets
-            from data.dataset_classes import ModernParallelDataset
+            from pipeline.training.datasets import ModernParallelDataset
 
             train_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "train_final.txt"
             val_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "val_final.txt"
@@ -455,7 +455,7 @@ class UniversalTranslationSystem:
 
     def _apply_quantization(self):
         """Apply quantization to models"""
-        from training.quantization_pipeline import EncoderQuantizer
+        from pipeline.training.quantization.pipeline import EncoderQuantizer
 
         quantizer = EncoderQuantizer()
 
@@ -556,7 +556,7 @@ class UniversalTranslationSystem:
         val_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "val_final.txt"
 
         def objective(trial):
-            from training.intelligent_trainer import IntelligentTrainer
+            from pipeline.training.trainer import IntelligentTrainer
             train_dataset = ModernParallelDataset(str(train_path))
             val_dataset = ModernParallelDataset(str(val_path)) if Path(val_path).exists() else None
             trainer = IntelligentTrainer(

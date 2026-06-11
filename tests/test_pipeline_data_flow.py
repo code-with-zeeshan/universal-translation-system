@@ -31,9 +31,9 @@ from unittest.mock import MagicMock, patch
 # Guard: skip all tests if dependencies are missing.
 # ---------------------------------------------------------------------------
 try:
-    from connector.pipeline_connector import PipelineConnector
-    from data.pipeline_orchestrator import UniversalTranslationPipeline
-    from data.synthetic_augmentation import (
+    from pipeline.connectors.data import PipelineConnector
+    from pipeline.data.orchestrator import UniversalTranslationPipeline
+    from pipeline.data.augmentation import (
         generate_false_friend_examples,
         generate_idiom_examples,
     )
@@ -232,10 +232,10 @@ class TestPipelineDataFlow(unittest.TestCase):
 
         with (
             patch.object(orch, '_comet_filter_file') as mock_filter,
-            patch('data.pipeline_orchestrator.COMET_AVAILABLE', True),
-            patch('data.pipeline_orchestrator.download_model',
+            patch('pipeline.data.orchestrator.COMET_AVAILABLE', True),
+            patch('pipeline.data.orchestrator.download_model',
                   return_value=''),
-            patch('data.pipeline_orchestrator.load_from_checkpoint',
+            patch('pipeline.data.orchestrator.load_from_checkpoint',
                   return_value=MagicMock()),
         ):
             asyncio.run(orch._comet_quality_filter())
@@ -341,7 +341,7 @@ class TestTrainingPipelineFixes(unittest.TestCase):
 
     def test_cache_fingerprint_includes_mtime_and_size(self):
         """ModernParallelDataset._cache_fingerprint returns expected keys."""
-        from data.dataset_classes import ModernParallelDataset
+        from pipeline.training.datasets import ModernParallelDataset
         ds = ModernParallelDataset.__new__(ModernParallelDataset)
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt') as f:
@@ -358,7 +358,7 @@ class TestTrainingPipelineFixes(unittest.TestCase):
 
     def test_load_raw_data_warns_on_skipped_lines(self):
         """_load_raw_data should warn when <4-column lines are present."""
-        from data.dataset_classes import ModernParallelDataset
+        from pipeline.training.datasets import ModernParallelDataset
         ds = ModernParallelDataset.__new__(ModernParallelDataset)
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -370,7 +370,7 @@ class TestTrainingPipelineFixes(unittest.TestCase):
 
         ds.data_path = Path(fname)
         try:
-            with self.assertLogs('data.dataset_classes', level='WARNING') as cm:
+            with self.assertLogs('pipeline.training.datasets', level='WARNING') as cm:
                 data = ds._load_raw_data()
             self.assertEqual(len(data), 2, 'Should parse 2 valid lines')
             self.assertTrue(

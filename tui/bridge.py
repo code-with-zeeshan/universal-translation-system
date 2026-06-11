@@ -152,7 +152,7 @@ class PipelineBridge:
 
     async def run(self, stages: Optional[list[str]] = None) -> None:
         """Run the pipeline with TUI event emission."""
-        from data.pipeline_orchestrator import UnifiedDataPipeline, PipelineStage
+        from pipeline.data.orchestrator import UnifiedDataPipeline, PipelineStage
 
         # Attach log interceptor
         root_logger = logging.getLogger()
@@ -226,7 +226,7 @@ class TrainingBridge:
 
     async def run(self) -> dict[str, Any]:
         """Run training with TUI event emission."""
-        from training.intelligent_trainer import IntelligentTrainer
+        from pipeline.training.trainer import IntelligentTrainer
         from config.schemas import load_config
 
         # Load config

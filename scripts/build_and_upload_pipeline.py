@@ -48,8 +48,8 @@ def ensure_dirs():
 def create_vocabs(groups: list[str] | None = None, mode: str | None = None, vocab_size: int = 32000):
     # Run vocabulary creator via a small Python call to avoid import context issues
     code = (
-        "from vocabulary.unified_vocabulary_creator import UnifiedVocabularyCreator, CreationMode;"
-        "from vocabulary.vocab_config import UnifiedVocabConfig;"
+        "from pipeline.vocabulary.creator import UnifiedVocabularyCreator, CreationMode;"
+        "from pipeline.vocabulary.config import UnifiedVocabConfig;"
         "creator=UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab',"
         "config=UnifiedVocabConfig(vocab_size=%d));" % vocab_size
         + ("mode=CreationMode.%s;" % mode.upper() if mode else "mode=None;")
@@ -62,7 +62,7 @@ def create_vocabs(groups: list[str] | None = None, mode: str | None = None, voca
 
 def convert_models():
     # Use existing conversion pipeline
-    run_py(str(ROOT / "training/convert_models.py"))
+    run_py(str(ROOT / "tools/convert.py"))
 
 
 def upload(repo_id: str):

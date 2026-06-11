@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from training.encoder_quantizer import EncoderQuantizer, QualityPreservingQuantizer
+from pipeline.training.quantization.encoder import EncoderQuantizer, QualityPreservingQuantizer
 
 
 class TestEncoderQuantizerInit(unittest.TestCase):
@@ -197,7 +197,7 @@ class TestEncoderQuantizerReport(unittest.TestCase):
             model_path = str(Path(tmpdir) / 'model.pt')
             Path(model_path).touch()
 
-            from training.quantization_common import QualityMetrics
+            from pipeline.training.quantization.common import QualityMetrics
             mock_metrics = QualityMetrics(
                 latency_ms=10.5, memory_mb=250.0, bleu_score=0.92,
                 accuracy=0.90, perplexity=8.0, compression_ratio=2.0,
@@ -226,7 +226,7 @@ class TestEncoderQuantizerReport(unittest.TestCase):
             model_path = str(Path(tmpdir) / 'model.pt')
             Path(model_path).touch()
 
-            from training.quantization_common import QualityMetrics
+            from pipeline.training.quantization.common import QualityMetrics
             mock_metrics = QualityMetrics(
                 latency_ms=10.5, memory_mb=125.0, bleu_score=0.85,
                 accuracy=0.80, perplexity=12.0, compression_ratio=4.0,

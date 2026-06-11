@@ -39,7 +39,7 @@ The encoder is exported to ONNX format (opset 17) with dynamic batch/sequence ax
 
 ### 3. Quantization
 
-Runs the quantization pipeline (`training.quantization_pipeline`) to produce INT8 quantized variants for smaller footprint.
+Runs the quantization pipeline (`pipeline.training.quantization.pipeline`) to produce INT8 quantized variants for smaller footprint.
 
 ### 4. Upload to HF Hub
 

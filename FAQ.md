@@ -10,7 +10,7 @@ The model needs **5-10 epochs** to converge. One epoch of LoRA on a random backb
 - **For adding new languages:** Yes. Freeze backbone, train LoRA adapters only.
 
 ### What GPU do I need?
-- **A100 40GB** (recommended) — full 150.8M model, batch 32, ~3 hours (5 epochs, $4.65)
+- **A100 40GB** (recommended) — full 150.8M model, batch 32, ~6 hours (10 epochs, $9.30)
 - **L4 24GB** — full model, smaller batch, ~10 hours
 - **L40s 48GB** — fastest but expensive
 - **T4 16GB** — full model possible with batch 8, ~18 hours
@@ -31,7 +31,7 @@ The pipeline and trainer save checkpoints with config hashes. If interrupted, `u
 Hugging Face dataset downloads take time. Check `data/raw/*.txt` to see if files are growing. Auto-resume is the default — just re-run `uts data --pipeline` if interrupted.
 
 ### How do I add a new dataset?
-Add to `data/pipeline_orchestrator.py` and register in config `data.sources`. See existing sources (opus-100, etc.) as templates.
+Add to `pipeline/data/orchestrator.py` and register in config `data.sources`. See existing sources (opus-100, etc.) as templates.
 
 ### What does `--scale` do?
 `--scale 5` multiplies training data targets by 5× (generates a temp config). For ~$42 total vs $11.25 default.

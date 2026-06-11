@@ -30,15 +30,15 @@ The Universal Translation System uses a dynamic vocabulary system for efficient 
 
 ### Implementation Modules
 
-The vocabulary system is split into modular components under `vocabulary/`:
-- `vocabulary/vocabulary_creator.py` -- `UnifiedVocabularyCreator` (main entry point)
-- `vocabulary/vocab_production.py` -- SentencePiece-based production vocabulary creation
-- `vocabulary/vocab_research.py` -- Frequency-based research/alternative creation
-- `vocabulary/vocab_validation.py` -- Pack validation utilities
-- `vocabulary/vocab_config.py` -- `CreationMode`, `UnifiedVocabConfig`, `VocabStats`
-- `vocabulary/unified_vocab_manager.py` -- Runtime vocabulary management
-- `vocabulary/evolve_vocabulary.py` -- Promotes unknown tokens and retrains model embeddings
-- `training/vocabulary_model_adapter.py` -- `EmbeddingResizeAdapter` for resizing encoder/decoder embeddings during evolution
+The vocabulary system is split into modular components under `pipeline/vocabulary/` and `runtime/vocabulary/`:
+- `pipeline/vocabulary/creator.py` -- `UnifiedVocabularyCreator` (main entry point)
+- `pipeline/vocabulary/production.py` -- SentencePiece-based production vocabulary creation
+- `pipeline/vocabulary/research.py` -- Frequency-based research/alternative creation
+- `pipeline/vocabulary/validation.py` -- Pack validation utilities
+- `pipeline/vocabulary/config.py` -- `CreationMode`, `UnifiedVocabConfig`, `VocabStats`
+- `runtime/vocabulary/manager.py` -- Runtime vocabulary management
+- `pipeline/vocabulary/evolve.py` -- Promotes unknown tokens and retrains model embeddings
+- `tools/vocab_adapter.py` -- `EmbeddingResizeAdapter` for resizing encoder/decoder embeddings during evolution
 
 ## Using Vocabulary Packs
 
@@ -61,7 +61,7 @@ let result = try await translator.translate(text: "Hello", from: "en", to: "zh")
 
 ### From Data Pipeline
 - After data is processed, the pipeline triggers vocabulary creation.
-- See `connector/vocabulary_connector.py` and `vocabulary/vocabulary_creator.py`.
+- See `pipeline/connectors/vocabulary.py` and `pipeline/vocabulary/creator.py`.
 - Runtime configuration:
    - `vocabulary.vocab_dir`: base directory for packs (default `vocabulary/vocab`, overridable via `UTS_VOCABS_DIR`)
   - `vocabulary.language_to_pack_mapping`: e.g., `en,es,fr,de -> latin`; `zh,ja,ko -> cjk`
@@ -73,13 +73,13 @@ let result = try await translator.translate(text: "Hello", from: "en", to: "zh")
 
 # Programmatic
 python -c "
-from vocabulary.vocabulary_creator import UnifiedVocabularyCreator, CreationMode
+from pipeline.vocabulary.creator import UnifiedVocabularyCreator, CreationMode
 creator = UnifiedVocabularyCreator(corpus_dir='data/processed', output_dir='vocabulary/vocab')
 creator.create_pack(pack_name='medical', languages=['en','es','fr'], mode=CreationMode.PRODUCTION)
 "
 
 # Evolve vocabulary (promote unknown tokens + retrain model embeddings)
-python -m vocabulary.evolve_vocabulary --pack-name latin --config config/base.yaml --retrain-model --retrain-epochs 3
+python -m pipeline.vocabulary.evolve --pack-name latin --config config/base.yaml --retrain-model --retrain-epochs 3
 ```
 
 ## Vocabulary Pack Features

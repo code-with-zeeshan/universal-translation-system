@@ -17,8 +17,8 @@ This repository provides a GitHub Actions workflow to build/convert artifacts, c
 1. Sets up Python and installs dependencies
 2. Optionally logs in to HF Hub if `HF_TOKEN` is present
 3. Runs `scripts/build_and_upload_pipeline.py`:
-   - `--create-vocabs` calls `vocabulary/vocabulary_creator.py`
-   - `--convert-models` calls `training/convert_models.py`
+   - `--create-vocabs` calls `pipeline/vocabulary/creator.py`
+   - `--convert-models` calls `tools/convert.py`
    - Always uploads via `scripts/upload_artifacts.py`
 
 ## Usage

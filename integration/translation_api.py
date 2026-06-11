@@ -83,7 +83,7 @@ def translate(self, text: str, source_lang: str, target_lang: str, domain: Optio
         # Load LoRA adapter if trained alongside
         lora_path = Path(f"{MODELS_PRODUCTION_DIR}/lora_{adapter_name}.pt")
         if lora_path.exists():
-            from training.peft_integration import load_lora_adapters
+            from pipeline.training.peft import load_lora_adapters
             self.encoder = load_lora_adapters(self.encoder, str(lora_path), self.device)
             self.decoder = load_lora_adapters(self.decoder, str(lora_path), self.device)
 

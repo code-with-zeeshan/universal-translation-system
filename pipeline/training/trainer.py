@@ -1,0 +1,1536 @@
+# training/trainer.py
+"""
+Intelligent Universal Trainer that automatically adapts to hardware and requirements.
+Consolidates single-GPU, multi-GPU, distributed, and memory-efficient training.
+"""
+
+import torch
+import torch.nn as nn
+import torch.distributed as dist
+from torch.utils.data import DataLoader, DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    CPUOffload, BackwardPrefetch, MixedPrecision, ShardingStrategy
+)
+
+import os
+import sys
+import time
+from datetime import timedelta
+import json
+import logging
+try:
+    import wandb
+except ImportError:
+    wandb = None
+from collections import defaultdict
+import numpy as np
+from pathlib import Path
+from typing import Optional, Dict, Any, Tuple
+
+
+def _worker_init_fn(worker_id):
+    """Prevent DataLoader workers from creating CUDA context (~186MB per worker)."""
+    import os
+    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+from contextlib import contextmanager, nullcontext
+
+# Import existing modules
+from pipeline.training.memory import (
+    MemoryOptimizedTrainer, 
+    MemoryConfig,
+    DynamicBatchSizer,
+    MemoryTracker
+)
+from pipeline.training.utils import (
+    BaseTrainer,
+    check_convergence,
+)
+from utils.gpu_utils import optimize_gpu_memory
+from utils.resource_monitor import resource_monitor
+from utils.shutdown_handler import GracefulShutdown
+from config.schemas import RootConfig
+from pipeline.training.quantization.pipeline import fake_quantize_tensor
+from utils.constants import EMERGENCY_CHECKPOINT_FILENAME, BEST_MODEL_FILENAME, TRAINING_REPORT_FILENAME
+
+# Dataset imports
+from pipeline.training.samplers import TemperatureSampler  # If you have this file
+
+# Profiling (optional - use when needed)
+from pipeline.training.profiling import ProfileGuidedTrainer
+
+# Enhanced utilities
+from pipeline.training.utils import (
+    create_optimizer_with_param_groups,
+    calculate_gradient_norm,
+    get_training_diagnostics,
+    get_adaptive_gradient_clipping_value,
+    # ... other utilities as needed
+)
+
+# Import split modules
+from pipeline.training.hardware import HardwareProfile, find_free_port
+from pipeline.training.analytics import TrainingAnalytics
+from pipeline.training.strategy import TrainingStrategy
+
+logger = logging.getLogger(__name__)
+
+
+# ==================== Main Intelligent Trainer ====================
+
+class IntelligentTrainer(BaseTrainer):
+    """
+    Intelligent trainer that automatically adapts to any hardware configuration
+    and training scenario. Acts as the brain of the training system.
+    """
+    
+    def __init__(self, 
+                 encoder: nn.Module,
+                 decoder: nn.Module,
+                 train_dataset,
+                 val_dataset,
+                 config: RootConfig,
+                 experiment_name: str = "intelligent-universal",
+                 resume_from_checkpoint: Optional[str] = None):
+        
+        # Core components
+        self.encoder = encoder
+        self.decoder = decoder
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.config = config
+        self.experiment_name = experiment_name
+        
+        # Hardware detection and strategy
+        self.hardware_info = self._detect_hardware()
+        self.hardware_profile = self._categorize_hardware(self.hardware_info)
+        self.strategy = self._determine_optimal_strategy()
+        
+        # Log hardware and strategy
+        self._log_initialization()
+        
+        # Setup device and distributed environment
+        self.device, self.local_rank, self.world_size = self._setup_device()
+        
+        # Initialize components based on strategy
+        self._initialize_components()
+        
+        # Setup models with optimal configuration
+        self._setup_models()
+        
+        # Probe max batch size with dummy forward/backward (single GPU only)
+        self._probe_batch_size()
+        
+        # Create optimizers and schedulers
+        self._setup_optimization()
+        
+        # Setup monitoring
+        self._setup_monitoring()
+        
+        # Load checkpoint if provided
+        if resume_from_checkpoint:
+            self.load_checkpoint(resume_from_checkpoint)
+
+        # Training state
+        self.global_step = 0
+        self.current_epoch = 0
+        self.best_val_loss = float('inf')
+        self.training_history = {
+            'train_loss': [],
+            'val_loss': [],
+            'learning_rates': [],
+            'batch_sizes': [],
+            'memory_usage': [],
+            'step_times': [],
+            'gradient_norms': [],
+            'weight_updates': [],
+            'learning_rate_schedule': [],
+            'memory_snapshots': [],
+            'layer_wise_stats': defaultdict(list)
+        }
+
+        # Add analytics tracker
+        self.analytics = TrainingAnalytics(self.training_history)
+        
+        # QAT support
+        self.qat_enabled = False
+        self.qat_bits = 8    
+    
+    # ==================== Hardware Detection Methods ====================
+    
+    def _detect_hardware(self) -> Dict[str, Any]:
+        """Comprehensive hardware detection"""
+        hardware_info = {
+            'cpu_count': os.cpu_count(),
+            'cuda_available': torch.cuda.is_available(),
+            'gpu_count': 0,
+            'gpu_names': [],
+            'gpu_memory': [],
+            'total_memory': 0,
+            'backend': 'cpu'
+        }
+        
+        # Check for CUDA GPUs
+        if torch.cuda.is_available():
+            hardware_info['gpu_count'] = torch.cuda.device_count()
+            hardware_info['backend'] = 'cuda'
+            
+            for i in range(hardware_info['gpu_count']):
+                gpu_name = torch.cuda.get_device_name(i)
+                gpu_memory = torch.cuda.get_device_properties(i).total_memory / 1024**3  # GB
+                hardware_info['gpu_names'].append(gpu_name)
+                hardware_info['gpu_memory'].append(gpu_memory)
+                hardware_info['total_memory'] += gpu_memory
+                
+        # Check for Apple Silicon
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            hardware_info['backend'] = 'mps'
+            hardware_info['gpu_count'] = 1
+            hardware_info['gpu_names'] = ['Apple Silicon GPU']
+            
+        # Check for TPU
+        try:
+            import torch_xla
+            hardware_info['backend'] = 'xla'
+            hardware_info['gpu_count'] = torch_xla.core.xla_model.xrt_world_size()
+        except ImportError:
+            pass
+        
+        return hardware_info
+    
+    def _categorize_hardware(self, hardware_info: Dict[str, Any]) -> HardwareProfile:
+        """Categorize hardware into profiles"""
+        
+        if hardware_info['backend'] == 'cpu':
+            return HardwareProfile.CPU_ONLY
+            
+        if hardware_info['backend'] == 'mps':
+            return HardwareProfile.APPLE_SILICON
+            
+        if hardware_info['backend'] == 'xla':
+            return HardwareProfile.TPU
+            
+        # Categorize CUDA GPUs
+        gpu_count = hardware_info['gpu_count']
+        if gpu_count == 0:
+            return HardwareProfile.CPU_ONLY
+            
+        # Analyze first GPU as representative
+        gpu_name = hardware_info['gpu_names'][0].lower()
+        gpu_memory = hardware_info['gpu_memory'][0]
+        
+        # Categorization rules
+        low_end_patterns = ['t4', 'rtx 2060', 'rtx 2070', 'rtx 2080', 'rtx 3060', 'gtx', 'p100', 'k80']
+        mid_range_patterns = ['rtx 3070', 'rtx 3080', 'rtx 3090', 'rtx 4070', 'rtx 4080', 'rtx 4090', 'a10', 'v100']
+        high_end_patterns = ['a100', 'h100', 'a6000', 'a40', 'a30']
+        
+        # Check patterns
+        is_low_end = any(pattern in gpu_name for pattern in low_end_patterns) or gpu_memory < 16
+        is_mid_range = any(pattern in gpu_name for pattern in mid_range_patterns) or (16 <= gpu_memory < 40)
+        is_high_end = any(pattern in gpu_name for pattern in high_end_patterns) or gpu_memory >= 40
+        
+        if gpu_count == 1:
+            if is_high_end:
+                return HardwareProfile.HIGH_END_SINGLE
+            elif is_mid_range:
+                return HardwareProfile.MID_RANGE_SINGLE
+            else:
+                return HardwareProfile.LOW_END_SINGLE
+        else:  # Multiple GPUs
+            if is_high_end:
+                return HardwareProfile.HIGH_END_MULTI
+            elif is_mid_range:
+                return HardwareProfile.MID_RANGE_MULTI
+            else:
+                return HardwareProfile.LOW_END_MULTI
+    
+    @staticmethod
+    def _build_strategy(
+        hw_profile, *,
+        dtype="bfloat16", compile_mode="reduce-overhead",
+        num_workers=4, prefetch_factor=4,
+        compile_model=True,
+        gradient_checkpointing=True, cpu_offload=False, activation_offload=False,
+        max_split_size=256, empty_cache_freq=100,
+        use_flash_attention=True, use_channels_last=False, use_inductor=False,
+        enable_nested_tensor=False, use_fused_optimizer=True,
+        pin_memory=True, distributed_backend="nccl",
+        learning_rate=2e-4, warmup_steps=1500,
+    ) -> TrainingStrategy:
+        """Build a TrainingStrategy with shared defaults; batch_size and
+        accumulation_steps are placeholders overwritten by the startup probe."""
+        DTYPE_MAP = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+        mc = MemoryConfig(
+            gradient_checkpointing=gradient_checkpointing,
+            mixed_precision=True,
+            cpu_offload=cpu_offload,
+            activation_offload=activation_offload,
+            compile_model=compile_model,
+            dtype=dtype, compile_mode=compile_mode,
+            use_flash_attention=use_flash_attention,
+            use_channels_last=use_channels_last,
+            use_inductor=use_inductor,
+            enable_nested_tensor=enable_nested_tensor,
+            empty_cache_freq=empty_cache_freq,
+            max_split_size=max_split_size,
+            use_fused_optimizer=use_fused_optimizer,
+        )
+        return TrainingStrategy(
+            hardware_profile=hw_profile,
+            use_distributed=False, distributed_backend=distributed_backend,
+            use_fsdp=False, use_ddp=False,
+            memory_config=mc,
+            batch_size=16,           # overwritten by startup probe (single GPU)
+            accumulation_steps=1,    # overwritten by startup probe
+            compile_mode=compile_mode,
+            mixed_precision_dtype=DTYPE_MAP[dtype],
+            num_workers=num_workers, pin_memory=pin_memory,
+            prefetch_factor=prefetch_factor,
+            gradient_clipping=1.0,
+            learning_rate=learning_rate, warmup_steps=warmup_steps,
+        )
+
+    def _determine_optimal_strategy(self) -> TrainingStrategy:
+        """Determine optimal training strategy based on hardware."""
+        bf16_supported = torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False
+
+        strategies = {
+            # ============ HIGH-END ============
+            HardwareProfile.HIGH_END_SINGLE:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_SINGLE,
+                    compile_mode="max-autotune",
+                    num_workers=8, prefetch_factor=8,
+                    gradient_checkpointing=False,
+                    use_channels_last=True, use_inductor=True,
+                    enable_nested_tensor=True,
+                    max_split_size=512,
+                    learning_rate=6e-4, warmup_steps=4000,
+                ),
+            "a100_single":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_SINGLE,
+                    compile_mode="max-autotune",
+                    num_workers=8, prefetch_factor=8,
+                    gradient_checkpointing=False,
+                    max_split_size=512,
+                    learning_rate=5e-4, warmup_steps=4000,
+                ),
+            HardwareProfile.HIGH_END_MULTI:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_MULTI,
+                    compile_mode="max-autotune",
+                    num_workers=8, prefetch_factor=8,
+                    gradient_checkpointing=True,
+                    use_channels_last=True, use_inductor=True,
+                    enable_nested_tensor=True,
+                    learning_rate=5e-4, warmup_steps=4000,
+                ),
+            # HIGH_END_MULTI uses distributed settings applied post-hoc
+            # (use_distributed=True, use_fsdp=True, batch_size *= gpu_count)
+
+            # ============ MID-RANGE ============
+            HardwareProfile.MID_RANGE_SINGLE:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    gradient_checkpointing=True,
+                    use_channels_last=True,
+                    max_split_size=256,
+                    learning_rate=4e-4, warmup_steps=2000,
+                ),
+            "rtx3090":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    gradient_checkpointing=True,
+                    cpu_offload=True,
+                    max_split_size=256,
+                    learning_rate=3e-4, warmup_steps=2000,
+                ),
+            "v100":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    dtype="float16",
+                    gradient_checkpointing=True,
+                    max_split_size=512,
+                    learning_rate=3e-4, warmup_steps=2000,
+                ),
+            "l4":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    gradient_checkpointing=False,
+                    num_workers=4, prefetch_factor=8,
+                    max_split_size=256,
+                    learning_rate=2e-4, warmup_steps=1500,
+                ),
+
+            # ============ LOW-END ============
+            HardwareProfile.LOW_END_SINGLE:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    gradient_checkpointing=True,
+                    cpu_offload=True,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=128, empty_cache_freq=50,
+                    learning_rate=3e-4, warmup_steps=1000,
+                ),
+            "rtx3060":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    gradient_checkpointing=True,
+                    cpu_offload=True, activation_offload=True,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=128, empty_cache_freq=50,
+                    learning_rate=2e-4, warmup_steps=1000,
+                ),
+            "t4":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    dtype="float16",
+                    compile_mode="default",
+                    gradient_checkpointing=True,
+                    cpu_offload=True, activation_offload=True,
+                    use_flash_attention=False,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=128, empty_cache_freq=50,
+                    learning_rate=2e-4, warmup_steps=500,
+                ),
+            "colab_free":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.LOW_END_SINGLE,
+                    dtype="float16", compile_mode="default",
+                    gradient_checkpointing=True,
+                    cpu_offload=True, activation_offload=True,
+                    compile_model=False,
+                    use_flash_attention=False,
+                    num_workers=2, prefetch_factor=2,
+                    max_split_size=64, empty_cache_freq=25,
+                    learning_rate=1e-4, warmup_steps=500,
+                ),
+
+            # ============ SPECIAL ============
+            "amd_mi250":
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.HIGH_END_SINGLE,
+                    dtype="float16", compile_mode="max-autotune",
+                    gradient_checkpointing=False,
+                    num_workers=8, prefetch_factor=8,
+                    learning_rate=5e-4, warmup_steps=4000,
+                ),
+
+            # ============ CPU ============
+            HardwareProfile.CPU_ONLY:
+                IntelligentTrainer._build_strategy(
+                    HardwareProfile.CPU_ONLY,
+                    dtype="float32", compile_mode="default",
+                    gradient_checkpointing=False,
+                    compile_model=False,
+                    use_flash_attention=False,
+                    pin_memory=False, distributed_backend="gloo",
+                    num_workers=2, prefetch_factor=2,
+                    learning_rate=1e-4, warmup_steps=100,
+                ),
+        }
+        # Patch HIGH_END_MULTI for distributed mode
+        strategies[HardwareProfile.HIGH_END_MULTI].use_distributed = True
+        strategies[HardwareProfile.HIGH_END_MULTI].use_fsdp = True
+    
+        # GPU name mapping for detection
+        gpu_mappings = {
+           'h100': strategies[HardwareProfile.HIGH_END_SINGLE],
+           'a100': strategies["a100_single"],
+           'rtx 4090': strategies[HardwareProfile.MID_RANGE_SINGLE],
+           'rtx 3090': strategies["rtx3090"],
+           'rtx 3080': strategies[HardwareProfile.LOW_END_SINGLE],
+           'rtx 3060': strategies["rtx3060"],
+           'v100': strategies["v100"],
+           'l4': strategies["l4"],
+           't4': strategies["t4"],
+           'k80': strategies["colab_free"],
+           'mi250': strategies["amd_mi250"],
+           'mi300': strategies["amd_mi250"],  # Same config as MI250
+        }
+    
+        # Detect GPU and return appropriate strategy
+        if self.hardware_info['gpu_names']:
+            gpu_name = self.hardware_info['gpu_names'][0].lower()
+        
+            # Check for exact matches first
+            for gpu_key, strategy in gpu_mappings.items():
+                if gpu_key in gpu_name:
+                    logger.info(f"Matched GPU '{gpu_key}' - using optimized settings")
+                    return strategy
+        
+            # Fallback to memory-based detection
+            gpu_memory = self.hardware_info['gpu_memory'][0]
+        
+            if gpu_memory >= 70:  # 80GB GPUs (H100, A100 80GB)
+                return strategies[HardwareProfile.HIGH_END_SINGLE]
+            elif gpu_memory >= 40:  # 40-48GB GPUs (A100 40GB, A6000)
+                return strategies["a100_single"]
+            elif gpu_memory >= 20:  # 24GB GPUs (RTX 3090/4090, L4)
+                return strategies[HardwareProfile.MID_RANGE_SINGLE]
+            elif gpu_memory >= 12:  # 12-16GB GPUs (RTX 3060, T4, V100)
+                return strategies[HardwareProfile.LOW_END_SINGLE]
+            else:  # <12GB (Colab free tier)
+                return strategies["colab_free"]
+    
+        # Multi-GPU configurations
+        if self.hardware_info['gpu_count'] > 1:
+            # Determine multi-GPU profile based on first GPU
+            if self.hardware_info['gpu_memory'][0] >= 40:
+                return strategies[HardwareProfile.HIGH_END_MULTI]
+            else:
+                # For mid/low-end multi-GPU, create a DDP strategy
+                base_strategy = self._get_single_gpu_strategy()
+                base_strategy.use_distributed = True
+                base_strategy.use_ddp = True
+                base_strategy.batch_size *= self.hardware_info['gpu_count']
+                return base_strategy
+    
+        # CPU fallback
+        return strategies[HardwareProfile.CPU_ONLY]
+        
+        strategy = strategies.get(self.hardware_profile, strategies[HardwareProfile.CPU_ONLY])
+        
+        # Override with user config if specified
+        if hasattr(self.config.training, 'force_batch_size'):
+            strategy.batch_size = self.config.training.force_batch_size
+        if hasattr(self.config.training, 'force_learning_rate'):
+            strategy.learning_rate = self.config.training.force_learning_rate
+            
+        return strategy
+    
+    # ==================== Setup Methods ====================
+    
+    def _setup_device(self) -> Tuple[torch.device, int, int]:
+        """Setup device and distributed environment"""
+        
+        if self.strategy.use_distributed and torch.cuda.device_count() > 1:
+            # Setup distributed training
+            if 'RANK' in os.environ:
+                # Already initialized by launcher
+                local_rank = int(os.environ['LOCAL_RANK'])
+                world_size = int(os.environ['WORLD_SIZE'])
+            else:
+                # Initialize here
+                local_rank = 0
+                world_size = torch.cuda.device_count()
+                os.environ['MASTER_ADDR'] = 'localhost'
+                os.environ['MASTER_PORT'] = '12355' or str(find_free_port())
+                
+            if not dist.is_initialized():
+                dist.init_process_group(
+                    backend=self.strategy.distributed_backend,
+                    world_size=world_size,
+                    rank=local_rank,
+                    timeout=timedelta(seconds=3600)
+                )
+                
+            torch.cuda.set_device(local_rank)
+            device = torch.device(f'cuda:{local_rank}')
+            
+        elif torch.cuda.is_available():
+            device = torch.device('cuda:0')
+            local_rank = 0
+            world_size = 1
+            
+        elif self.hardware_info['backend'] == 'mps':
+            device = torch.device('mps')
+            local_rank = 0
+            world_size = 1
+            
+        else:
+            device = torch.device('cpu')
+            local_rank = 0
+            world_size = 1
+            
+        return device, local_rank, world_size
+    
+    def _initialize_components(self):
+        """Initialize training components based on strategy"""
+        
+        # Memory optimizer
+        self.memory_trainer = MemoryOptimizedTrainer(
+            self.encoder,  # Will be wrapped later
+            self.strategy.memory_config
+        )
+        
+        # Dynamic batch sizer
+        self.batch_sizer = DynamicBatchSizer(
+            initial_batch_size=self.strategy.batch_size // self.world_size if self.world_size > 1 else self.strategy.batch_size,
+            max_batch_size=self.strategy.batch_size * 2 // self.world_size if self.world_size > 1 else self.strategy.batch_size * 2
+        )
+        
+        # Memory tracker
+        self.memory_tracker = MemoryTracker() if self.strategy.memory_config.profile_memory else None
+        
+        # Gradient scaler for mixed precision
+        if self.strategy.memory_config.mixed_precision:
+            device_type = self.device.type
+            if device_type in ('cuda', 'cpu'):
+                self.scaler = torch.amp.GradScaler(device_type)
+            else:
+                self.scaler = None
+        else:
+            self.scaler = None
+    
+    def _setup_models(self):
+        """Setup and wrap models based on strategy"""
+        
+        # Move models to device
+        self.encoder = self.encoder.to(self.device)
+        self.decoder = self.decoder.to(self.device)
+        
+        # Apply PEFT LoRA adapter training (freezes backbone, adds trainable adapters)
+        if getattr(self.config.training, 'use_lora', False):
+            from pipeline.training.peft import wrap_encoder_with_lora, wrap_decoder_with_lora, print_trainable_parameter_stats
+            self.encoder = wrap_encoder_with_lora(
+                self.encoder,
+                r=self.config.training.lora_r,
+                lora_alpha=self.config.training.lora_alpha,
+                lora_dropout=self.config.training.lora_dropout,
+                use_rslora=self.config.training.use_rslora,
+            )
+            self.decoder = wrap_decoder_with_lora(
+                self.decoder,
+                r=self.config.training.lora_r_decoder,
+                lora_alpha=self.config.training.lora_alpha,
+                lora_dropout=self.config.training.lora_dropout,
+                use_rslora=self.config.training.use_rslora,
+            )
+            print_trainable_parameter_stats(self.encoder, self.decoder)
+        
+        # Add per-target-language adapters after LoRA wrapping
+        _decoder = self.decoder.base_model if hasattr(self.decoder, 'base_model') else self.decoder
+        for lang in self.config.data.languages:
+            _decoder.add_target_language_adapter(lang)
+            for param in _decoder.target_language_adapters[lang].parameters():
+                param.requires_grad = True
+        # Adapters were created on CPU after .to(device); move them to GPU
+        _decoder.target_language_adapters.to(self.device)
+        
+        # Apply memory optimizations
+        if self.strategy.memory_config.gradient_checkpointing:
+            self._enable_gradient_checkpointing()
+            
+        # Apply model compilation (decoder only — encoder is small and compile
+        # overhead exceeds benefit; decoder benefits from fused attention ops)
+        if self.strategy.memory_config.compile_model and hasattr(torch, 'compile'):
+            try:
+                self.decoder = torch.compile(
+                    self.decoder,
+                    mode=self.strategy.compile_mode,
+                    fullgraph=False,
+                    dynamic=False
+                )
+                logger.info(f"✅ Decoder compiled with mode: {self.strategy.compile_mode}")
+            except Exception as e:
+                logger.warning(f"⚠️ Model compilation failed: {e}")
+        
+        # Apply distributed wrapping
+        if self.strategy.use_distributed:
+            if self.strategy.use_fsdp:
+                self._wrap_models_fsdp()
+            elif self.strategy.use_ddp:
+                self._wrap_models_ddp()
+    
+    def _wrap_models_fsdp(self):
+        """Wrap models with FSDP"""
+        from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
+        import functools
+        
+        # FSDP configuration
+        mixed_precision_policy = None
+        if self.strategy.memory_config.mixed_precision:
+            mixed_precision_policy = MixedPrecision(
+                param_dtype=self.strategy.mixed_precision_dtype,
+                reduce_dtype=self.strategy.mixed_precision_dtype,
+                buffer_dtype=self.strategy.mixed_precision_dtype,
+            )
+        
+        cpu_offload_policy = CPUOffload(offload_params=True) if self.strategy.memory_config.cpu_offload else None
+        
+        auto_wrap_policy = functools.partial(
+            transformer_auto_wrap_policy,
+            transformer_layer_cls={
+                nn.TransformerEncoderLayer,
+                nn.TransformerDecoderLayer,
+            }
+        )
+        
+        # Wrap models
+        self.encoder = FSDP(
+            self.encoder,
+            auto_wrap_policy=auto_wrap_policy,
+            mixed_precision=mixed_precision_policy,
+            cpu_offload=cpu_offload_policy,
+            sharding_strategy=ShardingStrategy.FULL_SHARD,
+            backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+            device_id=self.local_rank,
+            use_orig_params=True
+        )
+        
+        self.decoder = FSDP(
+            self.decoder,
+            auto_wrap_policy=auto_wrap_policy,
+            mixed_precision=mixed_precision_policy,
+            cpu_offload=cpu_offload_policy,
+            sharding_strategy=ShardingStrategy.FULL_SHARD,
+            backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
+            device_id=self.local_rank,
+            use_orig_params=True
+        )
+        
+        logger.info("✅ Models wrapped with FSDP")
+    
+    def _wrap_models_ddp(self):
+        """Wrap models with DDP"""
+        self.encoder = DDP(
+            self.encoder,
+            device_ids=[self.local_rank],
+            output_device=self.local_rank,
+            find_unused_parameters=False,
+            gradient_as_bucket_view=True,
+            static_graph=True
+        )
+        
+        self.decoder = DDP(
+            self.decoder,
+            device_ids=[self.local_rank],
+            output_device=self.local_rank,
+            find_unused_parameters=False,
+            gradient_as_bucket_view=True,
+            static_graph=True
+        )
+        
+        logger.info("✅ Models wrapped with DDP")
+    
+    def _enable_gradient_checkpointing(self):
+        """Enable gradient checkpointing on models"""
+        
+        # Try model-specific method first
+        if hasattr(self.encoder, 'gradient_checkpointing_enable'):
+            self.encoder.gradient_checkpointing_enable()
+        if hasattr(self.decoder, 'gradient_checkpointing_enable'):
+            self.decoder.gradient_checkpointing_enable()
+            
+        logger.info("✅ Gradient checkpointing enabled")
+
+    def _probe_batch_size(self):
+        """Probe max batch size, then adapt accumulation and LR dynamically."""
+        if self.strategy.use_distributed or not torch.cuda.is_available():
+            return
+        logger.info("📏 Probing max batch size...")
+        found = self.batch_sizer.probe(
+            self.encoder, self.decoder, self.device,
+            seq_len=getattr(self.config.model, 'max_seq_length', 150),
+            vocab_size=getattr(self.config.model, 'vocab_size', 32000),
+        )
+        self.strategy.batch_size = found
+
+        # When compile is active, CUDA graph caches add ~1-2 GB overhead
+        # that the eager-mode probe doesn't account for. Step back one
+        # probe size to leave headroom.
+        if self.strategy.memory_config.compile_model:
+            safe_sizes = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256]
+            idx = safe_sizes.index(found)
+            if idx > 3:  # don't go below a minimum of ~12
+                found = safe_sizes[idx - 1]
+                self.strategy.batch_size = found
+                self.batch_sizer.current_batch_size = found
+
+        # Adapt accumulation to target a sane effective batch size per tier
+        target_eff = {
+            HardwareProfile.HIGH_END_SINGLE: 512,
+            HardwareProfile.HIGH_END_MULTI: 512,
+            HardwareProfile.MID_RANGE_SINGLE: 256,
+            HardwareProfile.MID_RANGE_MULTI: 256,
+            HardwareProfile.LOW_END_SINGLE: 192,
+            HardwareProfile.LOW_END_MULTI: 192,
+            HardwareProfile.CPU_ONLY: 32,
+        }.get(self.strategy.hardware_profile, 256)
+        self.strategy.accumulation_steps = max(1, target_eff // found)
+        effective = found * self.strategy.accumulation_steps
+
+        # Scale LR with sqrt(effective_batch / target_eff) so gradient
+        # statistics stay similar when batch size changes significantly.
+        self.strategy.learning_rate *= (effective / max(target_eff, 1)) ** 0.5
+
+        logger.info(
+            f"📏 batch={found}, accum={self.strategy.accumulation_steps}, "
+            f"effective={effective}, lr={self.strategy.learning_rate:.2e}"
+        )
+
+    def _setup_optimization(self):
+        """Setup optimizers and schedulers"""
+        
+        # Create optimizer
+        self.optimizer = self._create_optimizer()
+        
+        # Create scheduler
+        self.scheduler = self._create_scheduler()
+
+        # Plateau scheduler for automatic LR reduction on validation loss plateau
+        self.plateau_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer,
+            mode='min',
+            factor=0.5,
+            patience=2,
+            threshold=1e-4,
+            min_lr=1e-7,
+        )
+    
+    def _create_optimizer(self) -> torch.optim.Optimizer:
+        """Create optimizer with hardware-specific configuration"""
+        
+        # Use the enhanced optimizer creation with param groups
+        if self.config.training.use_param_groups:
+            return create_optimizer_with_param_groups(
+                [self.encoder, self.decoder],
+                self.config
+            )
+        else:
+            # When using LoRA, only trainable params are the LoRA adapters
+            parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
+            # Filter to only trainable params (handles frozen backbone + LoRA)
+            parameters = [p for p in parameters if p.requires_grad]
+            if not parameters:
+                logger.warning("No trainable parameters found! Check freeze_backbone / use_lora settings.")
+                parameters = list(self.encoder.parameters()) + list(self.decoder.parameters())
+        
+            # Use fused optimizer if available and beneficial
+            use_fused = (
+                self.strategy.memory_config.use_fused_optimizer and 
+                torch.cuda.is_available() and
+                self.hardware_profile in [
+                    HardwareProfile.HIGH_END_SINGLE,
+                    HardwareProfile.HIGH_END_MULTI,
+                    HardwareProfile.MID_RANGE_SINGLE,
+                    HardwareProfile.MID_RANGE_MULTI
+                ]
+            )
+        
+            optimizer = torch.optim.AdamW(
+                parameters,
+                lr=self.strategy.learning_rate,
+                betas=(0.9, 0.95),
+                eps=1e-8,
+                weight_decay=0.01,
+                fused=use_fused
+            )
+        
+            logger.info(f"✅ Optimizer created (fused={use_fused})")
+            return optimizer
+
+    def profile_training(self, num_steps: int = 10):
+        """Add profiling capability"""
+        profiler = ProfileGuidedTrainer(self)
+        return profiler.profile_training_step(num_steps)
+    
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Get training diagnostics"""
+        return get_training_diagnostics(self)        
+    
+    def _create_scheduler(self):
+        """Create learning rate scheduler"""
+        
+        # Estimate total training steps
+        steps_per_epoch = len(self.train_dataset) // (self.strategy.batch_size * self.strategy.accumulation_steps)
+        total_steps = steps_per_epoch * self.config.training.num_epochs
+        
+        # Use OneCycleLR for better convergence
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            self.optimizer,
+            max_lr=self.strategy.learning_rate,
+            total_steps=total_steps,
+            pct_start=0.1,
+            anneal_strategy='cos',
+            cycle_momentum=True,
+            base_momentum=0.85,
+            max_momentum=0.95,
+            div_factor=25.0,
+            final_div_factor=1e4
+        )
+        
+        logger.info(f"✅ Scheduler created (total_steps={total_steps})")
+        return scheduler
+    
+    def _setup_monitoring(self):
+        """Setup monitoring and logging"""
+        
+        # Setup WandB if enabled
+        if self.config.monitoring.use_wandb and (self.local_rank == 0 or not self.strategy.use_distributed):
+            wandb.init(
+                project="universal-translation",
+                name=f"{self.experiment_name}-{self.hardware_profile.name}",
+                config={
+                    'hardware': self.hardware_info,
+                    'hardware_profile': self.hardware_profile.name,
+                    'strategy': {
+                        'batch_size': self.strategy.batch_size,
+                        'accumulation_steps': self.strategy.accumulation_steps,
+                        'learning_rate': self.strategy.learning_rate,
+                        'mixed_precision': str(self.strategy.mixed_precision_dtype),
+                        'distributed': self.strategy.use_distributed,
+                        'backend': self.strategy.distributed_backend
+                    },
+                    'config': self.config.dict()
+                },
+                tags=[
+                    'intelligent-trainer',
+                    self.hardware_profile.name,
+                    'distributed' if self.strategy.use_distributed else 'single-gpu'
+                ]
+            )
+            
+        # Setup checkpoint directory
+        self.checkpoint_dir = Path(self.config.data.checkpoint_dir) / self.experiment_name
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    def _log_initialization(self):
+        """Log initialization details"""
+        
+        logger.info("="*60)
+        logger.info("🧠 INTELLIGENT TRAINER INITIALIZED")
+        logger.info("="*60)
+        logger.info(f"📊 Hardware Detection:")
+        logger.info(f"   - Backend: {self.hardware_info['backend']}")
+        logger.info(f"   - GPUs: {self.hardware_info['gpu_count']}")
+        if self.hardware_info['gpu_names']:
+            for i, (name, mem) in enumerate(zip(self.hardware_info['gpu_names'], self.hardware_info['gpu_memory'])):
+                logger.info(f"   - GPU {i}: {name} ({mem:.1f}GB)")
+        logger.info(f"   - Total GPU Memory: {self.hardware_info['total_memory']:.1f}GB")
+        logger.info(f"   - CPU Cores: {self.hardware_info['cpu_count']}")
+        
+        logger.info(f"\n🎯 Hardware Profile: {self.hardware_profile.name}")
+        
+        logger.info(f"\n⚙️ Training Strategy:")
+        logger.info(f"   - Distributed: {self.strategy.use_distributed}")
+        logger.info(f"   - Backend: {self.strategy.distributed_backend}")
+        logger.info(f"   - FSDP: {self.strategy.use_fsdp}")
+        logger.info(f"   - DDP: {self.strategy.use_ddp}")
+        logger.info(f"   - Batch Size: {self.strategy.batch_size}")
+        logger.info(f"   - Accumulation Steps: {self.strategy.accumulation_steps}")
+        logger.info(f"   - Learning Rate: {self.strategy.learning_rate}")
+        logger.info(f"   - Mixed Precision: {self.strategy.mixed_precision_dtype}")
+        logger.info(f"   - Compile Mode: {self.strategy.compile_mode}")
+        logger.info(f"   - Gradient Checkpointing: {self.strategy.memory_config.gradient_checkpointing}")
+        logger.info(f"   - Flash Attention: {self.strategy.memory_config.use_flash_attention}")
+        logger.info(f"   - Encoder LoRA rank: {self.config.training.lora_r}")
+        logger.info(f"   - Decoder LoRA rank: {self.config.training.lora_r_decoder}")
+        logger.info(f"   - Per-language decoder adapters: {len(self.config.data.languages)} languages")
+        logger.info("="*60)
+    
+    # ==================== Training Methods ====================
+    
+    def train(self, 
+             num_epochs: Optional[int] = None,
+             shutdown_handler: Optional[GracefulShutdown] = None) -> Dict[str, Any]:
+        """
+        Main training loop with intelligent adaptation
+        """
+        
+        num_epochs = num_epochs or self.config.training.num_epochs
+        
+        logger.info(f"🚀 Starting intelligent training for {num_epochs} epochs")
+        
+        # Create data loaders
+        train_loader = self._create_train_loader()
+        val_loader = self._create_val_loader()
+        
+        # Training loop
+        for epoch in range(self.current_epoch, num_epochs):
+            self.current_epoch = epoch
+            
+            # Check for shutdown
+            if shutdown_handler and shutdown_handler.should_stop():
+                logger.info("🛑 Shutdown requested, saving checkpoint...")
+                self.save_checkpoint(is_emergency=True)
+                break
+            
+            # Train epoch
+            with resource_monitor.monitor(f"epoch_{epoch}"):
+                train_metrics = self._train_epoch(train_loader)
+            
+            # Validate
+            val_metrics = self._validate_epoch(val_loader)
+            
+            # Update history
+            self.training_history['train_loss'].append(train_metrics['loss'])
+            self.training_history['val_loss'].append(val_metrics['loss'])
+            self.training_history['learning_rates'].append(self.scheduler.get_last_lr()[0])
+            self.training_history['batch_sizes'].append(self.batch_sizer.current_batch_size)
+            
+            # Log metrics
+            self._log_metrics(epoch, train_metrics, val_metrics)
+            
+            # Save checkpoint
+            if val_metrics['loss'] < self.best_val_loss:
+                self.best_val_loss = val_metrics['loss']
+                self.save_checkpoint(is_best=True)
+                
+            # Regular checkpoint
+            if epoch % self.config.training.save_every == 0:
+                self.save_checkpoint()
+            
+            # Adaptive adjustments
+            self._adaptive_adjustments(train_metrics, val_metrics)
+            
+            # Recreate data loader if batch size changed
+            if self.batch_sizer.current_batch_size != train_loader.batch_size:
+                logger.info(f"📊 Adjusting batch size: {train_loader.batch_size} -> {self.batch_sizer.current_batch_size}")
+                train_loader = self._create_train_loader()
+        
+        # Final report
+        self._generate_final_report()
+        
+        return self.training_history
+    
+    def _train_epoch(self, train_loader: DataLoader) -> Dict[str, float]:
+        """Train for one epoch"""
+        
+        self.encoder.train()
+        self.decoder.train()
+        
+        epoch_loss = 0.0
+        num_batches = 0
+        start_time = time.time()
+        
+        # Hide GPU before DataLoader workers fork (prevents 186MB CUDA context per worker).
+        # CUDA is already initialized in this process, so operations continue normally.
+        _prep_cuda = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
+        for batch_idx, batch in enumerate(train_loader):
+            if batch_idx == 0:
+                os.environ['CUDA_VISIBLE_DEVICES'] = _prep_cuda
+            step_start = time.time()
+            
+            # Move batch to device
+            batch = self._prepare_batch(batch)
+            
+            # Forward and backward pass
+            loss = self._training_step(batch, step_start)
+            
+            # Accumulate loss
+            epoch_loss += loss
+            num_batches += 1
+            
+            # Log step time
+            step_time = time.time() - step_start
+            self.training_history['step_times'].append(step_time)
+            
+            # Log periodically
+            if batch_idx % self.config.training.log_every == 0:
+                self._log_step(batch_idx, len(train_loader), loss, step_time)
+            
+            self.global_step += 1
+            
+            # Memory management
+            if self.memory_tracker:
+                self.memory_tracker.log_memory_usage()
+        
+        epoch_time = time.time() - start_time
+        avg_loss = epoch_loss / num_batches
+        
+        return {
+            'loss': avg_loss,
+            'time': epoch_time,
+            'batches': num_batches
+        }
+
+    def enable_quantization_aware_training(self, num_bits: int = 8):
+        """Enable QAT during training for better quantization robustness"""
+        self.qat_enabled = True
+        self.qat_bits = num_bits
+        logger.info(f"✅ Quantization-aware training enabled with {num_bits} bits")
+    
+    def _apply_fake_quantization(self, tensor: torch.Tensor) -> torch.Tensor:
+        if not self.qat_enabled or not self.training:
+            return tensor
+        return fake_quantize_tensor(tensor, self.qat_bits)
+    
+    def _training_step(self, batch: Dict[str, torch.Tensor], step_start: float = 0.0) -> float:
+        """Single training step with accumulation
+           Enhanced training step with QAT support
+        """
+        
+        # Determine if we should sync gradients
+        should_sync = (self.global_step + 1) % self.strategy.accumulation_steps == 0
+        
+        # Context for gradient sync control
+        if self.strategy.use_distributed and not should_sync:
+            # Disable gradient sync for accumulation steps
+            sync_context = self._no_sync_context()
+        else:
+            sync_context = nullcontext()
+        
+        with sync_context:
+            # Forward pass
+            if self.strategy.memory_config.mixed_precision:
+                with torch.amp.autocast(device_type=self.device.type, dtype=self.strategy.mixed_precision_dtype):
+                    loss = self._compute_loss(batch)
+                    loss = loss / self.strategy.accumulation_steps
+                
+                # Backward pass with scaling
+                self.scaler.scale(loss).backward()
+            else:
+                loss = self._compute_loss(batch)
+                loss = loss / self.strategy.accumulation_steps
+                loss.backward()
+        
+        # Update weights if accumulation complete
+        if should_sync:
+            if self.strategy.memory_config.mixed_precision:
+                # Unscale gradients
+                self.scaler.unscale_(self.optimizer)
+                
+                # Clip gradients
+                torch.nn.utils.clip_grad_norm_(
+                    list(self.encoder.parameters()) + list(self.decoder.parameters()),
+                    self.strategy.gradient_clipping
+                )
+                
+                # Optimizer step
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.scheduler.step()
+            else:
+                # Clip gradients
+                torch.nn.utils.clip_grad_norm_(
+                    list(self.encoder.parameters()) + list(self.decoder.parameters()),
+                    self.strategy.gradient_clipping
+                )
+                self.optimizer.step()
+                self.optimizer.zero_grad(set_to_none=True)
+                self.scheduler.step()
+        
+        # Apply QAT if enabled
+        if self.qat_enabled:
+            for param in self.encoder.parameters():
+                param.data = self._apply_fake_quantization(param.data)
+            for param in self.decoder.parameters():
+                param.data = self._apply_fake_quantization(param.data)
+            self.optimizer.step()
+            self.scheduler.step()
+            self.optimizer.zero_grad(set_to_none=True)
+
+        # Log analytics
+        if hasattr(self, 'analytics'):
+            grad_norm = calculate_gradient_norm([self.encoder, self.decoder])
+            memory_gb = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
+            tokens_per_sec = self.batch_sizer.current_batch_size * 512 / (time.time() - step_start + 1e-8)
+            
+            self.analytics.log_step(
+                loss=loss.item(),
+                lr=self.scheduler.get_last_lr()[0],
+                grad_norm=grad_norm,
+                memory_gb=memory_gb,
+                tokens_per_sec=tokens_per_sec
+            )    
+        
+        return loss.item() * self.strategy.accumulation_steps
+    
+    @torch.inference_mode()
+    def _validate_epoch(self, val_loader: DataLoader) -> Dict[str, float]:
+        """Validate for one epoch"""
+        
+        self.encoder.eval()
+        self.decoder.eval()
+        
+        epoch_loss = 0.0
+        num_batches = 0
+        start_time = time.time()
+        
+        _prep_cuda = os.environ.get('CUDA_VISIBLE_DEVICES', '')
+        os.environ['CUDA_VISIBLE_DEVICES'] = ''
+        for batch_idx, batch in enumerate(val_loader):
+            if batch_idx == 0:
+                os.environ['CUDA_VISIBLE_DEVICES'] = _prep_cuda
+            batch = self._prepare_batch(batch)
+            
+            if self.strategy.memory_config.mixed_precision:
+                with torch.amp.autocast(device_type=self.device.type, dtype=self.strategy.mixed_precision_dtype):
+                    loss = self._compute_loss(batch)
+            else:
+                loss = self._compute_loss(batch)
+            
+            epoch_loss += loss.item()
+            num_batches += 1
+        
+        epoch_time = time.time() - start_time
+        avg_loss = epoch_loss / num_batches
+        
+        return {
+            'loss': avg_loss,
+            'time': epoch_time,
+            'batches': num_batches
+        }
+    
+    def _compute_loss(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
+        """Compute loss for a batch using shared BaseTrainer forward pass"""
+        return self._forward_pass(batch)
+    
+    def _prepare_batch(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        """Prepare batch for training"""
+        
+        # Move tensors to device
+        for key, value in batch.items():
+            if isinstance(value, torch.Tensor):
+                batch[key] = value.to(self.device, non_blocking=True)
+                
+                # Convert to channels last if applicable
+                if self.strategy.memory_config.use_channels_last and value.dim() == 4:
+                    batch[key] = batch[key].to(memory_format=torch.channels_last)
+        
+        return batch
+    
+    @contextmanager
+    def _no_sync_context(self):
+        """Context manager for disabling gradient sync in distributed training"""
+        if self.strategy.use_ddp:
+            with self.encoder.no_sync(), self.decoder.no_sync():
+                yield
+        else:
+            yield
+    
+    # ==================== Data Loading ====================
+    
+    def _create_train_loader(self) -> DataLoader:
+        """Create optimized training data loader"""
+        
+        # Create sampler
+        if self.config.training.use_temperature_sampling:
+            sampler = TemperatureSampler(
+                self.train_dataset,
+                batch_size=self.batch_sizer.current_batch_size,
+                temperature=self.config.training.temperature
+            )
+        elif self.strategy.use_distributed:
+            sampler = DistributedSampler(
+                self.train_dataset,
+                num_replicas=self.world_size,
+                rank=self.local_rank,
+                shuffle=True,
+                seed=42
+            )
+            shuffle = False
+        else:
+            sampler = None
+            shuffle = True
+        
+        train_loader = DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_sizer.current_batch_size,
+            shuffle=shuffle,
+            sampler=sampler,
+            num_workers=self.strategy.num_workers,
+            pin_memory=self.strategy.pin_memory,
+            prefetch_factor=self.strategy.prefetch_factor if self.strategy.num_workers > 0 else None,
+            persistent_workers=self.strategy.num_workers > 0,
+            drop_last=True,
+            worker_init_fn=_worker_init_fn
+        )
+        
+        return train_loader
+    
+    def _create_val_loader(self) -> DataLoader:
+        """Create validation data loader"""
+        
+        # Create sampler
+        if self.strategy.use_distributed:
+            sampler = DistributedSampler(
+                self.val_dataset,
+                num_replicas=self.world_size,
+                rank=self.local_rank,
+                shuffle=False
+            )
+        else:
+            sampler = None
+        
+        # Create loader with larger batch size (no gradients)
+        val_loader = DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_sizer.current_batch_size * 2,
+            shuffle=False,
+            sampler=sampler,
+            num_workers=self.strategy.num_workers,
+            pin_memory=self.strategy.pin_memory,
+            drop_last=False,
+            worker_init_fn=_worker_init_fn
+        )
+        
+        return val_loader
+    
+    # ==================== Adaptive Methods ====================
+    
+    def _adaptive_adjustments(self, train_metrics: Dict, val_metrics: Dict):
+        """Make adaptive adjustments based on metrics"""
+        
+        # Plateau scheduler: reduce LR when validation loss stagnates
+        self.plateau_scheduler.step(val_metrics['loss'])
+        
+        # Check for memory pressure
+        if torch.cuda.is_available():
+            memory_used = torch.cuda.memory_allocated() / torch.cuda.max_memory_allocated()
+            
+            if memory_used > 0.95:
+                # Critical memory usage
+                new_batch_size = self.batch_sizer.decrease_batch_size()
+                logger.warning(f"⚠️ Critical memory usage ({memory_used:.1%}), reducing batch size to {new_batch_size}")
+                
+                # Enable more aggressive memory saving
+                if not self.strategy.memory_config.gradient_checkpointing:
+                    self.strategy.memory_config.gradient_checkpointing = True
+                    self._enable_gradient_checkpointing()
+                    logger.info("✅ Enabled gradient checkpointing due to memory pressure")
+                    
+            elif memory_used < 0.7 and len(self.training_history['val_loss']) > 3:
+                # Check if we can increase batch size
+                recent_losses = self.training_history['val_loss'][-3:]
+                if all(recent_losses[i] > recent_losses[i+1] for i in range(len(recent_losses)-1)):
+                    # Model is improving, try larger batch
+                    new_batch_size = self.batch_sizer.increase_batch_size()
+                    logger.info(f"📈 Memory usage low ({memory_used:.1%}) and model improving, increasing batch size to {new_batch_size}")
+        
+        # Check for convergence
+        if check_convergence(self.training_history['train_loss']):
+            logger.info("📊 Training appears to have converged")
+            
+            # Reduce learning rate
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] *= 0.5
+            logger.info("🔽 Reduced learning rate by 50%")
+    
+    # ==================== Logging Methods ====================
+    
+    def _log_step(self, batch_idx: int, total_batches: int, loss: float, step_time: float):
+        """Log training step"""
+        
+        if self.local_rank == 0 or not self.strategy.use_distributed:
+            tokens_per_sec = (self.batch_sizer.current_batch_size * 512) / step_time  # Approximate
+            
+            logger.info(
+                f"Step {batch_idx}/{total_batches} | "
+                f"Loss: {loss:.4f} | "
+                f"LR: {self.scheduler.get_last_lr()[0]:.2e} | "
+                f"Batch: {self.batch_sizer.current_batch_size} | "
+                f"Time: {step_time:.2f}s | "
+                f"Tokens/s: {tokens_per_sec:.0f}"
+            )
+            
+            if self.config.monitoring.use_wandb:
+                wandb.log({
+                    'train/loss': loss,
+                    'train/learning_rate': self.scheduler.get_last_lr()[0],
+                    'train/batch_size': self.batch_sizer.current_batch_size,
+                    'train/step_time': step_time,
+                    'train/tokens_per_second': tokens_per_sec,
+                    'train/global_step': self.global_step
+                })
+    
+    def _log_metrics(self, epoch: int, train_metrics: Dict, val_metrics: Dict):
+        """Log epoch metrics"""
+        
+        if self.local_rank == 0 or not self.strategy.use_distributed:
+            logger.info(
+                f"Epoch {epoch} | "
+                f"Train Loss: {train_metrics['loss']:.4f} | "
+                f"Val Loss: {val_metrics['loss']:.4f} | "
+                f"Time: {train_metrics['time']:.1f}s"
+            )
+            
+            if self.config.monitoring.use_wandb:
+                wandb.log({
+                    'epoch': epoch,
+                    'epoch/train_loss': train_metrics['loss'],
+                    'epoch/val_loss': val_metrics['loss'],
+                    'epoch/train_time': train_metrics['time'],
+                    'epoch/val_time': val_metrics['time'],
+                    'epoch/learning_rate': self.scheduler.get_last_lr()[0],
+                    'epoch/batch_size': self.batch_sizer.current_batch_size
+                })
+    
+    # ==================== Checkpoint Methods ====================
+    
+    def save_checkpoint(self, is_best: bool = False, is_emergency: bool = False):
+        """Save training checkpoint"""
+        
+        if self.local_rank != 0 and self.strategy.use_distributed:
+            return
+        
+        checkpoint = {
+            'epoch': self.current_epoch,
+            'global_step': self.global_step,
+            'best_val_loss': self.best_val_loss,
+            'hardware_profile': self.hardware_profile.name,
+            'strategy': {
+                'batch_size': self.strategy.batch_size,
+                'accumulation_steps': self.strategy.accumulation_steps,
+                'learning_rate': self.strategy.learning_rate
+            },
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+            'plateau_scheduler_state': {
+                'best': self.plateau_scheduler.best,
+                'num_bad_epochs': self.plateau_scheduler.num_bad_epochs,
+                'cooldown_counter': self.plateau_scheduler.cooldown_counter,
+                'mode_worse': self.plateau_scheduler.mode_worse,
+                'last_epoch': self.plateau_scheduler.last_epoch,
+            },
+            'training_history': self.training_history,
+            'batch_sizer_state': {
+                'current_batch_size': self.batch_sizer.current_batch_size,
+                'max_batch_size': self.batch_sizer.max_batch_size,
+                'min_batch_size': self.batch_sizer.min_batch_size
+            }
+        }
+        
+        # Handle model state dict based on wrapping
+        if self.strategy.use_fsdp:
+            checkpoint['encoder_state_dict'] = FSDP.state_dict(self.encoder)
+            checkpoint['decoder_state_dict'] = FSDP.state_dict(self.decoder)
+        elif self.strategy.use_ddp:
+            checkpoint['encoder_state_dict'] = self.encoder.module.state_dict()
+            checkpoint['decoder_state_dict'] = self.decoder.module.state_dict()
+        else:
+            checkpoint['encoder_state_dict'] = self.encoder.state_dict()
+            checkpoint['decoder_state_dict'] = self.decoder.state_dict()
+        
+        # Save scaler state if using mixed precision
+        if self.scaler:
+            checkpoint['scaler_state_dict'] = self.scaler.state_dict()
+        
+        # Determine filename
+        if is_emergency:
+            filename = EMERGENCY_CHECKPOINT_FILENAME
+        elif is_best:
+            filename = BEST_MODEL_FILENAME
+        else:
+            filename = f'checkpoint_epoch_{self.current_epoch}.pt'
+        
+        filepath = self.checkpoint_dir / filename
+        
+        # Save checkpoint
+        torch.save(checkpoint, filepath)
+        logger.info(f"💾 Saved checkpoint: {filepath}")
+    
+    def load_checkpoint(self, checkpoint_path: str):
+        """Load training checkpoint"""
+        
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        # Load model states
+        if self.strategy.use_ddp:
+            self.encoder.module.load_state_dict(checkpoint['encoder_state_dict'])
+            self.decoder.module.load_state_dict(checkpoint['decoder_state_dict'])
+        else:
+            self.encoder.load_state_dict(checkpoint['encoder_state_dict'])
+            self.decoder.load_state_dict(checkpoint['decoder_state_dict'])
+        
+        # Load optimizer and scheduler
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        # Load plateau scheduler state
+        if 'plateau_scheduler_state' in checkpoint:
+            ps = checkpoint['plateau_scheduler_state']
+            self.plateau_scheduler.best = ps['best']
+            self.plateau_scheduler.num_bad_epochs = ps['num_bad_epochs']
+            self.plateau_scheduler.cooldown_counter = ps['cooldown_counter']
+            self.plateau_scheduler.mode_worse = ps['mode_worse']
+            self.plateau_scheduler.last_epoch = ps['last_epoch']
+        
+        # Load scaler if available
+        if self.scaler and 'scaler_state_dict' in checkpoint:
+            self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        
+        # Load training state
+        self.current_epoch = checkpoint['epoch']
+        self.global_step = checkpoint['global_step']
+        self.best_val_loss = checkpoint['best_val_loss']
+        self.training_history = checkpoint['training_history']
+        
+        # Load batch sizer state
+        if 'batch_sizer_state' in checkpoint:
+            self.batch_sizer.current_batch_size = checkpoint['batch_sizer_state']['current_batch_size']
+        
+        logger.info(f"✅ Loaded checkpoint from epoch {self.current_epoch}")
+    
+    def _generate_final_report(self):
+        """Generate final training report"""
+        
+        report = {
+            'hardware_profile': self.hardware_profile.name,
+            'hardware_info': self.hardware_info,
+            'strategy_used': {
+                'distributed': self.strategy.use_distributed,
+                'backend': self.strategy.distributed_backend,
+                'batch_size': self.strategy.batch_size,
+                'accumulation_steps': self.strategy.accumulation_steps,
+                'mixed_precision': str(self.strategy.mixed_precision_dtype)
+            },
+            'final_metrics': {
+                'best_val_loss': self.best_val_loss,
+                'final_train_loss': self.training_history['train_loss'][-1] if self.training_history['train_loss'] else None,
+                'total_epochs': self.current_epoch,
+                'total_steps': self.global_step
+            },
+            'training_history': self.training_history,
+            'resource_usage': resource_monitor.get_summary()
+        }
+        
+        # Save report
+        report_path = self.checkpoint_dir / TRAINING_REPORT_FILENAME
+        with open(report_path, 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        logger.info(f"📊 Training report saved to {report_path}")
+        
+        # Print summary
+        logger.info("\n" + "="*60)
+        logger.info("TRAINING COMPLETE")
+        logger.info("="*60)
+        logger.info(f"Hardware Profile: {self.hardware_profile.name}")
+        logger.info(f"Best Validation Loss: {self.best_val_loss:.4f}")
+        logger.info(f"Total Epochs: {self.current_epoch}")
+        logger.info(f"Total Steps: {self.global_step}")
+        logger.info("="*60)
+
+
+# ==================== Main Training Function ====================
+
+def train_intelligent(
+    encoder: nn.Module,
+    decoder: nn.Module,
+    train_dataset,
+    val_dataset,
+    config: RootConfig,
+    experiment_name: str = "intelligent-universal",
+    resume_from: Optional[str] = None,
+    shutdown_handler: Optional[GracefulShutdown] = None
+) -> Dict[str, Any]:
+    """
+    Main entry point for intelligent training
+    
+    This automatically detects hardware and runs optimal training strategy.
+    """
+    
+    # Initialize intelligent trainer
+    trainer = IntelligentTrainer(
+        encoder=encoder,
+        decoder=decoder,
+        train_dataset=train_dataset,
+        val_dataset=val_dataset,
+        config=config,
+        experiment_name=experiment_name,
+        resume_from_checkpoint=resume_from
+    )
+    
+    # Run training
+    results = trainer.train(
+        num_epochs=config.training.num_epochs,
+        shutdown_handler=shutdown_handler
+    )
+    
+    return results

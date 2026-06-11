@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse
 
 import litserve as ls
 
-from vocabulary.unified_vocab_manager import UnifiedVocabularyManager, VocabularyMode
+from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
 from utils.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)

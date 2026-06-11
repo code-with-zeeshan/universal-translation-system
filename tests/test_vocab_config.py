@@ -4,7 +4,7 @@ Tests for vocabulary.vocab_config - vocabulary configuration data structures.
 
 import dataclasses
 import pytest
-from vocabulary.vocab_config import CreationMode, UnifiedVocabConfig, VocabStats, LanguageGroup
+from pipeline.vocabulary.config import CreationMode, UnifiedVocabConfig, VocabStats, LanguageGroup
 
 
 class TestCreationMode:

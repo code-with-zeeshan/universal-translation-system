@@ -4,12 +4,12 @@
 
 **Choose your setup path based on available GPU:**
 
-| Your GPU | Full training? | Expected time (5 epochs) | Budget | Recommended batch | Go to |
+| Your GPU | Full training? | Expected time (10 epochs) | Budget | Recommended batch | Go to |
 |---|---|---|---|---|---|---|
-| **A100 40GB / H100** | ✅ Yes | ~3 hours | ~$4.65 | 32 | [Fast Track](#fast-track-a100h100-40gb) |
-| **L40s 48GB** | ✅ Yes | ~2.5 hours | ~$5.50 | 48 | [Fast Track](#fast-track-a100h100-40gb) |
-| **L4 24GB** | ✅ Yes | ~8 hours | ~$4.00 | 16 | [Mid-Range L4](#mid-range-l4-24gb) |
-| **T4 16GB (Colab / low-cost)** | ⚠️ Marginal | ~15 hours | ~$0 | 8 | [Low-End T4](#low-end-t4-16gb) |
+| **A100 40GB / H100** | ✅ Yes | ~6 hours | ~$9.30 | 32 | [Fast Track](#fast-track-a100h100-40gb) |
+| **L40s 48GB** | ✅ Yes | ~4 hours | ~$10.00 | 48 | [Fast Track](#fast-track-a100h100-40gb) |
+| **L4 24GB** | ✅ Yes | ~10 hours | ~$5.00 | 16 | [Mid-Range L4](#mid-range-l4-24gb) |
+| **T4 16GB (Colab / low-cost)** | ⚠️ Marginal | ~20 hours | ~$0 | 8 | [Low-End T4](#low-end-t4-16gb) |
 | **No GPU / CPU** | ❌ No | — | — | — | [No GPU / LoRA only](#no-gpu--lora-only) |
 
 ---
@@ -130,7 +130,7 @@ Creates 6 per-script packs at `vocabulary/vocab/`.
 ./uts train --full --num-epochs 3
 
 # With knowledge distillation (teacher NLLB-200-3.3B):
-./uts train --full --distill --alpha 0.5 --temperature 4.0
+./uts train --full --distill --distill-alpha 0.5 --distill-temp 4.0
 ```
 
 **Config already optimized for A100** (`config/base.yaml`):

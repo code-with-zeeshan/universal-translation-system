@@ -959,7 +959,7 @@ _PROJECT_SUBMODULE_MOCKS = {
         'JWKS_RELOADS_FAILURE': None,
         'JWKS_KEYS': None,
     }),
-    'vocabulary.unified_vocab_manager': _make_mock_module('unified_vocab_manager', {
+    'runtime.vocabulary.manager': _make_mock_module('manager', {
         'UnifiedVocabularyManager': MagicMock(),
         'VocabularyMode': MagicMock(),
     }),
@@ -971,19 +971,19 @@ _PROJECT_SUBMODULE_MOCKS = {
     'integration.connect_all_systems': _make_mock_module('connect_all_systems', {
         'integrate_full_pipeline': MagicMock(),
     }),
-    'training.trainer': _make_mock_module('trainer', {'train_intelligent': MagicMock()}),
-    'training.training_strategy': _make_mock_module('training_strategy', {
+    'pipeline.training.trainer': _make_mock_module('trainer', {'train_intelligent': MagicMock()}),
+    'pipeline.training.strategy': _make_mock_module('strategy', {
         'TrainingStrategy': MagicMock(),
     }),
-    'training.hardware_profile': _make_mock_module('hardware_profile', {
+    'pipeline.training.hardware': _make_mock_module('hardware', {
         'HardwareProfile': MagicMock(),
         'find_free_port': MagicMock(return_value=12345),
         'launch_distributed_intelligent_training': MagicMock(),
     }),
-    'training.memory_config': _make_mock_module('memory_config', {
+    'pipeline.training.memory.config': _make_mock_module('config', {
         'MemoryConfig': MagicMock(),
     }),
-    'training.memory_efficient_training': _make_mock_module('memory_efficient_training', {
+    'pipeline.training.memory.trainer': _make_mock_module('trainer', {
         'MemoryConfig': MagicMock(),
         'MemoryOptimizedTrainer': MagicMock(),
         'MemoryTracker': MagicMock(),
@@ -991,18 +991,10 @@ _PROJECT_SUBMODULE_MOCKS = {
         'create_modern_training_setup': MagicMock(return_value={}),
         'benchmark_training_speed': MagicMock(return_value={}),
     }),
-    'training.memory_trainer': _make_mock_module('memory_trainer', {
-        'MemoryOptimizedTrainer': MagicMock(),
-        'create_modern_training_setup': MagicMock(return_value={}),
-        'benchmark_training_speed': MagicMock(return_value={}),
-    }),
-    'training.memory_tracker': _make_mock_module('memory_tracker', {
-        'MemoryTracker': MagicMock(),
-    }),
-    'training.dynamic_batch_sizer': _make_mock_module('dynamic_batch_sizer', {
+    'pipeline.training.memory.batch_sizer': _make_mock_module('batch_sizer', {
         'DynamicBatchSizer': MagicMock(),
     }),
-    'training.training_utils': _make_mock_module('training_utils', {
+    'pipeline.training.utils': _make_mock_module('utils', {
         'BaseTrainer': MagicMock(),
         'check_convergence': MagicMock(return_value=False),
         'find_convergence_step': MagicMock(return_value=None),
@@ -1025,17 +1017,17 @@ _PROJECT_SUBMODULE_MOCKS = {
         'setup_logging': MagicMock(),
         'LoggingSensitiveDataFilter': MagicMock(),
     }),
-    'data.custom_samplers': _make_mock_module('custom_samplers', {
+    'pipeline.training.samplers': _make_mock_module('samplers', {
         'TemperatureSampler': MagicMock(),
     }),
-    'data.pipeline_state': _make_mock_module('pipeline_state', {
+    'pipeline.data.state': _make_mock_module('state', {
         'PipelineStage': MagicMock(),
         'PipelineState': MagicMock(),
     }),
     'evaluation.evaluator': _make_mock_module('evaluator', {
         'TranslationPair': MagicMock(),
     }),
-    'vocabulary.vocab_config': _make_mock_module('vocab_config', {
+    'pipeline.vocabulary.config': _make_mock_module('config', {
         'CreationMode': MagicMock(),
         'UnifiedVocabConfig': MagicMock(),
         'VocabStats': MagicMock(),
@@ -1048,14 +1040,16 @@ _PROJECT_SUBMODULE_MOCKS = {
         'RotaryEmbedding': MagicMock(),
         'CustomTransformerEncoderLayer': MagicMock(),
     }),
-    'training.encoder_quantizer': _make_mock_module('encoder_quantizer', {
+    'pipeline.training.quantization.encoder': _make_mock_module('encoder', {
         'EncoderQuantizer': MagicMock(),
+    }),
+    'pipeline.training.quantization.pipeline': _make_mock_module('pipeline', {
         'QualityPreservingQuantizer': MagicMock(),
     }),
-    'training.quality_comparator': _make_mock_module('quality_comparator', {
+    'pipeline.training.quantization.quality': _make_mock_module('quality', {
         'QualityComparator': MagicMock(),
     }),
-    'training.training_analytics': _make_mock_module('training_analytics', {
+    'pipeline.training.analytics': _make_mock_module('analytics', {
         'TrainingAnalytics': MagicMock(),
     }),
     'integration.system_health': _make_mock_module('system_health', {

@@ -6,8 +6,8 @@ Handles dynamic vocabulary loading, optimization, and language-specific
 vocabulary packs for efficient multilingual translation.
 """
 
-from .unified_vocab_manager import UnifiedVocabularyManager, VocabularyPack, VocabularyMode
-from .unified_vocabulary_creator import UnifiedVocabularyCreator as VocabularyPackCreator
+from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyPack, VocabularyMode
+from pipeline.vocabulary.creator import UnifiedVocabularyCreator as VocabularyPackCreator
 
 # Backward compatibility aliases
 VocabularyManager = UnifiedVocabularyManager

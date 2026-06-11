@@ -61,14 +61,14 @@ See [SETUP_COMMANDS.md](SETUP_COMMANDS.md) for GPU-tier-specific batch sizes and
 
 ## Training Duration
 
-Default is **5 epochs (~3h on A100, $4.65)**. Use `--num-epochs` to adjust.
+Default is **10 epochs (~6h on A100, $9.30)**. Use `--num-epochs` to adjust.
 
-| GPU | 5 epochs | 10 epochs | Notes |
+| GPU | Default (10 epochs) | 5 epochs (quick test) | Notes |
 |---|---|---|---|
-| A100 40GB | ~3h ($4.65) | ~6h ($9.30) | Sweet spot |
-| H100 | ~2h | ~4h | Fastest |
-| L4 24GB | ~5h | ~10h | Viable with gradient checkpointing |
-| T4 16GB | ~10h | ~20h | Needs gradient checkpointing |
+| A100 40GB | ~6h ($9.30) | ~3h ($4.65) | Sweet spot |
+| H100 | ~4h | ~2h | Fastest |
+| L4 24GB | ~10h | ~5h | Viable with gradient checkpointing |
+| T4 16GB | ~20h | ~10h | Needs gradient checkpointing |
 
 **Auto-resume**: If interrupted, `uts data --pipeline` and `uts train --full` pick up where you left off. Use `--force` to re-run from scratch.
 
@@ -100,8 +100,8 @@ The system is designed for zero-full-retraining language expansion:
 
 ```bash
 # Phase 1: Full model training
-./uts train --full                    # Default 5 epochs (~3h)
-./uts train --full --num-epochs 10    # Full convergence (~6h)
+./uts train --full                    # Default 10 epochs (~6h)
+./uts train --full --num-epochs 5     # Quick test (~3h)
 
 # Phase 2: LoRA adapter for new language
 # (edit config: add language, set use_lora: true)

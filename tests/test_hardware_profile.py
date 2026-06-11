@@ -7,7 +7,7 @@ Relies on conftest.py for all heavy dependency mocks (torch, numpy, etc.).
 import unittest
 from unittest.mock import MagicMock, patch
 
-from training.hardware_profile import (
+from pipeline.training.hardware import (
     HardwareProfile,
     find_free_port,
     launch_distributed_intelligent_training,
@@ -72,7 +72,7 @@ class TestHardwareProfileDetection(unittest.TestCase):
 class TestFindFreePort(unittest.TestCase):
     """Test find_free_port function."""
 
-    @patch('training.hardware_profile.socket.socket')
+    @patch('pipeline.training.hardware.socket.socket')
     def test_find_free_port(self, mock_socket):
         mock_sock = MagicMock()
         mock_socket.return_value.__enter__.return_value = mock_sock
@@ -86,7 +86,7 @@ class TestFindFreePort(unittest.TestCase):
 class TestLaunchDistributedIntelligentTraining(unittest.TestCase):
     """Test launch_distributed_intelligent_training function."""
 
-    @patch('training.trainer.train_intelligent')
+    @patch('pipeline.training.trainer.train_intelligent')
     def test_launch_sets_env_and_calls_train(self, mock_train):
         encoder = MagicMock()
         decoder = MagicMock()
@@ -95,7 +95,7 @@ class TestLaunchDistributedIntelligentTraining(unittest.TestCase):
         config = MagicMock()
         experiment_name = "test_exp"
 
-        os_mod = 'training.hardware_profile.os'
+        os_mod = 'pipeline.training.hardware.os'
         with patch.dict(os_mod + '.environ', {}, clear=True):
             launch_distributed_intelligent_training(
                 rank=0, world_size=2,
