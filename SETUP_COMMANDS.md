@@ -301,7 +301,7 @@ uts data --pipeline          # Run full data pipeline (auto-resume)
 uts data --pipeline --force  # Re-run from scratch
 uts data --pipeline --scale 5  # 5× training data
 uts vocab --build            # Build vocabulary packs
-uts train --full             # Train (auto-resume, ~3h, $4.65)
+uts train --full             # Train (auto-resume, ~6h, $9.30)
 uts train --full --force     # Re-run training from scratch
 uts train --full --distill   # Knowledge distillation
 uts train --full --num-epochs 10  # Override epochs

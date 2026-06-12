@@ -36,7 +36,7 @@ git push --tags
 ## Local pipeline (optional)
 ```bash
 python scripts/build_and_upload_pipeline.py \
-  --repo_id code-with-zeeshan/universal-translation-system \
+  --repo-id code-with-zeeshan/universal-translation-system \
   --create-vocabs --convert-models \
   --vocab-groups latin cjk --vocab-mode production
 ```

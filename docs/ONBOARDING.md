@@ -47,7 +47,7 @@ Run `./uts <group> --help` for full options.
 | Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
 | Deploy decoder server | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
 | Publish model to HF Hub | `./uts publish --preflight` | Then `./uts publish --optimize-decoder` |
-| Monitor pipeline/training live | `./uts tui --dashboard` | Or `--pipeline` / `--training` for focused views |
+| Monitor pipeline/training live | `./uts tui` | Or `--pipeline` / `--train` for focused views |
 | Add a new language (#21+) | Edit `config/base.yaml` → `use_lora: true`, add language code | Then `./uts train --full --experiment-name "lang-21-adapter"` |
 | Fix CUDA out-of-memory | Reduce `batch_size` or increase `accumulation_steps` | Check GPU tier in SETUP_COMMANDS.md |
 | Validate config file | `./uts tools --validate-config <path>` | Also `--check-references` and `--check-consistency` |
@@ -193,9 +193,9 @@ See [docs/PUBLISHING.md](docs/PUBLISHING.md) for details.
 
 | Flag | Description |
 |---|---|
-| `--dashboard` | Open the main TUI dashboard (live pipeline + training + GPU) |
-| `--pipeline` | Show pipeline progress view |
-| `--training` | Show training metrics view |
+| *(none)* | Open combined pipeline + training view (default) |
+| `--pipeline` | Pipeline progress view only |
+| `--train` | Training metrics view only |
 
 See [docs/TUI.md](docs/TUI.md) for keyboard shortcuts and layout.
 
@@ -214,7 +214,7 @@ See [docs/TUI.md](docs/TUI.md) for keyboard shortcuts and layout.
 | `--packs [list]` | Vocab packs for prefetch (e.g., `latin cjk`) |
 | `--repo-id ID` | Hugging Face Hub repository ID |
 | `--rotate-secrets` | Rotate JWT secrets |
-| `--key-type TYPE` | Key type for rotation (e.g., `hmac`, `jwt`) |
+| `--key-type TYPE` | Key type for rotation (`hs256`, `rs256`, `all`) |
 | `--set-env` | Set environment variables from `.env` template |
 | `--upload [REPO]` | Upload artifacts to Hugging Face Hub |
 | `--register-decoder` | Register a decoder node with the coordinator |
