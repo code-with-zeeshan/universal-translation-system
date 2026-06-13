@@ -1,4 +1,3 @@
-from utils.common_utils import RuntimeDirectoryManager
 #!/usr/bin/env python3
 """
 Unified CLI for Universal Translation System pipelines
@@ -34,6 +33,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # Common config
+from utils.common_utils import RuntimeDirectoryManager
 from config.schemas import load_config as load_pydantic_config, RootConfig
 
 # Data pipeline
