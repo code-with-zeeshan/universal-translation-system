@@ -4,7 +4,7 @@
 seaborn>=0.13.0
 
 # Experiment tracking & progress
-tqdm>=4.66.0
+tqdm>=4.68.2
 wandb>=0.16.0
 
 # Hyperparameter optimization
