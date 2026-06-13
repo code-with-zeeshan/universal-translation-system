@@ -15,7 +15,7 @@ class DataConfig(BaseModel):
     """Schema for the 'data' section of the config."""
     processed_dir: str = "data/processed"
     checkpoint_dir: str = "checkpoints"
-    training_distribution: Dict[str, int]
+    training_distribution: Dict[str, int] = Field(default_factory=dict)
     active_languages: Optional[List[str]] = None
     quality_threshold: float = Field(0.8, description="Quality threshold for data filtering", ge=0.0, le=1.0)
     total_size_gb: float = Field(8.0, description="Target total dataset size in GB")
@@ -443,7 +443,9 @@ def load_config(config_path: str = "config/base.yaml", base_config: Optional[Roo
             config_data = yaml.safe_load(f)
 
         if 'data' not in config_data:
-            config_data['data'] = {'training_distribution': {}}
+            config_data['data'] = {}
+        if 'training_distribution' not in config_data['data']:
+            config_data['data']['training_distribution'] = {}
 
         if 'model' not in config_data:
             config_data['model'] = {}
