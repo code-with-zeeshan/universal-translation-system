@@ -28,7 +28,7 @@ except ImportError:
 from collections import defaultdict
 import numpy as np
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, Callable
 
 
 def _worker_init_fn(worker_id):
@@ -93,7 +93,10 @@ class IntelligentTrainer(BaseTrainer):
                  val_dataset,
                  config: RootConfig,
                  experiment_name: str = "intelligent-universal",
-                 resume_from_checkpoint: Optional[str] = None):
+                 resume_from_checkpoint: Optional[str] = None,
+                 on_batch_end: Optional[Callable[[int, int, int, float, float, float], None]] = None,
+                 on_epoch_end: Optional[Callable[[int, int, float, Optional[float], float, float], None]] = None,
+                 on_eval_end: Optional[Callable[[int, float, float, Optional[float], Optional[float]], None]] = None):
         
         # Core components
         self.encoder = encoder
@@ -102,11 +105,24 @@ class IntelligentTrainer(BaseTrainer):
         self.val_dataset = val_dataset
         self.config = config
         self.experiment_name = experiment_name
-        
+        self.runtime_dirs = RuntimeDirectoryManager()
+
+        # Training state (set BEFORE checkpoint load so loaded values persist)
+        self.global_step = 0
+        self.current_epoch = 0
+        self.best_val_loss = float('inf')
+
         # Hardware detection and strategy
         self.hardware_info = self._detect_hardware()
         self.hardware_profile = self._categorize_hardware(self.hardware_info)
         self.strategy = self._determine_optimal_strategy()
+
+        # Apply CLI/config overrides for batch_size and lr after hardware probing
+        cfg_t = self.config.training
+        if cfg_t.force_batch_size is not None:
+            self.strategy.batch_size = cfg_t.force_batch_size
+        if cfg_t.force_learning_rate is not None:
+            self.strategy.learning_rate = cfg_t.force_learning_rate
         
         # Log hardware and strategy
         self._log_initialization()
@@ -129,14 +145,9 @@ class IntelligentTrainer(BaseTrainer):
         # Setup monitoring
         self._setup_monitoring()
         
-        # Load checkpoint if provided
+        # Load checkpoint if provided (restores global_step, current_epoch, best_val_loss)
         if resume_from_checkpoint:
             self.load_checkpoint(resume_from_checkpoint)
-
-        # Training state
-        self.global_step = 0
-        self.current_epoch = 0
-        self.best_val_loss = float('inf')
         self.training_history = {
             'train_loss': [],
             'val_loss': [],
@@ -156,7 +167,12 @@ class IntelligentTrainer(BaseTrainer):
         
         # QAT support
         self.qat_enabled = False
-        self.qat_bits = 8    
+        self.qat_bits = 8
+
+        # Optional structured event callbacks (for TUI or external monitoring)
+        self._on_batch_end = on_batch_end
+        self._on_epoch_end = on_epoch_end
+        self._on_eval_end = on_eval_end
     
     # ==================== Hardware Detection Methods ====================
     
@@ -508,7 +524,7 @@ class IntelligentTrainer(BaseTrainer):
                 local_rank = 0
                 world_size = torch.cuda.device_count()
                 os.environ['MASTER_ADDR'] = 'localhost'
-                os.environ['MASTER_PORT'] = '12355' or str(find_free_port())
+                os.environ['MASTER_PORT'] = str(find_free_port())
                 
             if not dist.is_initialized():
                 dist.init_process_group(
@@ -1095,16 +1111,13 @@ class IntelligentTrainer(BaseTrainer):
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
                 self.scheduler.step()
-        
-        # Apply QAT if enabled
-        if self.qat_enabled:
-            for param in self.encoder.parameters():
-                param.data = self._apply_fake_quantization(param.data)
-            for param in self.decoder.parameters():
-                param.data = self._apply_fake_quantization(param.data)
-            self.optimizer.step()
-            self.scheduler.step()
-            self.optimizer.zero_grad(set_to_none=True)
+
+            # Apply QAT fake-quantization after optimizer step (only on sync steps)
+            if self.qat_enabled:
+                for param in self.encoder.parameters():
+                    param.data = self._apply_fake_quantization(param.data)
+                for param in self.decoder.parameters():
+                    param.data = self._apply_fake_quantization(param.data)
 
         # Log analytics
         if hasattr(self, 'analytics'):
@@ -1181,6 +1194,11 @@ class IntelligentTrainer(BaseTrainer):
         """Context manager for disabling gradient sync in distributed training"""
         if self.strategy.use_ddp:
             with self.encoder.no_sync(), self.decoder.no_sync():
+                yield
+        elif self.strategy.use_fsdp:
+            import torch.distributed.fsdp as fsdp
+            with fsdp.FullyShardedDataParallel.no_sync(self.encoder), \
+                 fsdp.FullyShardedDataParallel.no_sync(self.decoder):
                 yield
         else:
             yield
@@ -1301,19 +1319,26 @@ class IntelligentTrainer(BaseTrainer):
         if self.local_rank == 0 or not self.strategy.use_distributed:
             tokens_per_sec = (self.batch_sizer.current_batch_size * 512) / step_time  # Approximate
             
+            lr_val = self.scheduler.get_last_lr()[0]
             logger.info(
                 f"Step {batch_idx}/{total_batches} | "
                 f"Loss: {loss:.4f} | "
-                f"LR: {self.scheduler.get_last_lr()[0]:.2e} | "
+                f"LR: {lr_val:.2e} | "
                 f"Batch: {self.batch_sizer.current_batch_size} | "
                 f"Time: {step_time:.2f}s | "
                 f"Tokens/s: {tokens_per_sec:.0f}"
             )
             
+            if self._on_batch_end:
+                self._on_batch_end(
+                    self.current_epoch, batch_idx, total_batches,
+                    loss, lr_val, tokens_per_sec
+                )
+            
             if self.config.monitoring.use_wandb:
                 wandb.log({
                     'train/loss': loss,
-                    'train/learning_rate': self.scheduler.get_last_lr()[0],
+                    'train/learning_rate': lr_val,
                     'train/batch_size': self.batch_sizer.current_batch_size,
                     'train/step_time': step_time,
                     'train/tokens_per_second': tokens_per_sec,
@@ -1324,21 +1349,36 @@ class IntelligentTrainer(BaseTrainer):
         """Log epoch metrics"""
         
         if self.local_rank == 0 or not self.strategy.use_distributed:
+            train_loss = train_metrics['loss']
+            val_loss = val_metrics['loss']
+            lr_val = self.scheduler.get_last_lr()[0]
             logger.info(
                 f"Epoch {epoch} | "
-                f"Train Loss: {train_metrics['loss']:.4f} | "
-                f"Val Loss: {val_metrics['loss']:.4f} | "
+                f"Train Loss: {train_loss:.4f} | "
+                f"Val Loss: {val_loss:.4f} | "
                 f"Time: {train_metrics['time']:.1f}s"
             )
+            
+            if self._on_epoch_end:
+                self._on_epoch_end(
+                    epoch, self.config.training.num_epochs,
+                    train_loss, val_loss, lr_val, 0.0
+                )
+
+            if self._on_eval_end:
+                self._on_eval_end(
+                    epoch, val_loss, train_loss,
+                    None, None
+                )
             
             if self.config.monitoring.use_wandb:
                 wandb.log({
                     'epoch': epoch,
-                    'epoch/train_loss': train_metrics['loss'],
-                    'epoch/val_loss': val_metrics['loss'],
+                    'epoch/train_loss': train_loss,
+                    'epoch/val_loss': val_loss,
                     'epoch/train_time': train_metrics['time'],
                     'epoch/val_time': val_metrics['time'],
-                    'epoch/learning_rate': self.scheduler.get_last_lr()[0],
+                    'epoch/learning_rate': lr_val,
                     'epoch/batch_size': self.batch_sizer.current_batch_size
                 })
     

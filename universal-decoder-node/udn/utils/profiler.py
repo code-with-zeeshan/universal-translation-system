@@ -260,7 +260,7 @@ class FunctionProfiler:
         # Use default filepath if none provided
         if filepath is None:
             timestamp = time.strftime("%Y%m%d-%H%M%S")
-            filepath = os.path.join(self.profile_dir, f"profile-{timestamp}.{format}")
+            filepath = str(Path(self.profile_dir) / f"profile-{timestamp}.{format}")
         
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(filepath), exist_ok=True)

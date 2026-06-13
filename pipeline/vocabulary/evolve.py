@@ -100,11 +100,78 @@ class VocabularyEvolver:
             logger.warning("No existing vocabulary packs found to evolve")
             return {}
 
+        # Load pack languages to route tokens correctly
+        pack_languages = {}
+        for pack_name, info in packs.items():
+            pack_languages[pack_name] = self._load_pack_languages(info["file"])
+
+        # Build reverse mapping: language → pack_name
+        lang_to_pack = {}
+        for pack_name, langs in pack_languages.items():
+            for lang in langs:
+                lang_to_pack[lang] = pack_name
+
+        # If we can't determine language from analytics, assign to latin
+        default_pack = "latin" if "latin" in packs else next(iter(packs))
+
         token_list = list(tokens.keys())
-        result = {}
-        for pack_name in packs:
-            result[pack_name] = token_list
+        result = {pn: [] for pn in packs}
+
+        for token in token_list:
+            # Heuristic: try to guess language from character script
+            assigned = False
+            for lang, pack_name in lang_to_pack.items():
+                if self._token_belongs_to_language(token, lang):
+                    result[pack_name].append(token)
+                    assigned = True
+                    break
+            if not assigned:
+                result[default_pack].append(token)
+
+        for pack_name, assigned_tokens in result.items():
+            if assigned_tokens:
+                logger.info(
+                    f"Assigned {len(assigned_tokens)} tokens to pack '{pack_name}' "
+                    f"(languages: {pack_languages.get(pack_name, [])})"
+                )
+
         return result
+
+    @staticmethod
+    def _token_belongs_to_language(token: str, lang: str) -> bool:
+        """Heuristic script-based check: does a token likely belong to a language group?"""
+        if not token:
+            return False
+        first_char = token[0]
+        cp = ord(first_char)
+
+        # Latin-based languages
+        latin_scripts = {'en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl', 'id', 'vi', 'tr'}
+        # CJK
+        cjk_scripts = {'zh', 'ja', 'ko'}
+        # Arabic
+        arabic_scripts = {'ar'}
+        # Devanagari
+        devanagari_scripts = {'hi'}
+        # Cyrillic
+        cyrillic_scripts = {'ru', 'uk'}
+        # Thai
+        thai_scripts = {'th'}
+
+        if lang in latin_scripts:
+            return 0x0020 <= cp < 0x007F or 0x00C0 <= cp < 0x024F or 0x1E00 <= cp < 0x1EFF
+        if lang in cjk_scripts:
+            return 0x4E00 <= cp <= 0x9FFF or 0x3040 <= cp <= 0x30FF or 0xAC00 <= cp <= 0xD7AF
+        if lang in arabic_scripts:
+            return 0x0600 <= cp <= 0x06FF or 0x0750 <= cp <= 0x077F
+        if lang in devanagari_scripts:
+            return 0x0900 <= cp <= 0x097F
+        if lang in cyrillic_scripts:
+            return 0x0400 <= cp <= 0x04FF or 0x0500 <= cp <= 0x052F
+        if lang in thai_scripts:
+            return 0x0E00 <= cp <= 0x0E7F
+
+        return False
 
     def _discover_packs(self) -> Dict[str, dict]:
         packs = {}
@@ -188,7 +255,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Evolve vocabulary packs")
     parser.add_argument(
-        "--vocab-dir", default=str(self.runtime_dirs.vocab_dir), help="Vocabulary directory"
+        "--vocab-dir", default=str(RuntimeDirectoryManager().vocab_dir), help="Vocabulary directory"
     )
     parser.add_argument(
         "--threshold",

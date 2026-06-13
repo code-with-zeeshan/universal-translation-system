@@ -516,41 +516,45 @@ class UnifiedDataDownloader:
                                    source_info: Dict,
                                    output_dir: Path) -> bool:
         """Download dataset with streaming support (falls back to non-streaming)"""
+        config_names = [source_info.get('config_name', pair.pair_string)]
+        # Normalize OPUS pair order — some datasets only have "{tgt}-{src}"
+        for candidate in (f"{pair.target}-{pair.source}",):
+            if candidate not in config_names:
+                config_names.append(candidate)
         for attempt_streaming in [True, False]:
-            try:
-                raw = self.dataset_loader.load_dataset_safely(
-                    source_info['dataset_name'],
-                    config_name=source_info.get('config_name', pair.pair_string),
-                    streaming=attempt_streaming,
-                )
-                # load_dataset returns a DatasetDict when no split is given;
-                # extract the 'train' split for training data.
-                if hasattr(raw, 'keys'):
-                    dataset = raw.get('train')
+            for config_name in config_names:
+                try:
+                    raw = self.dataset_loader.load_dataset_safely(
+                        source_info['dataset_name'],
+                        config_name=config_name,
+                        streaming=attempt_streaming,
+                    )
+                    # load_dataset returns a DatasetDict when no split is given;
+                    # extract the 'train' split for training data.
+                    if hasattr(raw, 'keys'):
+                        dataset = raw.get('train')
+                        if dataset is None:
+                            dataset = list(raw.values())[0]
+                    else:
+                        dataset = raw
                     if dataset is None:
-                        # fall back to the first available split
-                        dataset = list(raw.values())[0]
-                else:
-                    dataset = raw
-                if dataset is None:
+                        continue
+                    flat_file = output_dir.parent / f"{pair.pair_string}.txt"
+                    count = self.data_processor.process_streaming_dataset(
+                        dataset,
+                        flat_file,
+                        max_samples=pair.expected_size,
+                        source_lang=pair.source,
+                        target_lang=pair.target,
+                    )
+                    if count > 0:
+                        self.logger.info(f"✓ Downloaded {count:,} samples from {source_info['dataset_name']}")
+                        return True
+                    self.logger.warning(f"0 samples from {source_info['dataset_name']}, trying next source")
+                except Exception as e:
+                    mode = "streaming" if attempt_streaming else "non-streaming"
+                    self.logger.warning(f"{source_info['dataset_name']} ({mode}, {config_name}) failed: {e}")
                     continue
-                # Write flat tab-separated file in the raw directory
-                flat_file = output_dir.parent / f"{pair.pair_string}.txt"
-                count = self.data_processor.process_streaming_dataset(
-                    dataset,
-                    flat_file,
-                    max_samples=pair.expected_size,
-                    source_lang=pair.source,
-                    target_lang=pair.target,
-                )
-                if count > 0:
-                    self.logger.info(f"✓ Downloaded {count:,} samples from {source_info['dataset_name']}")
-                    return True
-                self.logger.warning(f"0 samples from {source_info['dataset_name']}, trying next source")
-            except Exception as e:
-                mode = "streaming" if attempt_streaming else "non-streaming"
-                self.logger.warning(f"{source_info['dataset_name']} ({mode}) failed: {e}")
-                continue
         return False
     
     def _download_standard_dataset(self,

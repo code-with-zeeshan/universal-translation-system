@@ -14,7 +14,7 @@ from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
 from utils.common_utils import RuntimeDirectoryManager,  DirectoryManager, RuntimeDirectoryManager
 
-from pipeline.data.downloader import UnifiedDataDownloader, DatasetType
+from pipeline.data.downloader import UnifiedDataDownloader, DatasetType, LanguagePair, DownloadPriority
 from pipeline.data.sampler import SmartDataSampler
 from pipeline.data.augmentation import SyntheticDataAugmenter
 from pipeline.training.samplers import TemperatureSampler, BalancedLanguageSampler
@@ -306,6 +306,10 @@ class UnifiedDataPipeline:
                 else:
                     self.logger.info(f"⏩ Skipping {stage.value} (already completed, config unchanged)")
             
+            # Clean up intermediate files once create_ready is done
+            if self.state.completed_stages.get('create_ready', False):
+                self._cleanup_intermediate_files()
+
             # Mark pipeline fully complete when all stages pass
             if self.state.is_complete():
                 self.state.pipeline_complete = True
@@ -517,8 +521,23 @@ class UnifiedDataPipeline:
                 dataset_types=[DatasetType.TRAINING]
             )
             
+            # Auto-fallback: try direct OPUS for any pair that still has no data
+            for p_str in expected_pairs:
+                if not (raw_dir / f"{p_str}.txt").exists():
+                    src, tgt = p_str.split('-', 1)
+                    fallback_pair = LanguagePair(
+                        source=src, target=tgt,
+                        priority=DownloadPriority.MEDIUM,
+                        expected_size=self.config.data.training_distribution.get(p_str, 50000),
+                        data_sources=['opus_direct'],
+                    )
+                    self.logger.info(f"🔄 Auto-fallback: trying direct OPUS for {p_str}...")
+                    ok = self.downloader._download_direct_opus(fallback_pair, raw_dir)
+                    if ok:
+                        self.logger.info(f"✅ Direct OPUS fallback succeeded for {p_str}")
+            
             # Mark each pair as done after successful download
-            for p in pairs_to_download:
+            for p in expected_pairs:
                 self.state.mark_sub_stage('download_training', p)
             self._save_checkpoint()
             
@@ -718,6 +737,15 @@ class UnifiedDataPipeline:
             span.set_attribute("training_ready.sentences", self.state.total_sentences)
             span.set_attribute("training_ready.size_gb", self.state.total_size_gb)
     
+    def _cleanup_intermediate_files(self):
+        """Remove raw/ and sampled/ directories after training data is ready."""
+        for subdir in ('raw', 'sampled'):
+            d = self.dirs['base'] / subdir
+            if d.exists() and d.is_dir():
+                import shutil
+                shutil.rmtree(d)
+                self.logger.info(f"🧹 Cleaned up intermediate directory: {d}")
+
     async def _validate_dataset(self):
         """Validate the final dataset"""
         with tracer.start_as_current_span("validate_dataset") as span:
@@ -750,6 +778,7 @@ class UnifiedDataPipeline:
                 processed_dir=str(self.dirs['processed']),
                 output_dir=self.runtime_dirs.vocab_dir,
                 vocab_size=self.config.vocabulary.vocab_size,
+                max_model_vocab_size=self.config.model.vocab_size,
             )
             
             span.set_attribute("vocabulary.packs_created", len(created_packs))

@@ -20,15 +20,20 @@ class TemperatureSampler(Sampler[Union[int, List[int]]]):
         temperature: T > 1.0 flattens distribution, T < 1.0 sharpens, T = 1.0 is proportional.
         output_batches: If True, yields lists of indices (batches). If False, yields single indices.
         drop_last: Whether to drop incomplete last batch.
+        world_size: Number of distributed workers (1 = single process).
+        rank: Rank of this worker (0 = primary).
     """
     def __init__(self, data_source: Dataset, batch_size: int, temperature: float = 1.0,
-                 output_batches: bool = True, drop_last: bool = False):
+                 output_batches: bool = True, drop_last: bool = False,
+                 world_size: int = 1, rank: int = 0):
         super().__init__(data_source)
         self.data_source = data_source
         self.batch_size = batch_size
         self.temperature = temperature
         self.output_batches = output_batches
         self.drop_last = drop_last
+        self.world_size = world_size
+        self.rank = rank
 
         self.lang_pair_indices = self._get_lang_pair_indices()
         self.lang_pairs = list(self.lang_pair_indices.keys())
@@ -46,6 +51,29 @@ class TemperatureSampler(Sampler[Union[int, List[int]]]):
             self.num_batches = self.num_samples // self.batch_size
         else:
             self.num_batches = (self.num_samples + self.batch_size - 1) // self.batch_size
+        # Distribute batches across workers
+        self.num_batches = max(1, self.num_batches // self.world_size)
+
+    def set_epoch(self, epoch: int):
+        """For compatibility with DistributedSampler (seeds RNG per epoch)."""
+        self.epoch = epoch
+        random.seed(epoch)
+
+    def _get_lang_pair_indices(self) -> Dict[str, List[int]]:
+        """Get language pair indices from dataset."""
+        if hasattr(self.data_source, 'get_lang_pair_indices'):
+            return self.data_source.get_lang_pair_indices()
+
+        indices = defaultdict(list)
+        for i in range(len(self.data_source)):
+            item = self.data_source[i]
+            if isinstance(item, dict) and 'metadata' in item:
+                meta = item['metadata']
+                pair = f"{meta['source_lang']}-{meta['target_lang']}"
+            else:
+                pair = "default"
+            indices[pair].append(i)
+        return indices
 
     def _get_lang_pair_indices(self) -> Dict[str, List[int]]:
         """Get language pair indices from dataset."""
@@ -77,15 +105,23 @@ class TemperatureSampler(Sampler[Union[int, List[int]]]):
             sampled = np.random.choice(indices, size=count, replace=len(indices) < count)
             epoch_indices.extend(sampled.tolist())
         np.random.shuffle(epoch_indices)
+        # Shard for distributed training
+        if self.world_size > 1:
+            epoch_indices = epoch_indices[self.rank::self.world_size]
         return iter(epoch_indices)
 
     def _iter_batches(self) -> Iterator[List[int]]:
-        for _ in range(self.num_batches):
+        all_batches = []
+        for _ in range(self.num_batches * self.world_size):
             batch_indices = []
             for _ in range(self.batch_size):
                 chosen_pair = self.lang_pairs[torch.multinomial(self.sampling_weights, 1).item()]
                 batch_indices.append(random.choice(self.lang_pair_indices[chosen_pair]))
-            yield batch_indices
+            all_batches.append(batch_indices)
+        # Shard batches for distributed training
+        if self.world_size > 1:
+            all_batches = all_batches[self.rank::self.world_size]
+        return iter(all_batches)
 
     def __len__(self) -> int:
         if self.output_batches:
@@ -97,12 +133,17 @@ class BalancedLanguageSampler(Sampler):
     """
     Additional sampler for strict balanced sampling across language pairs.
     Ensures each language pair gets equal representation.
+    Supports distributed training via world_size/rank and set_epoch.
     """
 
-    def __init__(self, dataset: Dataset, batch_size: int):
+    def __init__(self, dataset: Dataset, batch_size: int,
+                 world_size: int = 1, rank: int = 0):
         super().__init__(dataset)
         self.dataset = dataset
         self.batch_size = batch_size
+        self.world_size = world_size
+        self.rank = rank
+        self.epoch = 0
 
         if not hasattr(dataset, 'get_lang_pair_indices'):
             raise ValueError("Dataset must have 'get_lang_pair_indices' method")
@@ -113,11 +154,17 @@ class BalancedLanguageSampler(Sampler):
         # Create balanced sampling order
         self._create_balanced_order()
 
+    def set_epoch(self, epoch: int):
+        """Seed RNG per epoch for deterministic distributed shuffling."""
+        self.epoch = epoch
+        random.seed(epoch)
+
     def _create_balanced_order(self):
         """Create balanced sampling order"""
         # Interleave samples from each language pair
+        rng = random.Random(self.epoch) if hasattr(self, 'epoch') else random
         iterators = {
-            pair: iter(random.sample(indices, len(indices)))
+            pair: iter(rng.sample(indices, len(indices)))
             for pair, indices in self.lang_pair_indices.items()
         }
 
@@ -133,6 +180,10 @@ class BalancedLanguageSampler(Sampler):
                     except StopIteration:
                         exhausted.add(pair)
 
+        # Shard for distributed training
+        if self.world_size > 1:
+            self.sampling_order = self.sampling_order[self.rank::self.world_size]
+
     def __iter__(self):
         """Generate samples in balanced order"""
         for i in range(0, len(self.sampling_order), self.batch_size):
@@ -142,4 +193,5 @@ class BalancedLanguageSampler(Sampler):
 
     def __len__(self):
         """Return number of batches"""
-        return (len(self.sampling_order) + self.batch_size - 1) // self.batch_size
+        n = (len(self.sampling_order) + self.batch_size - 1) // self.batch_size
+        return max(1, n)

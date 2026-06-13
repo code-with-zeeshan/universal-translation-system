@@ -93,10 +93,18 @@ def validate_pack(self, pack_path: str) -> Tuple[bool, List[str]]:
 
 
 def compare_packs(self, pack1_path: str, pack2_path: str) -> Dict[str, Any]:
-    with open(pack1_path, 'r') as f:
-        pack1 = json.load(f)
-    with open(pack2_path, 'r') as f:
-        pack2 = json.load(f)
+    def _load_any(fp):
+        p = Path(fp)
+        if not p.exists():
+            raise FileNotFoundError(f"Pack file not found: {fp}")
+        if p.suffix == '.msgpack':
+            with open(p, 'rb') as f:
+                return msgpack.unpackb(f.read(), raw=False, strict_map_key=False)
+        with open(p, 'r') as f:
+            return json.load(f)
+
+    pack1 = _load_any(pack1_path)
+    pack2 = _load_any(pack2_path)
 
     v1 = semver.VersionInfo.parse(pack1.get('version', '0.0.0'))
     v2 = semver.VersionInfo.parse(pack2.get('version', '0.0.0'))

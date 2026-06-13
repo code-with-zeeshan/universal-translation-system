@@ -11,21 +11,38 @@ from utils.exceptions import TrainingError
 logger = logging.getLogger(__name__)
 
 
-def fake_quantize_tensor(tensor: torch.Tensor, num_bits: int = 8) -> torch.Tensor:
-    """Fake quantization with straight-through estimator for QAT."""
-    qmin = -(2 ** (num_bits - 1))
-    qmax = (2 ** (num_bits - 1)) - 1
+def fake_quantize_tensor(tensor: torch.Tensor, num_bits: int = 8, symmetric: bool = False) -> torch.Tensor:
+    """Fake quantization with straight-through estimator for QAT.
 
-    min_val = tensor.min()
-    max_val = tensor.max()
+    Args:
+        tensor: Input tensor to quantize.
+        num_bits: Bit width (default 8).
+        symmetric: If True, use symmetric signed quantization (zero_point=0).
+                   If False, use asymmetric affine quantization.
 
-    scale = (max_val - min_val) / (qmax - qmin)
-    scale = torch.clamp(scale, min=1e-8)
-    zero_point = qmin - torch.round(min_val / scale)
-    zero_point = torch.clamp(zero_point, qmin, qmax)
+    Returns:
+        Fake-quantized tensor (float but with quantization noise).
+    """
+    if symmetric:
+        qmax = (2 ** (num_bits - 1)) - 1
+        max_abs = torch.max(torch.abs(tensor))
+        scale = max_abs / qmax if max_abs > 0 else 1.0
+        scale = torch.clamp(scale, min=1e-8)
+        zero_point = 0
+    else:
+        qmin = -(2 ** (num_bits - 1))
+        qmax = (2 ** (num_bits - 1)) - 1
+
+        min_val = tensor.min()
+        max_val = tensor.max()
+
+        scale = (max_val - min_val) / (qmax - qmin) if max_val != min_val else 1.0
+        scale = torch.clamp(scale, min=1e-8)
+        zero_point = qmin - torch.round(min_val / scale)
+        zero_point = torch.clamp(zero_point, qmin, qmax)
 
     tensor_q = torch.round(tensor / scale + zero_point)
-    tensor_q = torch.clamp(tensor_q, qmin, qmax)
+    tensor_q = torch.clamp(tensor_q, qmin if not symmetric else -qmax - 1, qmax)
     tensor_dq = (tensor_q - zero_point) * scale
 
     return tensor + (tensor_dq - tensor).detach()

@@ -500,7 +500,7 @@ def init(output: str):
 @click.option('--gpus', is_flag=True, help='Enable GPU support')
 def docker(build_only: bool, tag: str, port: int, gpus: bool):
     """Build and run decoder in Docker (simple way)"""
-    dockerfile = os.path.join(os.path.dirname(__file__), '..', 'Dockerfile')
+    dockerfile = str(Path(__file__).resolve().parent.parent / 'Dockerfile')
     if not os.path.exists(dockerfile):
         click.echo("❌ Dockerfile not found — run from universal-decoder-node/ directory")
         return

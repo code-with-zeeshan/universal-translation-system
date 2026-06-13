@@ -25,7 +25,7 @@ def validate_model_source(model_path: str) -> bool:
     # Check if model is in trusted directory
     trusted_dirs = [
         os.environ.get("TRUSTED_MODELS_DIR", "models"),
-        os.path.join(os.path.expanduser("~"), ".universal-decoder", "models")
+        str(Path.home() / ".universal-decoder" / "models")
     ]
     
     model_path = os.path.abspath(model_path)

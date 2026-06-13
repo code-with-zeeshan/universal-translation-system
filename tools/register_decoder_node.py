@@ -4,6 +4,7 @@ import requests
 import uuid
 import os
 import sys
+from pathlib import Path
 from urllib.parse import urlparse
 import argparse
 import logging
@@ -220,7 +221,7 @@ def main():
     
     # 3. Fall back to file-based registration
     if not registration_success:
-        pool_path = os.path.join("config", "decoder_pool.json")
+        pool_path = str(Path("config") / "decoder_pool.json")
         print(f"Registering with local file at {pool_path}...")
         if register_with_file(node_entry, pool_path):
             registration_success = True

@@ -82,7 +82,7 @@ class TestConfigValidation(unittest.TestCase):
         }
         
         # Write the valid configuration to a file
-        self.valid_config_path = os.path.join(self.temp_dir.name, "valid_config.yaml")
+        self.valid_config_path = str(Path(self.temp_dir.name) / "valid_config.yaml")
         with open(self.valid_config_path, "w") as f:
             yaml.dump(self.valid_config, f)
         
@@ -103,7 +103,7 @@ class TestConfigValidation(unittest.TestCase):
         }
         
         # Write the invalid configuration to a file
-        self.invalid_config_path = os.path.join(self.temp_dir.name, "invalid_config.yaml")
+        self.invalid_config_path = str(Path(self.temp_dir.name) / "invalid_config.yaml")
         with open(self.invalid_config_path, "w") as f:
             yaml.dump(self.invalid_config, f)
     
@@ -132,7 +132,7 @@ class TestConfigValidation(unittest.TestCase):
         inconsistent_config["model"]["num_heads"] = 7  # Not divisible by encoder_dim
         
         # Write the inconsistent configuration to a file
-        inconsistent_config_path = os.path.join(self.temp_dir.name, "inconsistent_config.yaml")
+        inconsistent_config_path = str(Path(self.temp_dir.name) / "inconsistent_config.yaml")
         with open(inconsistent_config_path, "w") as f:
             yaml.dump(inconsistent_config, f)
         
@@ -146,7 +146,7 @@ class TestConfigValidation(unittest.TestCase):
         invalid_lang_config["training"]["language_pairs"] = ["en-es", "invalid", "fr_de"]
         
         # Write the invalid language pair configuration to a file
-        invalid_lang_config_path = os.path.join(self.temp_dir.name, "invalid_lang_config.yaml")
+        invalid_lang_config_path = str(Path(self.temp_dir.name) / "invalid_lang_config.yaml")
         with open(invalid_lang_config_path, "w") as f:
             yaml.dump(invalid_lang_config, f)
         

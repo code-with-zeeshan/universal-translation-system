@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import re
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -24,7 +23,6 @@ from tui.events import (
     TrainingBatchEvent,
     TrainingDoneEvent,
     TrainingEpochEvent,
-    TrainingEvalEvent,
     TrainingLogEvent,
     TrainingStartEvent,
     TUIEvent,
@@ -62,82 +60,20 @@ class _TUILogHandler(logging.Handler):
 
 
 class _TrainingLogHandler(logging.Handler):
-    """Redirects training log records to the TUI event stream."""
+    """Redirects training log records to the TUI event stream as raw text."""
 
     def __init__(self, on_event: OnEvent) -> None:
         super().__init__(level=logging.DEBUG)
         self._on_event = on_event
-        # Pattern: "Epoch 3/10 | batch 124/5000 | loss 2.34 | lr 5e-4 | tok/s 1420"
-        self._batch_pat = re.compile(
-            r"Epoch\s+(\d+)/(\d+)\s*\|\s*batch\s+(\d+)/(\d+)"
-            r"\s*\|\s*loss\s+([\d.eE+-]+)"
-            r"(?:\s*\|\s*lr\s+([\d.eE+-]+))?"
-            r"(?:\s*\|\s*tok/s\s+([\d.eE+-]+))?"
-        )
-        # Pattern: "Epoch 3/10 | train_loss 2.34 | val_loss 2.41 | lr 5e-4"
-        self._epoch_pat = re.compile(
-            r"Epoch\s+(\d+)/(\d+)\s*\|\s*train_loss\s+([\d.eE+-]+)"
-            r"(?:\s*\|\s*val_loss\s+([\d.eE+-]+))?"
-            r"(?:\s*\|\s*lr\s+([\d.eE+-]+))?"
-            r"(?:\s*\|\s*tok/s\s+([\d.eE+-]+))?"
-        )
-        # Pattern: "BLEU 28.4 | val_loss 2.41"
-        self._eval_pat = re.compile(
-            r"BLEU\s+([\d.]+)"
-            r"(?:\s*\|\s*val_loss\s+([\d.]+))?"
-            r"(?:\s*\|\s*chrF\s+([\d.]+))?"
-            r"(?:\s*\|\s*COMET\s+([\d.]+))?"
-        )
 
     def emit(self, record: logging.Record) -> None:
         try:
-            msg = self.format(record)
             self._on_event(TrainingLogEvent(
                 level=_LOG_LEVEL_MAP.get(record.levelno, "INFO"),
-                message=msg,
+                message=self.format(record),
             ))
-            # Try to parse structured metrics
-            self._try_parse_batch(msg)
-            self._try_parse_epoch(msg)
-            self._try_parse_eval(msg)
         except Exception:
             self.handleError(record)
-
-    def _try_parse_batch(self, msg: str) -> None:
-        m = self._batch_pat.search(msg)
-        if m:
-            self._on_event(TrainingBatchEvent(
-                epoch=int(m.group(1)),
-                total_epochs=int(m.group(2)),
-                batch=int(m.group(3)),
-                total_batches=int(m.group(4)),
-                loss=float(m.group(5)),
-                learning_rate=float(m.group(6) or 0),
-                tokens_per_second=float(m.group(7) or 0),
-            ))
-
-    def _try_parse_epoch(self, msg: str) -> None:
-        m = self._epoch_pat.search(msg)
-        if m:
-            self._on_event(TrainingEpochEvent(
-                epoch=int(m.group(1)),
-                total_epochs=int(m.group(2)),
-                train_loss=float(m.group(3)),
-                val_loss=float(m.group(4)) if m.group(4) else None,
-                learning_rate=float(m.group(5) or 0),
-                tokens_per_second=float(m.group(6) or 0),
-            ))
-
-    def _try_parse_eval(self, msg: str) -> None:
-        m = self._eval_pat.search(msg)
-        if m:
-            self._on_event(TrainingEvalEvent(
-                epoch=0,  # filled by context
-                bleu=float(m.group(1)),
-                val_loss=float(m.group(2) or 0),
-                chrf=float(m.group(3)) if m.group(3) else None,
-                comet_score=float(m.group(4)) if m.group(4) else None,
-            ))
 
 
 # ── Pipeline Bridge ───────────────────────────────────────────────────────
@@ -232,7 +168,7 @@ class TrainingBridge:
         # Load config
         config = load_config(self._config_path)
 
-        # Attach log interceptor
+        # Attach log interceptor for raw text log forwarding
         root_logger = logging.getLogger()
         self._log_handler = _TrainingLogHandler(self._on_event)
         self._log_handler.setFormatter(logging.Formatter(
@@ -241,6 +177,24 @@ class TrainingBridge:
         root_logger.addHandler(self._log_handler)
 
         start_time = time.time()
+
+        # Build structured event callbacks
+        on_batch = (lambda ep, bi, tb, l, lr, tps:
+            self._on_event(TrainingBatchEvent(
+                epoch=ep, batch=bi, total_batches=tb,
+                loss=l, learning_rate=lr, tokens_per_second=tps,
+            )))
+        on_epoch = (lambda ep, te, trl, vl, lr, tps:
+            self._on_event(TrainingEpochEvent(
+                epoch=ep, total_epochs=te,
+                train_loss=trl, val_loss=vl,
+                learning_rate=lr, tokens_per_second=tps,
+            )))
+        on_eval = (lambda ep, vl, trl, bleu, chrf, comet:
+            self._on_event(TrainingEvalEvent(
+                epoch=ep, val_loss=vl, bleu=bleu or 0.0,
+                chrf=chrf, comet_score=comet,
+            )))
 
         try:
             # Emit start event
@@ -251,8 +205,11 @@ class TrainingBridge:
                 learning_rate=config.training.lr,
             ))
 
-            # Initialize and run trainer
+            # Initialize and run trainer with structured callbacks
             trainer = IntelligentTrainer(config)
+            trainer._on_batch_end = on_batch
+            trainer._on_epoch_end = on_epoch
+            trainer._on_eval_end = on_eval
             result = trainer.train()
 
             total_time = time.time() - start_time

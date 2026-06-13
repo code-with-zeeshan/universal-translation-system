@@ -23,18 +23,9 @@ from utils.exceptions import VocabularyError
 from utils.logging_config import setup_logging
 
 from pipeline.vocabulary.config import UnifiedVocabConfig, VocabStats, LanguageGroup, CreationMode
-from pipeline.vocabulary.production import _create_sentencepiece_vocab, _train_sentencepiece_model
-from pipeline.vocabulary.research import (
-    _create_frequency_vocab,
-    _analyze_corpus,
-    _select_vocabulary,
-    _create_subword_vocab,
-    _optimize_token_ids,
-    _merge_vocabularies,
-    _merge_corpora,
-    _create_vocabulary_mappings,
-)
-from pipeline.vocabulary.validation import validate_pack, compare_packs, _get_pack_version, _save_pack, _cleanup_temp_files
+from pipeline.vocabulary import production as _production
+from pipeline.vocabulary import research as _research
+from pipeline.vocabulary import validation as _vocab_validation
 
 
 setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
@@ -48,23 +39,6 @@ class UnifiedVocabularyCreator:
     This class combines production (SentencePiece) and research (frequency analysis)
     approaches, allowing users to choose the best method for their use case.
     """
-
-    # External method assignments
-    _create_sentencepiece_vocab = _create_sentencepiece_vocab
-    _train_sentencepiece_model = _train_sentencepiece_model
-    _create_frequency_vocab = _create_frequency_vocab
-    _analyze_corpus = _analyze_corpus
-    _select_vocabulary = _select_vocabulary
-    _create_subword_vocab = _create_subword_vocab
-    _optimize_token_ids = _optimize_token_ids
-    _merge_vocabularies = _merge_vocabularies
-    _merge_corpora = _merge_corpora
-    _create_vocabulary_mappings = _create_vocabulary_mappings
-    validate_pack = validate_pack
-    compare_packs = compare_packs
-    _get_pack_version = _get_pack_version
-    _save_pack = _save_pack
-    _cleanup_temp_files = _cleanup_temp_files
 
     def __init__(
         self,
@@ -104,12 +78,63 @@ class UnifiedVocabularyCreator:
         logger.info(f"Corpus directory: {self.corpus_dir}")
         logger.info(f"Output directory: {self.output_dir}")
 
+    # ── Delegating wrappers for methods defined in sibling modules ──
+
+    def _create_sentencepiece_vocab(self, languages, pack_name, domain=None):
+        return _production._create_sentencepiece_vocab(self, languages, pack_name, domain)
+
+    def _train_sentencepiece_model(self, corpus_file, pack_name):
+        return _production._train_sentencepiece_model(self, corpus_file, pack_name)
+
+    def _create_frequency_vocab(self, languages, pack_name, domain=None):
+        return _research._create_frequency_vocab(self, languages, pack_name, domain)
+
+    def _analyze_corpus(self, languages):
+        return _research._analyze_corpus(self, languages)
+
+    def _select_vocabulary(self, token_frequencies):
+        return _research._select_vocabulary(self, token_frequencies)
+
+    def _create_subword_vocab(self, vocab, token_frequencies):
+        return _research._create_subword_vocab(self, vocab, token_frequencies)
+
+    def _optimize_token_ids(self, vocab, subwords):
+        return _research._optimize_token_ids(self, vocab, subwords)
+
+    def _merge_vocabularies(self, sp_vocab, freq_vocab):
+        return _research._merge_vocabularies(self, sp_vocab, freq_vocab)
+
+    def _merge_corpora(self, languages, pack_name, domain=None):
+        return _research._merge_corpora(self, languages, pack_name, domain)
+
+    def _create_vocabulary_mappings(self, model_path, languages):
+        return _research._create_vocabulary_mappings(self, model_path, languages)
+
+    def _get_pack_version(self, pack_name, bump="minor"):
+        return _vocab_validation._get_pack_version(self, pack_name, bump)
+
+    def _save_pack(self, pack, pack_name):
+        return _vocab_validation._save_pack(self, pack, pack_name)
+
+    def _cleanup_temp_files(self, *files):
+        return _vocab_validation._cleanup_temp_files(self, *files)
+
+    def validate_pack(self, pack_path):
+        return _vocab_validation.validate_pack(self, pack_path)
+
+    def compare_packs(self, pack1_path, pack2_path):
+        return _vocab_validation.compare_packs(self, pack1_path, pack2_path)
+
     def _discover_corpus_files(self):
-        """Discover available corpus files"""
+        """Discover available corpus files, preferring domain-specific over generic."""
         for corpus_file in self.corpus_dir.glob('*_corpus.txt'):
-            # Extract language code from filename
-            lang = corpus_file.stem.replace('_corpus', '')
-            if '_' not in lang:  # Skip domain-specific files for now
+            stem = corpus_file.stem
+            # Extract language from stem: "en_corpus" → "en", "en_medical_corpus" → "en"
+            # Domain-specific patterns like "en_medical_corpus" have extra segments
+            lang = stem.split('_corpus')[0].split('_')[0]
+            # Prefer more specific (domain) file over generic one
+            existing = self.corpus_paths.get(lang)
+            if existing is None or (stem.count('_') > Path(existing).stem.count('_')):
                 self.corpus_paths[lang] = str(corpus_file)
 
         logger.info(f"Discovered corpus files for {len(self.corpus_paths)} languages")
@@ -166,7 +191,7 @@ class UnifiedVocabularyCreator:
         mode: Optional[CreationMode] = None,
         groups_to_create: Optional[List[str]] = None,
     ) -> str:
-        """SHA-256 fingerprint of config + corpus state to detect changes."""
+        """SHA-256 fingerprint of config + corpus content to detect changes."""
         h = hashlib.sha256()
         h.update(str(self.config.vocab_size).encode())
         h.update(str(self.config.model_type).encode())
@@ -176,7 +201,14 @@ class UnifiedVocabularyCreator:
             path = Path(self.corpus_paths[lang])
             if path.exists():
                 s = path.stat()
-                h.update(f"{lang}:{s.st_size}:{s.st_mtime_ns}".encode())
+                h.update(f"{lang}:{s.st_size}:".encode())
+                # Rolling hash of first 64KB for content sensitivity
+                try:
+                    with open(path, 'rb') as f:
+                        chunk = f.read(65536)
+                        h.update(chunk)
+                except (IOError, OSError):
+                    pass
         return h.hexdigest()
 
     def _fingerprint_path(self) -> Path:
@@ -282,7 +314,8 @@ class UnifiedVocabularyCreator:
         mode: Optional[CreationMode] = None,
         domain: Optional[str] = None,
         base_pack_path: Optional[str] = None,
-        tokens_to_add: Optional[List[str]] = None
+        tokens_to_add: Optional[List[str]] = None,
+        max_vocab_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Create or evolve a vocabulary pack using specified mode.
@@ -296,11 +329,20 @@ class UnifiedVocabularyCreator:
             domain: Optional domain specification
             base_pack_path: Path for evolution mode
             tokens_to_add: Additional tokens for evolution
+            max_vocab_size: If set, validates pack won't exceed this (model's vocab_size)
 
         Returns:
             Created vocabulary pack
         """
         mode = mode or self.default_mode
+
+        # Validate that vocab_size does not exceed the model's embedding capacity
+        if max_vocab_size is not None and self.config.vocab_size > max_vocab_size:
+            raise VocabularyError(
+                f"Pack vocab_size ({self.config.vocab_size}) exceeds model "
+                f"max_vocab_size ({max_vocab_size}). Tokens would produce "
+                f"out-of-range embedding indices at inference time."
+            )
 
         logger.info(f"Creating pack '{pack_name}' using {mode.value} mode")
         logger.info(f"Languages: {languages}")
@@ -489,7 +531,7 @@ class UnifiedVocabularyCreator:
         vocab_data: Dict[str, Any],
         languages: List[str]
     ) -> VocabStats:
-        """Calculate vocabulary statistics"""
+        """Calculate vocabulary statistics with real corpus measurements."""
         total_tokens = sum(
             len(vocab_data.get(key, {}))
             for key in ['tokens', 'subwords', 'special_tokens']
@@ -503,11 +545,48 @@ class UnifiedVocabularyCreator:
         json_size = len(json.dumps(vocab_data).encode())
         compression_ratio = json_size / len(packed) if packed else 1.0
 
-        # Coverage estimate
-        coverage = min(95.0, (total_tokens / self.config.vocab_size) * 100)
+        # Real coverage: measure against sampled corpus lines
+        all_vocab = {
+            **vocab_data.get('tokens', {}),
+            **vocab_data.get('subwords', {}),
+            **vocab_data.get('special_tokens', {})
+        }
+        vocab_lower = {k.lower() for k in all_vocab}
 
-        # OOV estimate
-        oov_rate = max(0.01, 1.0 - (total_tokens / self.config.vocab_size))
+        total_words = 0
+        covered_words = 0
+        words_seen = 0
+        oov_words = 0
+        sample_size = self.config.quality_sample_size
+
+        for lang in languages:
+            if lang not in self.corpus_paths:
+                continue
+            corpus_path = self.corpus_paths[lang]
+            try:
+                with open(corpus_path, 'r', encoding='utf-8') as f:
+                    for i, line in enumerate(f):
+                        if i >= sample_size:
+                            break
+                        words = line.strip().split()
+                        total_words += len(words)
+                        for w in words:
+                            wl = w.lower()
+                            if wl in vocab_lower:
+                                covered_words += 1
+                            else:
+                                oov_words += 1
+                            words_seen += 1
+            except (IOError, OSError):
+                continue
+            break
+
+        if total_words > 0:
+            coverage = (covered_words / total_words) * 100
+            oov_rate = oov_words / total_words
+        else:
+            coverage = 0.0
+            oov_rate = 1.0
 
         return VocabStats(
             total_tokens=total_tokens,
@@ -559,7 +638,23 @@ class UnifiedVocabularyCreator:
 
                 if total_words > 0:
                     metrics['unigram_coverage'] = covered_words / total_words
-                    metrics['bigram_coverage'] = metrics['unigram_coverage'] ** 2
+                    # Bigram coverage: fraction of adjacent word pairs where
+                    # both words are in vocabulary
+                    with open(corpus_path, 'r', encoding='utf-8') as f2:
+                        bigram_hits = 0
+                        bigram_total = 0
+                        for i, line in enumerate(f2):
+                            if i >= self.config.quality_sample_size:
+                                break
+                            words = line.strip().split()
+                            for j in range(len(words) - 1):
+                                bigram_total += 1
+                                if (words[j].lower() in all_vocab and
+                                        words[j + 1].lower() in all_vocab):
+                                    bigram_hits += 1
+                    metrics['bigram_coverage'] = (
+                        bigram_hits / bigram_total if bigram_total > 0 else 0.0
+                    )
 
                 break
 
@@ -639,7 +734,7 @@ if __name__ == "__main__":
     parser.add_argument("--pack", dest="pack_name", help="Pack name (for create)")
     parser.add_argument("--langs", nargs="*", help="Languages (for create)")
     parser.add_argument("--mode", choices=["production", "research", "hybrid"], default="production")
-    parser.add_argument("--corpus_dir", default=str(self.runtime_dirs.processed_dir))
+    parser.add_argument("--corpus_dir", default=str(RuntimeDirectoryManager().processed_dir))
     parser.add_argument("--output_dir", default=str(RuntimeDirectoryManager().vocab_dir))
     parser.add_argument("--groups", nargs="*", help="Groups to create for create_all")
     args = parser.parse_args()

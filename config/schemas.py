@@ -110,9 +110,6 @@ class TrainingConfig(BaseModel):
     resume_from: Optional[str] = None
     validate_only: Optional[bool] = False
     checkpoint: Optional[str] = None
-    dynamic_vocabulary: bool = True
-    vocab_switch_penalty: float = 0.001
-    language_to_pack_mapping: Optional[Dict[str, str]] = None
     use_lora: bool = True
     use_param_groups: bool = False
     use_temperature_sampling: bool = False
