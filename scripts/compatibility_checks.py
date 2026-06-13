@@ -8,6 +8,7 @@ Additional API/schema/tokenizer compatibility checks beyond SemVer.
 - Optionally validates ONNX model opset/runtime when models are present
 - Emits non-zero exit on hard failures; warns on missing optional metadata
 """
+import hashlib
 import json
 import sys
 import re

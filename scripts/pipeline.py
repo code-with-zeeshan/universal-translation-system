@@ -121,12 +121,15 @@ def run_vocab_creator(
 def run_bootstrap(
     encoder_model: str = 'xlm-roberta-base',
     decoder_model: str = 'facebook/mbart-large-50',
-    encoder_out: str = 'self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"',
-    decoder_out: str = 'self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"',
+    encoder_out: str | None = None,
+    decoder_out: str | None = None,
     target_hidden_dim: int = 1024,
     device: str = 'auto',
 ) -> None:
     """Bootstrap encoder and decoder from pretrained sources."""
+    rdm = RuntimeDirectoryManager()
+    encoder_out = encoder_out or str(rdm.encoder_models_dir / "universal_encoder_initial.pt")
+    decoder_out = decoder_out or str(rdm.decoder_models_dir / "universal_decoder_initial.pt")
     bs = PretrainedModelBootstrapper(device=device)
     bs.create_encoder_from_pretrained(
         model_name=encoder_model,
@@ -259,9 +262,10 @@ def run_all(config_path: str) -> None:
 
     # 5) Convert to ONNX (encoder example)
     logger.info("[ALL] Converting encoder to ONNX...")
+    rdm = RuntimeDirectoryManager()
     run_convert(
         task='pytorch-to-onnx',
-        model_path='self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"',
+        model_path=str(rdm.encoder_models_dir / "universal_encoder_initial.pt"),
         output_path='models/encoder/universal_encoder.onnx',
         opset=17,
         use_dynamo=True,

@@ -163,11 +163,11 @@ def cmd_data(args: argparse.Namespace):
     elif args.augment:
         _run_module("pipeline/data/augmentation.py")
     elif args.validate_data:
-        _run("pipeline.data.orchestrator", config=config, stage="validate")
+        _run("pipeline.data.orchestrator", config=config_path, stage="validate")
     elif args.interactive:
         _run_script("scripts/data_pipeline_wizard.py")
     elif args.domains:
-        _run_module("tools/domain_data.py", "--domains", args.domains)
+        _run_module("tools/domain_data.py", "--domain", args.domains)
     else:
         print("See: uts data --help")
 
@@ -246,7 +246,7 @@ def _data_config_hash(config_path: str) -> str:
 def cmd_train(args: argparse.Namespace):
     if args.full:
         checkpoint = args.checkpoint or _find_latest_checkpoint()
-        _run("pipeline.training.trainer" if args.distributed else "pipeline.training.launch",
+        _run("pipeline.training.launch",
              "train",
              config=args.config,
              distributed=args.distributed,
@@ -353,7 +353,7 @@ def cmd_publish(args: argparse.Namespace):
         _run_module("tools/cloud_preflight.py")
         return
     if args.optimize_decoder:
-        _run_module("cloud_decoder/quantize_optimize.py")
+        _run_module("runtime/cloud_decoder/quantize_optimize.py")
         return
     _run_script("scripts/publish.py", *cmd)
 
@@ -372,9 +372,9 @@ def build_publish_parser(sub: argparse.ArgumentParser):
 
 def cmd_serve(args: argparse.Namespace):
     if args.decoder:
-        _run_module("cloud_decoder/decoder_server.py")
+        _run_module("runtime/cloud_decoder/decoder_server.py")
     elif args.coordinator:
-        _run_module("coordinator/advanced_coordinator.py")
+        _run_module("runtime/coordinator/advanced_coordinator.py")
     elif args.setup:
         _run_script("scripts/setup_serving.sh", *(["--all"] if args.all else []))
     elif args.redis:
