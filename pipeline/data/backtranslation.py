@@ -105,8 +105,9 @@ def download_wikipedia_corpus(
 class WikipediaBacktranslator:
     """Download Wikipedia dumps and create backtranslation pairs via NLLB."""
 
-    def __init__(self, output_dir: str = "data/raw"):
-        self.output_dir = Path(output_dir)
+    def __init__(self, output_dir: str | None = None):
+        from utils.common_utils import RuntimeDirectoryManager
+        self.output_dir = Path(output_dir) if output_dir else RuntimeDirectoryManager().raw_dir
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.logger = logging.getLogger(__name__)
 

@@ -159,7 +159,9 @@ def main():
     """Standalone: distill sampled data."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     distiller = KnowledgeDistillator()
-    stats = distiller.distill_sampled_dir("data/processed/sampled", "data/processed/distilled")
+    from utils.common_utils import RuntimeDirectoryManager
+    rdm = RuntimeDirectoryManager()
+    stats = distiller.distill_sampled_dir(str(rdm.sampled_dir), str(rdm.distilled_dir))
     for pair, count in stats.items():
         print(f"  {pair}: {count:,}")
 

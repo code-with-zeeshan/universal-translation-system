@@ -17,7 +17,7 @@ from .system_config import SystemConfig
 from .system_health import SystemHealthMonitor
 from monitoring.health_service import start_health_service
 from pipeline.training.datasets import ModernParallelDataset
-from utils.constants import DATA_PROCESSED_DIR
+from utils.common_utils import RuntimeDirectoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ class UniversalTranslationSystem:
 
             # Build a RootConfig from SystemConfig for pipeline compatibility
             root_config = RootConfig(
-                data=DataConfig(processed_dir=str(Path(self.config.data_dir) / DATA_PROCESSED_DIR)),
+                data=DataConfig(processed_dir=str(RuntimeDirectoryManager().processed_dir)),
                 model=ModelConfig(),
                 training=TrainingConfig(batch_size=self.config.batch_size),
                 memory=MemoryConfig(),
@@ -171,7 +171,7 @@ class UniversalTranslationSystem:
             connector = PipelineConnector(config=root_config)
 
             # Check if data exists
-            processed_dir = Path(self.config.data_dir) / DATA_PROCESSED_DIR
+            processed_dir = RuntimeDirectoryManager().processed_dir
             if not processed_dir.exists():
                 logger.info("📥 No processed data found. Running data pipeline...")
                 try:

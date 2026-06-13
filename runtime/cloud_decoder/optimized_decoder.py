@@ -350,7 +350,7 @@ async def startup_validation():
             raise RuntimeError("core.apiVersion missing in version-config.json")
         if str(API_VERSION) != core_api:
             raise RuntimeError(f"API_VERSION ({API_VERSION}) != core.apiVersion ({core_api})")
-        manifest = Path("vocabulary/manifest.json")
+        manifest = RuntimeDirectoryManager().vocab_manifest_path
         if manifest.exists():
             data = json.loads(manifest.read_text(encoding="utf-8"))
             fmt = str(data.get("format_version", "")).split(".")[0]

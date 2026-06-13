@@ -71,8 +71,8 @@ if __name__ == "__main__":
     # Create all deployment versions
     results = quantizer.create_deployment_versions(
         master_model_path=str(RuntimeDirectoryManager().production_dir / "encoder_master.pt"),
-        calibration_data_path="data/calibration_data.pt",
-        test_data_path="data/test_data.pt"
+        calibration_data_path=str(RuntimeDirectoryManager().processed_dir / "calibration_data.pt"),
+        test_data_path=str(RuntimeDirectoryManager().processed_dir / "test_data.pt")
     )
 
     # Print results

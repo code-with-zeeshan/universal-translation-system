@@ -103,7 +103,7 @@ class RuntimeDirectoryManager:
         mgr.ensure_data_structure()
     """
 
-    def __init__(self, config: Optional['RootConfig'] = None, root: Union[str, Path] = "."):
+    def __init__(self, config: Optional['RootConfig'] = None, root: Union[str, Path] = "output"):
         self.root = Path(root).resolve()
         self.config = config
 

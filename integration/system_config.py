@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 class IntegrationSystemConfig(BaseModel):
     """Configuration for the integrated system with validation"""
-    data_dir: str = Field(default="data", description="Data directory path")
-    model_dir: str = Field(default="models", description="Model directory path")
-    vocab_dir: str = Field(default="vocabulary/vocab", description="Vocabulary directory path")
+    data_dir: str = Field(default_factory=lambda: str(RuntimeDirectoryManager().data_dir), description="Data directory path")
+    model_dir: str = Field(default_factory=lambda: str(RuntimeDirectoryManager().models_dir), description="Model directory path")
+    vocab_dir: str = Field(default_factory=lambda: str(RuntimeDirectoryManager().vocab_dir), description="Vocabulary directory path")
     checkpoint_dir: str = Field(default_factory=lambda: str(RuntimeDirectoryManager().checkpoints_dir), description="Checkpoint directory")
     device: str = Field(default="cuda", description="Device for computation")
     use_adapters: bool = Field(default=True, description="Use language adapters")

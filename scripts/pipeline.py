@@ -290,8 +290,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # vocab
     sp = sub.add_parser('vocab', help='Create vocabulary packs')
-    sp.add_argument('--corpus-dir', type=str, default='data/processed', help='Input corpus directory')
-    sp.add_argument('--output-dir', type=str, default='vocabulary/vocab', help='Output directory for packs')
+    sp.add_argument('--corpus-dir', type=str, default=str(RuntimeDirectoryManager().processed_dir), help='Input corpus directory')
+    sp.add_argument('--output-dir', type=str, default=str(RuntimeDirectoryManager().vocab_dir), help='Output directory for packs')
     sp.add_argument('--mode', type=str, default='production', choices=[m.value for m in CreationMode], help='Creation mode')
     sp.add_argument('--groups', nargs='*', help='Specific groups to create (default: all)')
     sp.add_argument('--vocab-size', type=int, help='Override vocab size')

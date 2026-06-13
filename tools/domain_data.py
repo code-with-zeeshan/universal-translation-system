@@ -15,7 +15,10 @@ class DomainDataAcquirer:
     """
     Downloads and preprocesses domain-specific parallel corpora.
     """
-    def __init__(self, output_base_dir: str = "data/raw"):
+    def __init__(self, output_base_dir: str | None = None):
+        if output_base_dir is None:
+            from utils.common_utils import RuntimeDirectoryManager
+            output_base_dir = str(RuntimeDirectoryManager().raw_dir)
         self.output_base_dir = Path(output_base_dir)
         DirectoryManager.create_directory(self.output_base_dir)
         logger.info(f"Domain data will be saved in: {self.output_base_dir}")
