@@ -8,7 +8,7 @@ safetensors>=0.4.0
 # == Data Processing & Vocabulary ==
 aiofiles>=23.2.1
 datasets>=2.16.0,<2.20.0
-lz4>=4.3.2
+lz4>=4.4.5
 msgpack>=1.0.0
 numpy>=1.24.0,<2.0.0
 pandas>=2.0.0
