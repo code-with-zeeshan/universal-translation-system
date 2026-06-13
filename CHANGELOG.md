@@ -15,6 +15,11 @@ All notable changes to the Universal Translation System will be documented in th
 - **`utils/logging_config.py`**: 6 section handler filenames changed from `LOG_DIR` constant to `log_dir` parameter (defaults to `RDM().logs_dir`). `LOG_DIR` import removed.
 - **`utils/common_utils.py`**: `RuntimeDirectoryManager.config` typed as `Optional[RootConfig]` (was `Optional[object]`). `LOG_DIR` import removed from this file.
 - **`utils/logging_config.py`**: `setup_logging()` default `log_dir` changed to `str(RuntimeDirectoryManager().logs_dir)`
+- **`utils/logging_config.py`**: `create_logs_structure()` now receives caller-supplied `log_dir` (was hardcoded `RDM().logs_dir`)
+- **`utils/logging_config.py`**: root log file renamed from `translation_system.log` → `universal_translation_system.log`
+- **`utils/logging_config.py`**: per-component `error.log` files added to all 7 section subdirectories (`data/`, `training/`, `monitoring/`, `coordinator/`, `decoder/`, `vocabulary/`, `evaluation/`) — each component writes ERROR level to both its own `error.log` and the root `errors.log`
+- **`utils/logging_config.py`**: `evaluation` namespace now has dedicated logger, handler, and error handler (was orphan — previously wrote only to root)
+- **`utils/logging_config.py`**: silent `except Exception: pass` on directory creation replaced with `logger.debug(..., exc_info=True)`
 - **Eval data stages** (`download_evaluation`) removed from default `enabled_stages` in `PipelineConfig`. Heavy stages (`comet_quality`, `wikipedia_backtranslation`, `direct_opus`, `knowledge_distillation`) opt-in via config or `uts data --interactive`
 - **Decoder consolidation**: `runtime/cloud_decoder/decoder_server.py` now imports model classes from `decoder_core.py` instead of maintaining its own copy (~140 lines removed)
 - **`DataConfig.seed`** now read directly as `self.config.data.seed` (was accessed via `getattr` fallback)
@@ -25,6 +30,7 @@ All notable changes to the Universal Translation System will be documented in th
 - **`pipeline/training/launch.py`**, **`monitoring/metrics_collector.py`**: `sys.path` hacks removed (kept in standalone scripts only)
 
 ### Fixed
+- **8 CLI dispatch bugs**: (1) `uts.py:166` — undefined `config` → `config_path`; (2-4) `uts.py:356,375,377` — wrong module paths `cloud_decoder/` → `runtime/cloud_decoder/`, `coordinator/` → `runtime/coordinator/`; (5) `uts.py:170` — `--domains` → `--domain` arg name mismatch; (6) `uts.py:249` — non-distributed train called `trainer` (no CLI), now always dispatches to `launch`; (7) `scripts/compatibility_checks.py:150` — missing `import hashlib`; (8) `scripts/pipeline.py:124,264` — string literal paths now resolved via `RuntimeDirectoryManager()`
 - **3 critical bugs**: string literal defaults in `pipeline/training/datasets.py` and `scripts/pipeline.py` (vocab_dir, encoder-out); duplicate import in `pipeline/data/orchestrator.py`
 - **All `except Exception: pass` blocks** — 7 blocks across `evaluation/evaluator.py`, `runtime/vocabulary/manager.py`, `integration/system_health.py` (x2), `runtime/cloud_decoder/optimized_decoder.py` (x3): changed to `logger.*warning|debug*(..., exc_info=True)`. No bare `except:` remains in production code.
 - **Unused imports** — 16 removed: `litserve`, `msgpack`, `yaml`, `gpu_utilization` from `optimized_decoder.py`; `torch.nn.functional`, `FSDP`, `transformer_auto_wrap_policy`, `psutil`, `warnings`, `dataclass` from `memory/trainer.py`; 6 unused re-exports from `utils/__init__.py`
