@@ -25,10 +25,12 @@ def exists(p: Path) -> bool:
 
 
 def check_processed_data(cfg) -> dict:
-    base = Path(cfg.data.processed_dir)
+    from utils.common_utils import RuntimeDirectoryManager
+    _rdm = RuntimeDirectoryManager(config=cfg)
+    base = _rdm.processed_dir
     files = {
-        "train": base / "train_final.txt",
-        "val": base / "val_final.txt",
+        "train": _rdm.train_final_path,
+        "val": _rdm.val_final_path,
         "test": base / "test_final.txt",
     }
     present = {k: exists(v) for k, v in files.items()}
@@ -36,9 +38,11 @@ def check_processed_data(cfg) -> dict:
 
 
 def check_vocab(cfg) -> dict:
-    vocab_dir = Path(cfg.vocabulary.vocab_dir)
+    from utils.common_utils import RuntimeDirectoryManager
+    _rdm = RuntimeDirectoryManager(config=cfg)
+    vocab_dir = _rdm.vocab_dir
     packs = list(vocab_dir.glob("*_v*.msgpack")) if exists(vocab_dir) else []
-    manifest = vocab_dir / "manifest.json"
+    manifest = _rdm.vocab_manifest_path
     return {
         "path": str(vocab_dir),
         "pack_count": len(packs),

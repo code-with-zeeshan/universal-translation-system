@@ -231,20 +231,21 @@ class UniversalTranslationSystem:
             OptimizedVocabularyManager = lambda *args, **kwargs: UnifiedVocabularyManager(*args, mode=VocabularyMode.OPTIMIZED, **kwargs)
 
             # Check if vocabulary packs exist
-            vocab_path = Path(self.config.vocab_dir)
+            _rdm = RuntimeDirectoryManager()
+            vocab_path = _rdm.vocab_dir
             if not vocab_path.exists() or not list(vocab_path.glob("*.msgpack")):
                 logger.info("📝 Creating vocabulary packs...")
 
                 # Create vocabulary packs
                 creator = VocabularyPackCreator(
-                    corpus_dir=f"{self.config.data_dir}/processed/corpus",
-                    output_dir=self.config.vocab_dir
+                    corpus_dir=str(_rdm.corpus_dir),
+                    output_dir=str(_rdm.vocab_dir)
                 )
                 creator.create_all_packs()
 
             # Initialize optimized manager
             self.vocab_manager = OptimizedVocabularyManager(
-                vocab_dir=self.config.vocab_dir,
+                vocab_dir=str(_rdm.vocab_dir),
                 cache_size=self.config.vocab_cache_size
             )
 
@@ -387,7 +388,7 @@ class UniversalTranslationSystem:
             logger.error("❌ Training system not initialized")
             return
 
-        save_dir = save_dir or f"{self.config.checkpoint_dir}/progressive"
+        save_dir = save_dir or str(RuntimeDirectoryManager().checkpoints_dir / "progressive")
 
         logger.info("🏃 Starting progressive training...")
         self.trainer.train_progressive(save_dir=save_dir)
@@ -401,7 +402,7 @@ class UniversalTranslationSystem:
         from runtime.encoder.train_adapters import AdapterTrainer
 
         adapter_trainer = AdapterTrainer(
-            base_model_path=f"{self.config.model_dir}/universal_encoder.pt"
+            base_model_path=str(RuntimeDirectoryManager().production_dir / "universal_encoder.pt")
         )
 
         # Create data loaders for each language

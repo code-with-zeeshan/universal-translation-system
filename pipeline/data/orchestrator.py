@@ -209,32 +209,33 @@ class UnifiedDataPipeline:
         Prevents skipping stages whose checkpoint metadata says 'done'
         but whose artifacts were deleted or never created.
         """
+        _rdm = self.runtime_dirs
         VERIFIERS = {
-            PipelineStage.VOCABULARY: lambda c: (
-                Path(c.vocabulary.vocab_dir).is_dir()
-                and bool(list(Path(c.vocabulary.vocab_dir).glob("*_v*.msgpack")))
+            PipelineStage.VOCABULARY: lambda _: (
+                _rdm.vocab_dir.is_dir()
+                and bool(list(_rdm.vocab_dir.glob("*_v*.msgpack")))
             ),
-            PipelineStage.DOWNLOAD_TRAIN: lambda c: (
-                (Path(c.data.processed_dir) / "corpus").is_dir()
-                and any((Path(c.data.processed_dir) / "corpus").glob("*_corpus.txt"))
+            PipelineStage.DOWNLOAD_TRAIN: lambda _: (
+                (_rdm.processed_dir / "corpus").is_dir()
+                and any((_rdm.processed_dir / "corpus").glob("*_corpus.txt"))
             ),
-            PipelineStage.SAMPLE_FILTER: lambda c: (
-                (Path(c.data.processed_dir) / "sampled").is_dir()
-                and any((Path(c.data.processed_dir) / "sampled").glob("*_sampled.txt"))
+            PipelineStage.SAMPLE_FILTER: lambda _: (
+                (_rdm.processed_dir / "sampled").is_dir()
+                and any((_rdm.processed_dir / "sampled").glob("*_sampled.txt"))
             ),
-            PipelineStage.AUGMENT: lambda c: (
-                (Path(c.data.processed_dir) / "augment").is_dir()
+            PipelineStage.AUGMENT: lambda _: (
+                (_rdm.processed_dir / "augment").is_dir()
             ),
-            PipelineStage.CREATE_READY: lambda c: (
-                (Path(c.data.processed_dir) / TRAIN_FINAL_FILENAME).is_file()
+            PipelineStage.CREATE_READY: lambda _: (
+                (_rdm.train_final_path).is_file()
             ),
-            PipelineStage.VALIDATE: lambda c: True,
-            PipelineStage.COMET_QUALITY: lambda c: True,
+            PipelineStage.VALIDATE: lambda _: True,
+            PipelineStage.COMET_QUALITY: lambda _: True,
         }
         check = VERIFIERS.get(stage)
         if check is None:
             return True
-        return check(self.config)
+        return check(None)
 
     # ============= MAIN PIPELINE EXECUTION =============
     

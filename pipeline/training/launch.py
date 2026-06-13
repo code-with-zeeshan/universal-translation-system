@@ -166,8 +166,10 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     """Load training and validation datasets"""
     logger.info("📚 Loading datasets...")
     
-    train_path = Path(config.data.processed_dir) / TRAIN_FINAL_FILENAME
-    val_path = Path(config.data.processed_dir) / VAL_FINAL_FILENAME
+    from utils.common_utils import RuntimeDirectoryManager
+    _rdm = RuntimeDirectoryManager(config=config)
+    train_path = _rdm.train_final_path
+    val_path = _rdm.val_final_path
     
     if not train_path.exists():
         logger.error(f"Training data not found at {train_path}")
@@ -388,7 +390,7 @@ def launch_evaluation(args: argparse.Namespace):
     
     # Load test dataset
     test_dataset = ModernParallelDataset(
-        args.test_data or str(Path(config.data.processed_dir) / TEST_FINAL_FILENAME),
+        args.test_data or str(RuntimeDirectoryManager(config=config).processed_dir / TEST_FINAL_FILENAME),
         vocab_dir=self.runtime_dirs.vocab_dir
     )
     

@@ -62,10 +62,12 @@ class SystemHealthMonitor:
 
     async def _check_data_pipeline(self) -> Dict[str, Any]:
         """Check data pipeline health"""
+        from utils.common_utils import RuntimeDirectoryManager
+        _rdm = RuntimeDirectoryManager()
         return {
             'status': 'healthy' if self.system.data_pipeline is not None else 'not_initialized',
-            'data_dir_exists': Path(self.system.config.data_dir).exists(),
-            'processed_data_exists': (Path(self.system.config.data_dir) / "processed").exists()
+            'data_dir_exists': _rdm.data_dir.exists(),
+            'processed_data_exists': _rdm.processed_dir.exists()
         }
 
     async def _check_vocab_manager(self) -> Dict[str, Any]:
