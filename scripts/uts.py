@@ -72,7 +72,8 @@ def _scale_config(config_path: str, scale: float) -> str:
 
 def _find_latest_checkpoint() -> str | None:
     """Return the most recently modified .pt file in checkpoints/."""
-    candidates = sorted(Path("checkpoints").rglob("*.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    from utils.common_utils import RuntimeDirectoryManager
+    candidates = sorted(RuntimeDirectoryManager().checkpoints_dir.rglob("*.pt"), key=lambda p: p.stat().st_mtime, reverse=True)
     if candidates:
         print(f"→ Auto-detected checkpoint: {candidates[0]}")
         return str(candidates[0])
@@ -163,6 +164,8 @@ def cmd_data(args: argparse.Namespace):
         _run_module("pipeline/data/augmentation.py")
     elif args.validate_data:
         _run("pipeline.data.orchestrator", config=config, stage="validate")
+    elif args.interactive:
+        _run_script("scripts/data_pipeline_wizard.py")
     elif args.domains:
         _run_module("tools/domain_data.py", "--domains", args.domains)
     else:
@@ -171,6 +174,7 @@ def cmd_data(args: argparse.Namespace):
 
 def build_data_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--pipeline", action="store_true", help="Run the full data pipeline")
+    sub.add_argument("--interactive", action="store_true", help="Interactive stage selector (TUI wizard)")
     sub.add_argument("--download-only", action="store_true", help="Download evaluation data only")
     sub.add_argument("--augment", action="store_true", help="Run synthetic data augmentation")
     sub.add_argument("--validate-data", action="store_true", help="Validate pipeline output")
@@ -298,7 +302,7 @@ def build_train_parser(sub: argparse.ArgumentParser):
 
 def cmd_eval(args: argparse.Namespace):
     if args.model:
-        eval_dir = Path(args.test_data or "data/evaluation")
+        eval_dir = Path(args.test_data or str(RuntimeDirectoryManager().eval_data_dir))
         if not eval_dir.exists() or not any(eval_dir.iterdir()):
             print("→ Eval data missing, downloading...")
             _run("pipeline.data.orchestrator", config=args.config, eval_only=True)
@@ -326,7 +330,7 @@ def build_eval_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--benchmark", action="store_true", help="Benchmark model performance")
     sub.add_argument("--config", default="config/base.yaml", help="Config file path")
     sub.add_argument("--checkpoint", help="Path to model checkpoint (.pt)")
-    sub.add_argument("--test-data", default="data/evaluation", help="Test data directory")
+    sub.add_argument("--test-data", default=str(RuntimeDirectoryManager().eval_data_dir), help="Test data directory")
     sub.add_argument("--profile-steps", type=int, default=10, help="Steps to profile")
     sub.add_argument("--output-dir", default="profiling", help="Profiling output directory")
     sub.add_argument("--force", action="store_true",

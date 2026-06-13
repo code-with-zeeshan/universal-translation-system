@@ -46,8 +46,10 @@ def make_store(repo_id: Optional[str], revision: Optional[str]) -> ArtifactStore
         sys.exit(2)
     token = os.environ.get("HF_TOKEN")
     rev = revision or os.environ.get("HF_HUB_REVISION", "main")
-    models_dir = Path(os.environ.get("MODELS_DIR", "models"))
-    vocabs_dir = Path(os.environ.get("VOCABS_DIR", "vocabulary/vocab"))
+    from utils.common_utils import RuntimeDirectoryManager
+    _rdm = RuntimeDirectoryManager()
+    models_dir = Path(os.environ.get("MODELS_DIR", str(_rdm.models_dir)))
+    vocabs_dir = Path(os.environ.get("VOCABS_DIR", str(_rdm.vocab_dir)))
     adapters_dir = Path(os.environ.get("ADAPTERS_DIR", str(models_dir / "adapters")))
 
     cfg = StoreConfig(

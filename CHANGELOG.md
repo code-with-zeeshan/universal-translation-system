@@ -5,6 +5,31 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
+- **Interactive data pipeline wizard** (`scripts/data_pipeline_wizard.py`): TUI with arrow-key navigation, spacebar toggle, dynamic time estimation, and config YAML generation. Invoked via `uts data --interactive`
+- **Config schemas for data_strategy, security, distributed** — `DataStrategyConfig`, `SecurityConfig`, `DistributedConfig` Pydantic models added to `config/schemas.py`, wired into `RootConfig` (was `extra = "allow"`, now validated)
+- **`cache_dir` field** to `DataConfig` schema (was used by `RuntimeDirectoryManager._cfg()` but not validated)
+
+### Changed
+- **All runtime paths now managed by `RuntimeDirectoryManager`** — 16 files with hardcoded paths + 20 files importing path constants from `utils.constants` migrated to RDM. `utils/constants.py` path constants deprecated in favor of `RuntimeDirectoryManager` (kept for backward compat and env-override)
+- **`utils/constants.py` docstring** updated: path constants marked as deprecated, pointing to RDM
+- **`utils/logging_config.py`**: 6 section handler filenames changed from `LOG_DIR` constant to `log_dir` parameter (defaults to `RDM().logs_dir`). `LOG_DIR` import removed.
+- **`utils/common_utils.py`**: `RuntimeDirectoryManager.config` typed as `Optional[RootConfig]` (was `Optional[object]`). `LOG_DIR` import removed from this file.
+- **`utils/logging_config.py`**: `setup_logging()` default `log_dir` changed to `str(RuntimeDirectoryManager().logs_dir)`
+- **Eval data stages** (`download_evaluation`) removed from default `enabled_stages` in `PipelineConfig`. Heavy stages (`comet_quality`, `wikipedia_backtranslation`, `direct_opus`, `knowledge_distillation`) opt-in via config or `uts data --interactive`
+- **Decoder consolidation**: `runtime/cloud_decoder/decoder_server.py` now imports model classes from `decoder_core.py` instead of maintaining its own copy (~140 lines removed)
+- **`DataConfig.seed`** now read directly as `self.config.data.seed` (was accessed via `getattr` fallback)
+- **`pipeline/data/orchestrator.py::main()`**: `print()` → `logger.info()`
+- **`pipeline/data/downloader.py::main()`**: `print()` → `logger.info()`
+- **`runtime/cloud_decoder/optimized_decoder.py`**: Last `print()` → `logger.info()` in config reload handler
+- **`runtime/coordinator/advanced_coordinator.py`**: All `os.path.*` calls (11) replaced with `pathlib.Path` equivalents
+- **`pipeline/training/launch.py`**, **`monitoring/metrics_collector.py`**: `sys.path` hacks removed (kept in standalone scripts only)
+
+### Fixed
+- **3 critical bugs**: string literal defaults in `pipeline/training/datasets.py` and `scripts/pipeline.py` (vocab_dir, encoder-out); duplicate import in `pipeline/data/orchestrator.py`
+- **All `except Exception: pass` blocks** — 7 blocks across `evaluation/evaluator.py`, `runtime/vocabulary/manager.py`, `integration/system_health.py` (x2), `runtime/cloud_decoder/optimized_decoder.py` (x3): changed to `logger.*warning|debug*(..., exc_info=True)`. No bare `except:` remains in production code.
+- **Unused imports** — 16 removed: `litserve`, `msgpack`, `yaml`, `gpu_utilization` from `optimized_decoder.py`; `torch.nn.functional`, `FSDP`, `transformer_auto_wrap_policy`, `psutil`, `warnings`, `dataclass` from `memory/trainer.py`; 6 unused re-exports from `utils/__init__.py`
+- **Dead code** — unreachable block in `pipeline/training/trainer.py:495-503` removed; `utils/dataset_classes.py` stub deleted (4 imports updated); `vocabulary/` top-level shim deleted
+- **Duplicate imports**: `from pathlib import Path` duplicated in `downloader.py`; `import sys` unused in `downloader.py::main()`; 2 local `from pathlib import Path` inside functions in `advanced_coordinator.py`
 - **Auto-resume pipeline** (`utils/pipeline_checkpoint.py`): `PhaseCheckpoint` class with config-hash fingerprinting, cross-stage data→train→eval tracking via global `pipeline_state.json`, sub-stage per-pair completion tracking, and `invalidate_downstream()` for config-change detection
 - **Per-pair checkpointing** for data pipeline sub-stages: idiom, false-friend, dynamic, and backtranslation files tracked individually so partial runs skip only what's done
 - **Dynamic batch sizing for NLLB pipeline** (`data/synthetic_augmentation.py`): `_probe_pipeline_batch_size()` runs progressive `model.generate()` from 16→probe_limit at startup, finding the true max batch size for the GPU (L4 finds ~1024, A100 80GB finds ~2048)

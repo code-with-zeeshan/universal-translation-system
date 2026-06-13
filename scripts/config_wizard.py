@@ -11,7 +11,7 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from utils.constants import LOG_DIR
+from utils.common_utils import RuntimeDirectoryManager
 
 def get_user_input(prompt: str, default: Optional[str] = None) -> str:
     """Get user input with optional default value"""
@@ -307,7 +307,7 @@ def create_deployment_config() -> Dict[str, Any]:
                 "local": {
                     "api_port": port,
                     "use_gpu": use_gpu,
-                    "log_dir": LOG_DIR
+                    "log_dir": str(RuntimeDirectoryManager().logs_dir)
                 }
             }
         }
@@ -364,7 +364,7 @@ def create_logging_config() -> Dict[str, Any]:
     level_idx = get_numeric_input("Select log level (number)", 2, min_value=1, max_value=len(log_level_options)) - 1
     log_level = log_level_options[level_idx]
     
-    log_dir = get_user_input("Log directory", LOG_DIR)
+    log_dir = get_user_input("Log directory", str(RuntimeDirectoryManager().logs_dir))
     
     return {
         "logging": {

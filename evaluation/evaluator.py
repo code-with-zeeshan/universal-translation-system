@@ -1,3 +1,4 @@
+from utils.common_utils import RuntimeDirectoryManager
 import torch
 from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
@@ -384,7 +385,7 @@ class TranslationEvaluator:
 
             # Save cache if enabled
             if cache and cache_translations:
-                cache_file = Path("streaming_evaluation_cache.json")
+                cache_file = Path(str(self.runtime_dirs.streaming_eval_cache_path))
                 with open(cache_file, 'w') as f:
                     json.dump(cache, f, ensure_ascii=False, indent=2)
                 logger.info(f"Saved translation cache to {cache_file}")
@@ -489,7 +490,8 @@ class TranslationEvaluator:
             try:
                 bleu = corpus_bleu(predictions, [references])
                 return bleu.score
-            except:
+            except Exception:
+                logger.warning("BLEU calculation failed", exc_info=True)
                 return 0.0
         return 0.0
 
@@ -544,7 +546,7 @@ class TranslationEvaluator:
         source_texts = []
 
         # Cache file
-        cache_file = Path("evaluation_cache.json")
+        cache_file = Path(str(self.runtime_dirs.eval_reports_dir / "evaluation_cache.json"))
         cache = {}
 
         if use_cache and cache_file.exists():

@@ -1,6 +1,6 @@
 import pytest
 import torch
-from encoder.universal_encoder import UniversalEncoder
+from runtime.encoder.universal_encoder import UniversalEncoder
 
 def test_encoder_basic():
     encoder = UniversalEncoder()

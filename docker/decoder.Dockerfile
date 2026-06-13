@@ -38,7 +38,8 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu118
 
 # Copy decoder code and required shared modules
-COPY cloud_decoder /app
+COPY runtime/cloud_decoder /app/runtime/cloud_decoder
+COPY runtime/encoder /app/runtime/encoder
 COPY utils /app/utils
 COPY vocabulary /app/vocabulary
 COPY monitoring /app/monitoring
@@ -68,4 +69,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 USER appuser
 
 # Production runner: uvicorn
-CMD ["bash", "-lc", "uvicorn cloud_decoder.optimized_decoder:app --host 0.0.0.0 --port ${API_PORT:-8001}"]
+CMD ["bash", "-lc", "uvicorn runtime.cloud_decoder.optimized_decoder:app --host 0.0.0.0 --port ${API_PORT:-8001}"]

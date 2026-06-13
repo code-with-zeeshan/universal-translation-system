@@ -4,7 +4,7 @@ import warnings
 from pathlib import Path
 from typing import Optional, Dict, Any
 import logging
-from utils.constants import MODELS_PRODUCTION_DIR
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -317,32 +317,32 @@ if __name__ == "__main__":
     converter = ModelConverter()
     
     # Modern conversion pipeline
-    model_path = "models/universal_encoder.pt"
+    from utils.common_utils import RuntimeDirectoryManager
+    _rdm = RuntimeDirectoryManager()
+    model_path = str(_rdm.encoder_models_dir / "universal_encoder_initial.pt")
+    onnx_path = str(_rdm.production_dir / "universal_encoder.onnx")
     dummy_input = torch.randn(1, 512)
     
-    # Convert to ONNX with modern exporter
     success = converter.pytorch_to_onnx(
         model_path, 
-        "models/universal_encoder.onnx",
+        onnx_path,
         dummy_input,
         use_dynamo=True
     )
     
     if success:
-        # Validate conversion
         converter.validate_conversion(
             model_path,
-            "models/universal_encoder.onnx",
+            onnx_path,
             "onnx"
         )
         
-        # Convert to mobile formats
         converter.onnx_to_coreml(
-            "models/universal_encoder.onnx",
-            "models/universal_encoder.mlmodel"
+            onnx_path,
+            str(_rdm.production_dir / "universal_encoder.mlmodel")
         )
         
         converter.onnx_to_tflite(
-            "models/universal_encoder.onnx",
-            f"{MODELS_PRODUCTION_DIR}/universal_encoder.tflite"
+            onnx_path,
+            str(_rdm.production_dir / "universal_encoder.tflite")
         )

@@ -1,4 +1,4 @@
-# training/progressive_training.py (refactored - orchestrator version)
+# pipeline/training/progressive.py
 import torch
 import torch.multiprocessing as mp
 import yaml
@@ -12,12 +12,13 @@ from dataclasses import make_dataclass
 
 from utils.gpu_utils import optimize_gpu_memory
 from utils.shutdown_handler import GracefulShutdown
-from utils.constants import MODELS_ENCODER_DIR, MODELS_DECODER_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, LOG_DIR
+from utils.constants import TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME
+from utils.common_utils import RuntimeDirectoryManager
 from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
-from encoder.universal_encoder import UniversalEncoder
-from cloud_decoder import OptimizedUniversalDecoder
-from utils.dataset_classes import ModernParallelDataset
+from runtime.encoder.universal_encoder import UniversalEncoder
+from runtime.cloud_decoder import OptimizedUniversalDecoder
+from pipeline.training.datasets import ModernParallelDataset
 from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
 
 # Use FULL mode for training (needs all features)
@@ -36,7 +37,9 @@ class ProgressiveTrainingOrchestrator:
     
     def __init__(self, 
                  base_config_path: str = 'config/base.yaml',
-                 checkpoint_base_dir: str = 'checkpoints/progressive'):
+                 checkpoint_base_dir: str = 'checkpoints/progressive',
+                 runtime_dirs=None):
+        self.runtime_dirs = runtime_dirs or RuntimeDirectoryManager()
         
         self.base_config_path = Path(base_config_path)
         self.checkpoint_base_dir = Path(checkpoint_base_dir)
@@ -211,8 +214,8 @@ class ProgressiveTrainingOrchestrator:
         else:
             logger.info("No previous tier checkpoint found. Checking for bootstrapped models...")
             # --- ADDED: Load bootstrapped models if they exist ---
-            bootstrapped_encoder_path = Path(f"{MODELS_ENCODER_DIR}/universal_encoder_initial.pt")
-            bootstrapped_decoder_path = Path(f"{MODELS_DECODER_DIR}/universal_decoder_initial.pt")
+            bootstrapped_encoder_path = self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"
+            bootstrapped_decoder_path = self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"
 
             if bootstrapped_encoder_path.exists():
                 logger.info(f"Found bootstrapped encoder at {bootstrapped_encoder_path}. Loading weights...")
@@ -235,9 +238,9 @@ class ProgressiveTrainingOrchestrator:
         # Load datasets based on the tier's language configuration
         # This is a simplified example; in a real scenario, you would filter the main dataset
         # or load tier-specific data files.
-        train_data_path = Path(config_dict['data']['processed_dir']) / TRAIN_FINAL_FILENAME
-        val_data_path = Path(config_dict['data']['processed_dir']) / VAL_FINAL_FILENAME
+        train_data_path = self.runtime_dirs.train_final_path
 
+        val_data_path = self.runtime_dirs.val_final_path
         # --- MODIFIED: Filter dataset by active languages for the tier ---
         active_languages = tier_config.get('languages')
         logger.info(f"Filtering datasets for active languages: {active_languages}")
@@ -493,14 +496,14 @@ def main():
     
     # Setup logging
     from utils.logging_config import setup_logging
-    setup_logging(log_dir=f"{LOG_DIR}/progressive_training", log_level="INFO")
+    setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir / "progressive_training"), log_level="INFO")
     
     # Parse arguments
     import argparse
     parser = argparse.ArgumentParser(description="Progressive Training Orchestrator")
     parser.add_argument('--base-config', type=str, default='config/base.yaml',
                        help='Path to base configuration file')
-    parser.add_argument('--checkpoint-dir', type=str, default='checkpoints/progressive',
+    parser.add_argument('--checkpoint-dir', type=str, default=str(RuntimeDirectoryManager().checkpoints_dir / 'progressive'),
                        help='Directory for progressive training checkpoints')
     parser.add_argument('--start-from-tier', type=str, default=None,
                        help='Start from specific tier (tier1, tier2, tier3, tier4)')

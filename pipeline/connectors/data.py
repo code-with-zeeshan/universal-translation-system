@@ -1,4 +1,4 @@
-# connector/pipeline_connector.py
+# pipeline/connectors/data.py
 """Connects data pipeline → vocabulary creation → training"""
 from pathlib import Path
 import logging
@@ -8,10 +8,10 @@ from tqdm import tqdm
 from datetime import datetime
 
 from pipeline.data.utils import merge_datasets
-from utils.common_utils import DirectoryManager
+from utils.common_utils import DirectoryManager, RuntimeDirectoryManager
 from utils.exceptions import DataError
 from config.schemas import RootConfig
-from utils.constants import DATA_SAMPLED_DIR, DATA_FINAL_DIR, DATA_CORPUS_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME
+from utils.constants import TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME
 
 class PipelineConnector:
     """Connects all pipeline stages"""
@@ -19,12 +19,12 @@ class PipelineConnector:
     def __init__(self, config: RootConfig):
         self.logger = logging.getLogger(__name__)
         self.config = config
+        self.runtime_dirs = RuntimeDirectoryManager()
         
     def create_monolingual_corpora(self):
         """Split parallel data into monolingual files for vocabulary creation"""
-        sampled_dir = Path(self.config.data.processed_dir) / DATA_SAMPLED_DIR
-        processed_dir = Path(self.config.data.processed_dir)
-        processed_dir.mkdir(exist_ok=True)
+        sampled_dir = self.runtime_dirs.sampled_dir
+        processed_dir = self.runtime_dirs.processed_dir
 
         if not sampled_dir.exists():
             self.logger.error(f"Sampled directory not found: {sampled_dir}")
@@ -66,7 +66,7 @@ class PipelineConnector:
                 continue
 
         # Also extract from augmented data (now in 4-column format)
-        final_dir = Path(self.config.data.processed_dir) / DATA_FINAL_DIR
+        final_dir = self.runtime_dirs.augment_dir
         if final_dir.exists():
             aug_files = list(final_dir.glob('*.txt')) + list(final_dir.glob('*/*.txt'))
             for file_path in aug_files:
@@ -86,8 +86,7 @@ class PipelineConnector:
                     continue
 
         # Write monolingual files with deduplication
-        corpus_dir = processed_dir / DATA_CORPUS_DIR
-        corpus_dir.mkdir(parents=True, exist_ok=True)
+        corpus_dir = self.runtime_dirs.corpus_dir
         for lang, texts in language_texts.items():
             output_file = corpus_dir / f"{lang}_corpus.txt"
             # Deduplicate texts
@@ -100,9 +99,9 @@ class PipelineConnector:
     
     def create_final_training_file(self):
         """Merge all data into final training file"""
-        sampled_dir = Path(self.config.data.processed_dir) / DATA_SAMPLED_DIR
-        final_dir = Path(self.config.data.processed_dir) / DATA_FINAL_DIR
-        processed_dir = Path(self.config.data.processed_dir)
+        sampled_dir = self.runtime_dirs.sampled_dir
+        final_dir = self.runtime_dirs.augment_dir
+        processed_dir = self.runtime_dirs.processed_dir
         
         # Collect all files to merge
         files_to_merge = []
@@ -117,15 +116,15 @@ class PipelineConnector:
             files_to_merge.extend(final_dir.glob('pivot_pairs/*.txt'))
         
         # Merge all
-        output_file = processed_dir / TRAIN_FINAL_FILENAME
+        output_file = self.runtime_dirs.train_final_path
         merge_datasets(files_to_merge, output_file)
         
         # Split into train and validation sets
-        val_file = processed_dir / VAL_FINAL_FILENAME
-        temp_file = processed_dir / 'train_temp.txt'
+        val_file = self.runtime_dirs.val_final_path
+        temp_file = self.runtime_dirs.train_temp_path
         with open(output_file, 'r', encoding='utf-8') as f_in:
             lines = f_in.readlines()
-        rng = random.Random(getattr(self.config.data, 'seed', 42))
+        rng = random.Random(self.config.data.seed)
         rng.shuffle(lines)
         split_idx = int(len(lines) * 0.9)
         with open(temp_file, 'w', encoding='utf-8') as f_train:

@@ -14,10 +14,10 @@ os.environ.setdefault("UTS_HMAC_KEY", "a" * 40)
 # 1. Project package stubs (prevent __init__.py from executing)
 # =========================================================================
 _PROJECT_PACKAGES = [
-    "utils", "data", "training", "integration",
-    "evaluation", "vocabulary", "config", "connector",
-    "monitoring", "tools", "encoder", 
-    "encoder_core", "coordinator", "cloud_decoder",
+    "utils", "integration",
+    "evaluation", "config",
+    "monitoring", "tools",
+    "runtime",
 ]
 
 for pkg in _PROJECT_PACKAGES:
@@ -946,7 +946,7 @@ _PROJECT_SUBMODULE_MOCKS = {
     }),
     'utils.validation_decorators': _make_mock_module('validation_decorators', {}),
     'utils.base_classes': _make_mock_module('base_classes', {}),
-    'utils.dataset_classes': _make_mock_module('dataset_classes', {'ModernParallelDataset': MagicMock()}),
+    'pipeline.training.datasets': _make_mock_module('pipeline.training.datasets', {'ModernParallelDataset': MagicMock()}),
     'utils.unified_validation': _make_mock_module('unified_validation', {'InputValidator': MagicMock()}),
     'utils.logging_config': _make_mock_module('logging_config', {'setup_logging': MagicMock()}),
     'utils.gpu_utils': _make_mock_module('gpu_utils', {

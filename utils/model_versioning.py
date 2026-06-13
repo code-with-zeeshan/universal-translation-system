@@ -41,8 +41,11 @@ def _compute_file_signature(path: Path, hmac_key: str) -> str:
 
 
 class ModelVersion:
-    def __init__(self, model_dir: str = "models", repo_id: Optional[str] = None,
+    def __init__(self, model_dir: str = "", repo_id: Optional[str] = None,
                  hmac_key: Optional[str] = None):
+        if not model_dir:
+            from utils.common_utils import RuntimeDirectoryManager
+            model_dir = str(RuntimeDirectoryManager().models_dir)
         self.model_dir = Path(model_dir).resolve()
         self.model_dir.mkdir(parents=True, exist_ok=True)
         self.registry_file = self.model_dir / "model_registry.json"

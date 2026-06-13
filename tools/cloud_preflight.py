@@ -47,10 +47,11 @@ def check_vocab(cfg) -> dict:
 
 
 def check_models() -> dict:
-    models_dir = Path("models")
-    production_best = models_dir / "production" / "best_model.pt"
+    from utils.common_utils import RuntimeDirectoryManager
+    models_dir = RuntimeDirectoryManager().models_dir
+    production_best = RuntimeDirectoryManager().production_dir / "best_model.pt"
     registry = models_dir / "model_registry.json"
-    versioned = list((models_dir / "production").glob("*_v1.*.pt")) if exists(models_dir / "production") else []
+    versioned = list(RuntimeDirectoryManager().production_dir.glob("*_v1.*.pt")) if RuntimeDirectoryManager().production_dir.exists() else []
     return {
         "path": str(models_dir),
         "has_production_best": exists(production_best),

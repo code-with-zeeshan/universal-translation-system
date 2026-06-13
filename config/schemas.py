@@ -5,7 +5,8 @@ from pathlib import Path
 import logging
 import os
 import json
-from utils.constants import MODELS_PRODUCTION_DIR, ENCODER_MODEL_FILENAME, VOCAB_DIR, DECODER_MODEL_FILENAME
+from utils.common_utils import RuntimeDirectoryManager
+from utils.constants import ENCODER_MODEL_FILENAME, DECODER_MODEL_FILENAME
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class DataConfig(BaseModel):
     download_max_workers: int = Field(4, description="Max parallel downloads per batch")
     download_parallel_batches: bool = Field(False, description="Run download batches concurrently")
     datasets_cache_dir: Optional[str] = Field(None, description="Cache directory for HuggingFace datasets")
+    cache_dir: str = Field("data/processed/cache", description="Cache directory for tokenized/preprocessed data")
     seed: int = Field(42, description="Random seed for reproducible train/val split and sampling")
 
     class Config:
@@ -171,11 +173,67 @@ class MonitoringConfig(BaseModel):
         extra = "allow"
 
 
+class DataStrategyConfig(BaseModel):
+    """Schema for data download strategy configuration (data_strategy section)."""
+    priority_rules: Dict[str, List[str]] = Field(
+        default_factory=lambda: {
+            "high": ["en-es", "en-fr", "en-de", "en-zh", "en-ru"],
+            "medium": ["en-ja", "en-ar", "en-pt", "en-it", "en-hi", "en-ko",
+                       "es-pt", "es-fr", "de-fr", "zh-ja", "ar-fr", "ru-uk",
+                       "it-es", "it-fr", "nl-de", "pl-ru", "ko-ja", "vi-zh", "th-vi"],
+            "low": ["en-tr", "en-th", "en-vi", "en-pl", "en-uk", "en-nl", "en-id", "en-sv"],
+        },
+        description="Language pair priority tiers for download scheduling",
+    )
+    source_preferences: Dict[str, List[str]] = Field(
+        default_factory=lambda: {
+            "en_centric": ["opus-100", "opus_ccmatrix", "opus_paracrawl", "open_subtitles", "wmt19", "wmt20", "wmt21"],
+            "european": ["opus-100", "opus_ccmatrix", "opus_paracrawl", "open_subtitles", "wmt19", "wmt20", "wmt21"],
+            "asian": ["opus-100", "opus_ccmatrix"],
+            "default": ["opus-100", "open_subtitles"],
+        },
+        description="Preferred data sources per language group",
+    )
+
+    class Config:
+        extra = "allow"
+
+
+class SecurityConfig(BaseModel):
+    """Schema for security configuration (security section)."""
+    trusted_model_sources: List[str] = Field(
+        default_factory=lambda: ["facebook/", "microsoft/", "google/", "Helsinki-NLP/"],
+        description="Trusted HuggingFace model sources for safe loading",
+    )
+    enable_path_validation: bool = Field(
+        True, description="Validate file paths against allowed patterns",
+    )
+    max_file_size_gb: int = Field(
+        10, description="Maximum allowed file size for model loading in GB",
+    )
+
+    class Config:
+        extra = "allow"
+
+
+class DistributedConfig(BaseModel):
+    """Schema for distributed training configuration (distributed section)."""
+    backend: str = Field("nccl", description="Distributed backend (nccl, gloo, mpi)")
+    find_unused_parameters: bool = False
+    broadcast_buffers: bool = False
+    bucket_cap_mb: int = Field(25, description="AllReduce bucket capacity in MB")
+    gradient_as_bucket_view: bool = True
+    static_graph: bool = True
+
+    class Config:
+        extra = "allow"
+
+
 class PipelineConfig(BaseModel):
     """Schema for the 'pipeline' section."""
     enabled_stages: List[str] = Field(
         default_factory=lambda: [
-            "download_evaluation", "download_training", "sample_filter",
+            "download_training", "sample_filter",
             "augment", "create_ready", "validate", "vocabulary"
         ]
     )
@@ -196,6 +254,9 @@ class RootConfig(BaseModel):
     vocabulary: VocabularyConfig
     monitoring: Optional[MonitoringConfig] = None
     pipeline: Optional[PipelineConfig] = None
+    data_strategy: Optional[DataStrategyConfig] = None
+    security: Optional[SecurityConfig] = None
+    distributed: Optional[DistributedConfig] = None
     tier_metadata: Optional[dict] = None
 
     class Config:
@@ -205,7 +266,7 @@ class RootConfig(BaseModel):
 class EncoderConfig(BaseModel):
     """Configuration for the encoder component. Supports env-var overrides."""
     model_path: str = Field(
-        default=os.environ.get("ENCODER_MODEL_PATH", f"{MODELS_PRODUCTION_DIR}/{ENCODER_MODEL_FILENAME}"),
+        default=os.environ.get("ENCODER_MODEL_PATH", f"{RuntimeDirectoryManager().production_dir}/{ENCODER_MODEL_FILENAME}"),
         description="Path to encoder model"
     )
     embedding_dim: int = Field(
@@ -213,7 +274,7 @@ class EncoderConfig(BaseModel):
         description="Dimension of embeddings"
     )
     vocab_dir: str = Field(
-        default=os.environ.get("VOCAB_DIR", VOCAB_DIR),
+        default=os.environ.get("VOCAB_DIR", str(RuntimeDirectoryManager().vocab_dir)),
         description="Directory containing vocabulary files"
     )
     max_sequence_length: int = Field(
@@ -239,11 +300,11 @@ class EncoderConfig(BaseModel):
 class DecoderConfig(BaseModel):
     """Configuration for the decoder component. Supports env-var overrides."""
     model_path: str = Field(
-        default=os.environ.get("DECODER_MODEL_PATH", f"{MODELS_PRODUCTION_DIR}/{DECODER_MODEL_FILENAME}"),
+        default=os.environ.get("DECODER_MODEL_PATH", f"{RuntimeDirectoryManager().production_dir}/{DECODER_MODEL_FILENAME}"),
         description="Path to decoder model"
     )
     vocab_dir: str = Field(
-        default=os.environ.get("VOCAB_DIR", VOCAB_DIR),
+        default=os.environ.get("VOCAB_DIR", str(RuntimeDirectoryManager().vocab_dir)),
         description="Directory containing vocabulary files"
     )
     max_sequence_length: int = Field(

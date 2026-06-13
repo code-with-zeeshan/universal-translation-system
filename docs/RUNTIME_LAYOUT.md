@@ -2,6 +2,10 @@
 
 All directories and files created by the system during end-to-end operation. Paths are relative to the project root unless noted.
 
+> **All runtime paths are managed by `RuntimeDirectoryManager`** (`utils.common_utils.RuntimeDirectoryManager`). Every module that reads or writes runtime artifacts should obtain paths through this class. The layout below shows the default locations; they can be customised by passing a `RootConfig` with different field values to RDM.
+
+## Quick Reference
+
 ## Quick Reference
 
 ```
@@ -58,7 +62,7 @@ data/
 └── pipeline_checkpoint.json                   Per-stage resume state
 ```
 
-**Created by:** `pipeline/data/orchestrator.py`, `pipeline/data/state.py`, `pipeline/connectors/`
+**Created by:** `pipeline/data/orchestrator.py`, `pipeline/data/state.py`, `pipeline/connectors/data.py`, `pipeline/connectors/filter.py`
 
 ---
 
@@ -81,7 +85,7 @@ checkpoints/
         └── best_model.pt                      Per-tier best model
 ```
 
-**Created by:** `pipeline/training/trainer.py`, `pipeline/training/memory/trainer.py`, `pipeline/training/progressive.py`
+**Created by:** `pipeline/training/trainer.py`, `pipeline/training/memory/trainer.py`, `pipeline/training/progressive.py`, `pipeline/training/launch.py`
 
 ---
 
@@ -107,7 +111,7 @@ models/
     └── encoder.onnx                           ONNX export
 ```
 
-**Created by:** `pipeline/training/launch.py`, `pipeline/training/peft.py`, `pipeline/training/quantization/pipeline.py`, `scripts/publish.py`
+**Created by:** `pipeline/training/launch.py`, `pipeline/training/peft.py`, `pipeline/training/quantization/pipeline.py`, `pipeline/training/model_init.py`, `scripts/publish.py`
 
 ---
 
@@ -119,7 +123,7 @@ evaluation_reports/
 └── report_{test_file.stem}.json              Per-test-file results
 ```
 
-**Created by:** `evaluation/evaluate_model.py`
+**Created by:** `evaluation/evaluate_model.py`, `evaluation/evaluator.py`
 
 ---
 
@@ -154,7 +158,7 @@ vocabulary/vocab/
 └── temp_{pack_name}.vocab                     SP vocab temp (deleted)
 ```
 
-**Created by:** `pipeline/vocabulary/production.py`, `pipeline/vocabulary/validation.py`
+**Created by:** `pipeline/vocabulary/production.py`, `pipeline/vocabulary/validation.py`, `pipeline/vocabulary/build.py`
 
 ---
 
@@ -172,7 +176,7 @@ profiles/                                       UDN profiler
 streaming_evaluation_cache.json                Streaming eval cache
 ```
 
-**Created by:** `coordinator/advanced_coordinator.py`, `tools/register_decoder_node.py`, `config/config_wizard.py`, `udn/utils/profiler.py`
+**Created by:** `runtime/coordinator/advanced_coordinator.py`, `tools/register_decoder_node.py`, `scripts/config_wizard.py`, `evaluation/evaluator.py`, `universal-decoder-node/udn/utils/profiler.py`
 
 ---
 
@@ -184,6 +188,19 @@ data_checkpoint.json                           Data phase auto-resume
 ```
 
 **Created by:** `utils/pipeline_checkpoint.py`
+
+---
+
+## Scripts / Build Artifacts
+
+```
+scripts/
+└── hf_upload.log                              Hugging Face upload log
+```
+
+Also creates temporary model copies during publish/ONNX export under `models/production/`.
+
+**Created by:** `scripts/build_and_upload_pipeline.py`, `scripts/first_time_success.py`
 
 ---
 
@@ -214,7 +231,7 @@ data_checkpoint.json                           Data phase auto-resume
 
 ```bash
 # Remove all runtime data (keep code + config)
-rm -rf checkpoints/ data/ logs/ models/ evaluation_reports/ profiles/
+rm -rf checkpoints/ data/ logs/ models/ evaluation_reports/ profiles/ training_visualizations/ vocabulary/
 rm -f pipeline_state.json *_checkpoint.json streaming_evaluation_cache.json
 rm -rf ~/.UniversalTranslationSystem/
 

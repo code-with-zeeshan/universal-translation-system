@@ -12,7 +12,7 @@ import time
 import yaml
 from prometheus_client import Counter, Histogram
 from utils.unified_validation import InputValidator
-from utils.constants import MODELS_ADAPTERS_DIR, MODELS_PRODUCTION_DIR, CONFIG_DIR
+from utils.common_utils import RuntimeDirectoryManager
 from utils.translation_quality import TranslationQualityPipeline, detect_tone, strip_tone_tag
 
 from .system import UniversalTranslationSystem
@@ -76,12 +76,12 @@ def translate(self, text: str, source_lang: str, target_lang: str, domain: Optio
     # --- Translate with quality enhancements (atomic under lock) ---
     with self._model_lock:
         # Load domain adapter (bottleneck type)
-        adapter_path = Path(f"{MODELS_ADAPTERS_DIR}/best_{adapter_name}_adapter.pt")
+        adapter_path = RuntimeDirectoryManager().adapters_dir / f"best_{adapter_name}_adapter.pt"
         if adapter_path.exists():
             self.encoder.load_language_adapter(adapter_name, str(adapter_path))
 
         # Load LoRA adapter if trained alongside
-        lora_path = Path(f"{MODELS_PRODUCTION_DIR}/lora_{adapter_name}.pt")
+        lora_path = RuntimeDirectoryManager().production_dir / f"lora_{adapter_name}.pt"
         if lora_path.exists():
             from pipeline.training.peft import load_lora_adapters
             self.encoder = load_lora_adapters(self.encoder, str(lora_path), self.device)
@@ -176,7 +176,7 @@ UniversalTranslationSystem.evaluate_async = evaluate_async
 
 async def integrate_full_pipeline_async(config_file: Optional[str] = None) -> UniversalTranslationSystem:
     """Main async integration function that loads config from a file."""
-    config_path = config_file or f"{CONFIG_DIR}/deployment_config.yaml"
+    config_path = config_file or str(RuntimeDirectoryManager().generated_config_dir / "deployment_config.yaml")
     try:
         with open(config_path, 'r') as f:
             config_data = yaml.safe_load(f)

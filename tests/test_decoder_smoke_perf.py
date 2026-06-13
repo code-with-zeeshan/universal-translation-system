@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 # Import decoder FastAPI app
-from cloud_decoder.optimized_decoder import app as decoder_app
+from runtime.cloud_decoder.optimized_decoder import app as decoder_app
 
 @pytest.fixture(scope="module")
 def client():

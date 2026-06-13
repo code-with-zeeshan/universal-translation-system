@@ -1,6 +1,7 @@
 # scripts/upload_artifacts.py
 import argparse
 from pathlib import Path
+from utils.common_utils import RuntimeDirectoryManager
 from huggingface_hub import HfApi, HfFolder
 import logging
 
@@ -21,10 +22,11 @@ def upload_artifacts(repo_id: str, local_base_dir: str = "."):
     logger.info(f"✅ Repository '{repo_id}' is ready.")
 
     # Define directories to upload and their target paths in the repo
+    mgr = RuntimeDirectoryManager()
     dirs_to_upload = {
-        "models/production": "models/production",
-        "models/adapters": "adapters",
-        "vocabulary/vocab": "vocabs"
+        str(mgr.production_dir): "models/production",
+        str(mgr.adapters_dir): "adapters",
+        str(mgr.vocab_dir): "vocabs"
     }
 
     for local_dir, repo_dir in dirs_to_upload.items():

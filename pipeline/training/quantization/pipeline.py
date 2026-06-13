@@ -1,4 +1,4 @@
-# training/quantization_pipeline.py
+# pipeline/training/quantization/pipeline.py
 """
 Advanced Quantization Pipeline for Universal Translation System
 Includes A/B testing, profiling, and quality preservation techniques
@@ -6,7 +6,7 @@ Includes A/B testing, profiling, and quality preservation techniques
 
 import logging
 
-from utils.constants import MODELS_PRODUCTION_DIR
+from utils.common_utils import RuntimeDirectoryManager
 from pipeline.training.quantization.common import QuantizationConfig, QualityMetrics, fake_quantize_tensor
 from pipeline.training.quantization.encoder import EncoderQuantizer, QualityPreservingQuantizer
 from pipeline.training.quantization.quality import QualityComparator
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     # Create all deployment versions
     results = quantizer.create_deployment_versions(
-        master_model_path=f"{MODELS_PRODUCTION_DIR}/encoder_master.pt",
+        master_model_path=str(RuntimeDirectoryManager().production_dir / "encoder_master.pt"),
         calibration_data_path="data/calibration_data.pt",
         test_data_path="data/test_data.pt"
     )

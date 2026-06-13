@@ -1,4 +1,4 @@
-# training/hardware_profile.py
+# pipeline/training/hardware.py
 """
 Hardware profile detection for intelligent training adaptation.
 """

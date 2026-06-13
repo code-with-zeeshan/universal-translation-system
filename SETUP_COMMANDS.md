@@ -76,10 +76,13 @@ Expected: GPU detected, Python OK, core imports OK.
 Downloads opus-100, samples, augments, validates. **Auto-resumes by default** if interrupted.
 
 **Key flags:**
+- `--interactive` — launch the TUI stage selector (arrow keys to navigate, space to toggle, dynamic time estimates)
 - `--force` — re-run from scratch (clears all checkpoints)
 - `--no-resume` — skip completed stages instead of resetting
 - `--stage sample_filter` — run a single stage
 - `--scale 5` — 5× training data targets (for larger training)
+
+> Note: `wikipedia_backtranslation`, `direct_opus`, `knowledge_distillation`, and `comet_quality` are **disabled by default**. Enable via `uts data --interactive` or by adding them to `config.pipeline.enabled_stages` in your YAML.
 
 **Performance tuning** (in `config/base.yaml` under `data:`, or via CLI flags):
 ```yaml
@@ -97,7 +100,7 @@ CLI equivalents: `--download-max-workers 8`, `--download-parallel-batches`, `--d
 
 ### 6. Vocabulary packs
 
-Vocabulary packs are **automatically created** by the data pipeline's `create_ready` stage — you typically don't need this step after `uts data --pipeline`.
+Vocabulary packs are **automatically created** by the data pipeline's `vocabulary` stage — you typically don't need this step after `uts data --pipeline`.
 
 Use `uts vocab --build` only when you need a **custom build** (e.g., different vocab size, mode, or language groups) without re-running the full pipeline:
 

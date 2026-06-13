@@ -1,4 +1,4 @@
-# data/synthetic_augmentation.py
+# pipeline/data/augmentation.py
 """
 Synthetic data augmentation — Refactored to use shared utilities.
 Generate additional training data using modern transformer models.
@@ -38,7 +38,7 @@ except Exception:
         float32 = None
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set
-from utils.constants import DATA_FINAL_DIR
+
 from tqdm import tqdm
 import numpy as np
 import json
@@ -1103,7 +1103,9 @@ class SyntheticDataAugmenter:
         self.config = config
         self.languages = self.config.data.active_languages
         self.quality_threshold = self.config.data.quality_threshold
-        self.output_dir = Path(self.config.data.processed_dir)
+        from utils.common_utils import RuntimeDirectoryManager
+        self.runtime_dirs = RuntimeDirectoryManager()
+        self.output_dir = self.runtime_dirs.processed_dir
         self.pipeline_batch_size = 128
 
         self._model = None
@@ -1755,7 +1757,8 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
         max_dynamic_ff = getattr(config.pipeline, 'max_dynamic_ff_per_pair', 5000)
 
     augmenter = SyntheticDataAugmenter(config)
-    base_dir = Path(config.data.processed_dir) / DATA_FINAL_DIR
+    from utils.common_utils import RuntimeDirectoryManager
+    base_dir = RuntimeDirectoryManager().augment_dir
     results = {}
 
     total_pairs = 0

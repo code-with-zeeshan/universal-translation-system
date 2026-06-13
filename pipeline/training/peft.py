@@ -94,7 +94,7 @@ def wrap_decoder_with_lora(
     if target_modules is None:
         # Use explicit targets for OptimizedUniversalDecoder — auto-detect
         # picks bare "0"/"2" which match OptimizedDecoderLayer (not a Linear).
-        from cloud_decoder.decoder_core import OptimizedUniversalDecoder
+        from runtime.cloud_decoder.decoder_core import OptimizedUniversalDecoder
         if isinstance(decoder, OptimizedUniversalDecoder):
             target_modules = [
                 "self_attn.out_proj",

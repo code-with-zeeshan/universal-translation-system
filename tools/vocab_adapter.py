@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-from cloud_decoder import OptimizedUniversalDecoder
-from encoder.universal_encoder import UniversalEncoder
+from runtime.cloud_decoder import OptimizedUniversalDecoder
+from runtime.encoder.universal_encoder import UniversalEncoder
 
 logger = logging.getLogger("training.vocab_adapter")
 

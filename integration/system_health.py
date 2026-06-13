@@ -150,7 +150,7 @@ class SystemHealthMonitor:
             handle = nvml.nvmlDeviceGetHandleByIndex(0)
             util = nvml.nvmlDeviceGetUtilizationRates(handle)
             return util.gpu
-        except:
+        except Exception:
             return None
 
     def validate_configuration(self) -> List[str]:
@@ -176,7 +176,7 @@ class SystemHealthMonitor:
                 if result == 0:
                     errors.append(f"Monitoring port {self.config.monitoring_port} already in use")
                 sock.close()
-            except:
+            except Exception:
                 pass
 
         return errors

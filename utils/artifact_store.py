@@ -1,3 +1,4 @@
+from utils.common_utils import RuntimeDirectoryManager
 # utils/artifact_store.py
 """
 Artifact store utilities for pulling models, vocabulary packs, and adapters
@@ -54,8 +55,10 @@ class ArtifactStore:
                 raise ValueError("HF_HUB_REPO_ID must be set to use ArtifactStore")
             token = os.environ.get("HF_TOKEN")
             revision = os.environ.get("HF_HUB_REVISION", "main")
-            models_dir = Path(os.environ.get("MODELS_DIR", "models"))
-            vocabs_dir = Path(os.environ.get("VOCABS_DIR", "vocabulary/vocab"))
+            from utils.common_utils import RuntimeDirectoryManager
+            _rdm = RuntimeDirectoryManager()
+            models_dir = Path(os.environ.get("MODELS_DIR", str(_rdm.models_dir)))
+            vocabs_dir = Path(os.environ.get("VOCABS_DIR", str(_rdm.vocab_dir)))
             adapters_dir = Path(os.environ.get("ADAPTERS_DIR", str(models_dir / "adapters")))
             config = StoreConfig(
                 repo_id=repo_id,
@@ -99,7 +102,7 @@ class ArtifactStore:
 
     def ensure_model(self, relative_repo_path: str) -> Path:
         """Ensure a model file (under models/) exists locally, downloading if needed.
-        Example relative_repo_path: "models/production/encoder.onnx" or "production/encoder.onnx".
+        Example relative_repo_path: "self.runtime_dirs.production_dir / "encoder.onnx"" or "production/encoder.onnx".
         """
         # Normalize path: accept with or without leading "models/"
         repo_path = relative_repo_path.replace("\\", "/")

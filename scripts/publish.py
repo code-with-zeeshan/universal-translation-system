@@ -36,7 +36,8 @@ def find_best_checkpoint(checkpoint_arg: str | None) -> Path:
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_arg}")
 
     # Auto-discover: find the most recent best_model.pt
-    ckpt_dir = ROOT / "checkpoints"
+    from utils.common_utils import RuntimeDirectoryManager
+    ckpt_dir = RuntimeDirectoryManager().checkpoints_dir
     candidates = sorted(ckpt_dir.rglob("best_model.pt"))
     if candidates:
         chosen = candidates[-1]  # most recent
@@ -106,7 +107,7 @@ def export_onnx(encoder_path: Path, output_dir: Path, hidden_dim: int = 512):
     try:
         import torch
         # Load the encoder architecture
-        from encoder.universal_encoder import UniversalEncoder
+        from runtime.encoder.universal_encoder import UniversalEncoder
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         encoder = UniversalEncoder(
             max_vocab_size=32000,
@@ -210,7 +211,8 @@ Examples:
     parser.add_argument("--hidden-dim", type=int, default=512, help="Encoder hidden dimension")
     args = parser.parse_args()
 
-    output_dir = ROOT / "models" / "production"
+    from utils.common_utils import RuntimeDirectoryManager
+    output_dir = RuntimeDirectoryManager().production_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.upload_only:

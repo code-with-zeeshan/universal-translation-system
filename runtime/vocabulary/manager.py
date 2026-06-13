@@ -22,11 +22,12 @@ import json
 from utils.exceptions import VocabularyError
 from utils.security import validate_path_component
 from utils.base_classes import BaseVocabularyManager, TokenizerMixin
-from utils.constants import LOG_DIR, SUPPORTED_VOCAB_FORMAT
+from utils.common_utils import RuntimeDirectoryManager
+from utils.constants import SUPPORTED_VOCAB_FORMAT
 from config.schemas import RootConfig
 
 # Centralized logging for vocabulary manager
-setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("vocabulary")
 
 class VocabularyMode(Enum):
@@ -603,7 +604,7 @@ class UnifiedVocabularyManager(BaseVocabularyManager, TokenizerMixin):
             if self.pack_metadata:
                 test_pack = list(self.pack_metadata.keys())[0]
                 self._load_pack_cached(test_pack)
-        except:
+        except Exception:
             checks['cache_operational'] = False
         
         return checks

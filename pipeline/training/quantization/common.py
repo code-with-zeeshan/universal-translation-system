@@ -1,4 +1,4 @@
-# training/quantization_common.py
+# pipeline/training/quantization/common.py
 """
 Common quantization utilities for the Universal Translation System
 """

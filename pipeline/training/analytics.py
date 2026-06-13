@@ -1,4 +1,4 @@
-# training/training_analytics.py
+# pipeline/training/analytics.py
 """
 Training analytics for comprehensive training metrics collection.
 """

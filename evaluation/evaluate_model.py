@@ -7,6 +7,7 @@ import json
 import logging
 import sys
 from pathlib import Path
+from utils.common_utils import RuntimeDirectoryManager
 from typing import Optional, Dict, Any, List
 
 import torch
@@ -14,20 +15,17 @@ import torch
 from evaluation.evaluator import TranslationPair
 from evaluation.evaluator import TranslationEvaluator, evaluate_translation_quality
 from config.schemas import load_config as load_pydantic_config
-from utils.constants import (
-    LOG_DIR, MODELS_ENCODER_DIR, MODELS_DECODER_DIR,
-    VOCAB_DIR, EVALUATION_REPORT_FILENAME
-)
+from utils.constants import EVALUATION_REPORT_FILENAME
 from utils.logging_config import setup_logging
 from utils.pipeline_checkpoint import PhaseCheckpoint, mark_stage_complete, is_stage_complete, invalidate_downstream, hash_config, load_pipeline_state
 
-setup_logging(log_dir=LOG_DIR, log_level="INFO")
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level="INFO")
 logger = logging.getLogger(__name__)
 
 
 def build_encoder(config) -> torch.nn.Module:
     """Build encoder from config."""
-    from encoder.universal_encoder import UniversalEncoder
+    from runtime.encoder.universal_encoder import UniversalEncoder
     return UniversalEncoder(
         max_vocab_size=config.model.vocab_size,
         hidden_dim=config.model.hidden_dim,
@@ -39,7 +37,7 @@ def build_encoder(config) -> torch.nn.Module:
 
 def build_decoder(config) -> torch.nn.Module:
     """Build decoder from config."""
-    from cloud_decoder import OptimizedUniversalDecoder
+    from runtime.cloud_decoder import OptimizedUniversalDecoder
     return OptimizedUniversalDecoder(
         encoder_dim=config.model.hidden_dim,
         decoder_dim=config.model.decoder_dim,
@@ -206,17 +204,17 @@ def main(
     # Default paths — try published model first, then fall back to latest checkpoint
     config_path = config or 'config/base.yaml'
     if not checkpoint:
-        published = Path('models/production/best_model.pt')
+        published = self.runtime_dirs.production_dir / 'best_model.pt'
         if published.exists():
             checkpoint = str(published)
         else:
-            candidates = sorted(Path('checkpoints').rglob('best_model.pt'))
+            candidates = sorted(self.runtime_dirs.checkpoints_dir.rglob('best_model.pt'))
             if candidates:
                 checkpoint = str(candidates[-1])
                 logger.info(f"📦 Using latest checkpoint: {checkpoint}")
             else:
-                checkpoint = 'models/production/best_model.pt'
-    test_data = test_data or 'data/evaluation'
+                checkpoint = str(self.runtime_dirs.production_dir / 'best_model.pt')
+    test_data = test_data or str(self.runtime_dirs.eval_data_dir)
 
     # ── Eval checkpoint auto-resume ──────────────────────────────────
     ckpt_mgr = PhaseCheckpoint("eval")
@@ -325,7 +323,7 @@ def main(
         return False
 
     # Create output directory for reports
-    output_dir = Path('evaluation_reports')
+    output_dir = self.runtime_dirs.eval_reports_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Compute test-data hash for sub-stage tracking
@@ -406,8 +404,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Evaluate trained model")
     parser.add_argument('--config', default='config/base.yaml')
-    parser.add_argument('--checkpoint', default='models/production/best_model.pt')
-    parser.add_argument('--test-data', default='data/evaluation')
+    parser.add_argument('--checkpoint', default=str(RuntimeDirectoryManager().production_dir / 'best_model.pt'))
+    parser.add_argument('--test-data', default=str(RuntimeDirectoryManager().eval_data_dir))
     parser.add_argument('--force', action='store_true', help='Re-evaluate all files')
     args = parser.parse_args()
     success = main(

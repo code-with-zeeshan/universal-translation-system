@@ -50,7 +50,7 @@ class AdapterUniversalEncoder(nn.Module):
     def __init__(self, base_encoder_path: Optional[str] = None):
         super().__init__()
 
-        from encoder.universal_encoder import UniversalEncoder
+        from runtime.encoder.universal_encoder import UniversalEncoder
 
         self.base_encoder = UniversalEncoder(
             max_vocab_size=50000,

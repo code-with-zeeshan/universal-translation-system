@@ -1,3 +1,4 @@
+from utils.common_utils import RuntimeDirectoryManager
 #!/usr/bin/env python3
 """
 Unified CLI for Universal Translation System pipelines
@@ -51,7 +52,7 @@ from pipeline.training import launch as training_launch
 # Bootstrap & Conversion
 from pipeline.training.bootstrap import PretrainedModelBootstrapper
 from tools.convert import ModelConverter
-from utils.constants import LOG_DIR
+
 
 logger = logging.getLogger("pipeline")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -120,8 +121,8 @@ def run_vocab_creator(
 def run_bootstrap(
     encoder_model: str = 'xlm-roberta-base',
     decoder_model: str = 'facebook/mbart-large-50',
-    encoder_out: str = 'models/encoder/universal_encoder_initial.pt',
-    decoder_out: str = 'models/decoder/universal_decoder_initial.pt',
+    encoder_out: str = 'self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"',
+    decoder_out: str = 'self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"',
     target_hidden_dim: int = 1024,
     device: str = 'auto',
 ) -> None:
@@ -146,7 +147,7 @@ def run_training(
     batch_size: Optional[int] = None,
     learning_rate: Optional[float] = None,
     num_epochs: Optional[int] = None,
-    log_dir: str = LOG_DIR,
+    log_dir: str = str(RuntimeDirectoryManager().logs_dir),
     log_level: str = 'info',
 ) -> None:
     """Delegate to training.launch.launch_training with a constructed namespace."""
@@ -260,7 +261,7 @@ def run_all(config_path: str) -> None:
     logger.info("[ALL] Converting encoder to ONNX...")
     run_convert(
         task='pytorch-to-onnx',
-        model_path='models/encoder/universal_encoder_initial.pt',
+        model_path='self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"',
         output_path='models/encoder/universal_encoder.onnx',
         opset=17,
         use_dynamo=True,
@@ -298,8 +299,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('bootstrap', help='Bootstrap encoder/decoder from pretrained models')
     sp.add_argument('--encoder-model', type=str, default='xlm-roberta-base')
     sp.add_argument('--decoder-model', type=str, default='facebook/mbart-large-50')
-    sp.add_argument('--encoder-out', type=str, default='models/encoder/universal_encoder_initial.pt')
-    sp.add_argument('--decoder-out', type=str, default='models/decoder/universal_decoder_initial.pt')
+    sp.add_argument('--encoder-out', type=str, default='self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"')
+    sp.add_argument('--decoder-out', type=str, default='self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"')
     sp.add_argument('--target-hidden-dim', type=int, default=1024)
     sp.add_argument('--device', type=str, default='auto')
 
@@ -312,7 +313,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument('--batch-size', type=int)
     sp.add_argument('--learning-rate', type=float)
     sp.add_argument('--num-epochs', type=int)
-    sp.add_argument('--log-dir', type=str, default=LOG_DIR)
+    sp.add_argument('--log-dir', type=str, default=str(RuntimeDirectoryManager().logs_dir))
     sp.add_argument('--log-level', type=str, default='info', choices=['debug','info','warning','error'])
 
     # evaluate

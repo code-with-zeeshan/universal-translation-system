@@ -1,10 +1,10 @@
+from utils.common_utils import RuntimeDirectoryManager
 # cloud_decoder/optimized_decoder.py
 import torch
 import torch.nn as nn
 from pathlib import Path
 import struct
 import numpy as np
-import litserve as ls
 from fastapi import FastAPI, Request, Header, Depends, HTTPException, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -23,11 +23,9 @@ try:
     import triton_python_backend_utils as pb_utils  # type: ignore
 except Exception:
     pb_utils = None  # Safe fallback when not running under Triton
-import msgpack
 import lz4.frame
 import logging
 import os
-import yaml
 import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -36,10 +34,9 @@ from monitoring.metrics_collector import (
     collect_vocabulary_metrics,
     get_metrics_summary,
     active_connections,
-    gpu_utilization
 )
 # Shared constants for API and vocab format enforcement
-from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, LOG_DIR, VERSION_CONFIG_FILENAME
+from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, VERSION_CONFIG_FILENAME
 from utils.logging_config import setup_logging, get_logger
 from collections import OrderedDict
 # Import core model classes (no server deps)
@@ -62,7 +59,7 @@ except ImportError:
 from utils.auth import APIKeyManager
 from utils.rate_limiter import RateLimiter
 from utils.security import validate_model_source, safe_load_model
-from encoder.language_adapters import AdapterUniversalEncoder
+from runtime.encoder.language_adapters import AdapterUniversalEncoder
 # +++ ADDED: Import the new dependency +++
 from .dependencies import verify_internal_request
 
@@ -93,7 +90,7 @@ try:
     bootstrap_secrets(role="decoder")
     validate_runtime_secrets(role="decoder")
 except Exception:
-    pass
+    logger.debug("secrets_bootstrap_failed", exc_info=True)
 
 # Optional: prefetch artifacts on startup from HF Hub based on env hints
 try:
@@ -136,7 +133,7 @@ API_WORKERS = int(os.environ.get("API_WORKERS", "1"))
 API_TITLE = os.environ.get("API_TITLE", "Cloud Decoder API")
 
 # Initialize logging (centralized)
-setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
 # Use structured logger adapter to encourage structured fields usage
 logger = get_logger("decoder", context={"component": "decoder"})
 
@@ -149,7 +146,7 @@ class AdapterManager:
     """
     Manages dynamic loading and LRU caching of language adapters on a decoder node.
     """
-    def __init__(self, model: nn.Module, repo_id: str, max_cache_size: int = 5, adapter_dir: str = "models/adapters"):
+    def __init__(self, model: nn.Module, repo_id: str, max_cache_size: int = 5, adapter_dir: str = str(RuntimeDirectoryManager().adapters_dir)):
         self.model = model  # The AdapterUniversalEncoder instance
         self.adapter_dir = Path(adapter_dir)
         self.max_cache_size = max_cache_size
@@ -406,40 +403,31 @@ async def _install_shutdown_handler():
     global shutdown_ref
     def cleanup():
         try:
-            # Cancel JWKS reload task
             try:
                 if JWKS_RELOAD_TASK:
                     JWKS_RELOAD_TASK.cancel()
             except Exception:
-                pass
-            # Stop file observer
+                logger.warning("jwks_reload_task_cancel_failed", exc_info=True)
             try:
                 if FILE_OBSERVER:
                     FILE_OBSERVER.stop()
                     FILE_OBSERVER.join(timeout=1.0)
             except Exception:
-                pass
-            # Stop Redis health check thread
+                logger.warning("file_observer_stop_failed", exc_info=True)
             try:
                 from utils.redis_manager import RedisManager
                 RedisManager.get_instance().stop_health_check()
             except Exception:
-                pass
-            # Flush OpenTelemetry if supported
+                logger.warning("redis_health_check_stop_failed", exc_info=True)
             try:
                 provider = trace.get_tracer_provider()
                 shutdown = getattr(provider, "shutdown", None)
                 if callable(shutdown):
                     shutdown()
             except Exception:
-                pass
-            # Placeholders for decoder-specific cleanup (e.g., GPU cache flush)
-            try:
-                pass
-            except Exception:
-                pass
+                logger.warning("otel_shutdown_failed", exc_info=True)
         except Exception:
-            pass
+            logger.warning("cleanup_all_failed", exc_info=True)
     shutdown_ref = GracefulShutdown(cleanup)
 
 # Restrictive defaults; adjust ALLOWED_ORIGINS via env if needed
@@ -518,7 +506,7 @@ class ConfigReloadHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.src_path.endswith(CONFIG_PATH):
             with tracer.start_as_current_span("config_reload"):
-                print("[Decoder] Config file changed, reloading...")
+                logger.info("Config file changed, reloading...")
                 # Reload config logic here
                 # (For demo, just print. In production, update in-memory config.)
 # Track file observer for shutdown
@@ -593,6 +581,7 @@ async def decode(request: Request, x_target_language: str = Header(None), x_adap
                         pass
                     current_model.loaded_adapters.add(adapter_to_use)
                 except Exception:
+                    logger.debug("adapter_load_failed", exc_info=True)
                     adapter_to_use = None
             
             # Run decoder inference
@@ -790,7 +779,7 @@ async def startup():
     decoder_model = OptimizedUniversalDecoder().to(get_device())
     # Load the base model (without any specific adapters loaded initially)
     # This assumes your production decoder is saved here
-    base_model_path = "models/production/decoder.pt"
+    base_model_path = str(RuntimeDirectoryManager().production_dir / "decoder.pt")
     decoder_model = AdapterUniversalEncoder(base_model_path=base_model_path).to(get_device())
     decoder_model.eval()
 
@@ -841,6 +830,7 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
     try:
         store = ArtifactStore()
     except Exception:
+        logger.debug("artifact_store_creation_failed", exc_info=True)
         store = None
 
     # Group by adapter to minimize swaps

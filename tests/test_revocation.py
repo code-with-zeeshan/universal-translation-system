@@ -21,7 +21,7 @@ def test_revocation_blocked(monkeypatch):
     token = jwt.encode(claims, secret, algorithm='HS256')
 
     # Simulate revocation in Redis set
-    from coordinator.advanced_coordinator import RedisManager
+    from runtime.coordinator.advanced_coordinator import RedisManager
     rm = RedisManager.get_instance()
     client = rm.get_client()
     if client:
@@ -30,7 +30,7 @@ def test_revocation_blocked(monkeypatch):
     # Call require_jwt and expect 401
     from fastapi import HTTPException
     from types import SimpleNamespace
-    from coordinator.advanced_coordinator import require_jwt
+    from runtime.coordinator.advanced_coordinator import require_jwt
 
     class Creds:
         def __init__(self, t):

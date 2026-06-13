@@ -1,4 +1,4 @@
-# data/unified_data_downloader.py
+# pipeline/data/downloader.py
 """
 Unified data downloader combining curated, training, and smart strategies
 Replaces: download_curated_data.py, download_training_data.py, smart_data_downloader.py
@@ -11,7 +11,6 @@ from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
 from enum import Enum
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from pathlib import Path
 import zipfile
 import io
 # Optional dependency: requests. Provide minimal shim for smoke/dry-run.
@@ -711,7 +710,6 @@ class UnifiedDataDownloader:
 def main():
     """CLI entry point for the unified data downloader"""
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(description="Unified Data Downloader")
     parser.add_argument("--config", default="config/base.yaml",
@@ -728,22 +726,22 @@ def main():
     downloader = UnifiedDataDownloader(config)
 
     if args.dry_run:
-        print("=" * 60)
-        print("DRY RUN — Estimating download sizes")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("DRY RUN — Estimating download sizes")
+        logger.info("=" * 60)
         estimates = downloader.estimate_download_size()
-        print(f"  Estimated total: {estimates.get('total_gb', 0):.2f} GB")
+        logger.info(f"  Estimated total: {estimates.get('total_gb', 0):.2f} GB")
         schedule = downloader.get_download_schedule()
         for batch in schedule:
-            print(f"\n  Batch: {batch['batch_name']}")
-            print(f"    Pairs: {len(batch['pairs'])}")
+            logger.info(f"  Batch: {batch['batch_name']}")
+            logger.info(f"    Pairs: {len(batch['pairs'])}")
             for pair in batch['pairs']:
-                print(f"      {pair.pair_string} ({pair.priority.value}, {pair.expected_size:,} sentences)")
-        print("\nDry run complete. Pass --dry-run to see this, or omit it to download.")
+                logger.info(f"      {pair.pair_string} ({pair.priority.value}, {pair.expected_size:,} sentences)")
+        logger.info("Dry run complete. Pass --dry-run to see this, or omit it to download.")
         return
 
     stats = downloader.download_all()
-    print(f"\nDownload complete: {stats}")
+    logger.info(f"Download complete: {stats}")
 
 
 if __name__ == "__main__":

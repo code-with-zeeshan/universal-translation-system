@@ -6,7 +6,7 @@ System configuration with Pydantic validation
 import logging
 import torch
 from pydantic import BaseModel, Field, validator
-from utils.constants import CHECKPOINT_DIR
+from utils.common_utils import RuntimeDirectoryManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class IntegrationSystemConfig(BaseModel):
     data_dir: str = Field(default="data", description="Data directory path")
     model_dir: str = Field(default="models", description="Model directory path")
     vocab_dir: str = Field(default="vocabulary/vocab", description="Vocabulary directory path")
-    checkpoint_dir: str = Field(default=CHECKPOINT_DIR, description="Checkpoint directory")
+    checkpoint_dir: str = Field(default_factory=lambda: str(RuntimeDirectoryManager().checkpoints_dir), description="Checkpoint directory")
     device: str = Field(default="cuda", description="Device for computation")
     use_adapters: bool = Field(default=True, description="Use language adapters")
     quantization_mode: str = Field(default="int8", pattern="^(fp32|fp16|int8)$")

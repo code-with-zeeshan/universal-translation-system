@@ -1,6 +1,6 @@
 import pytest
 import torch
-from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
+from runtime.cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
 
 def test_decoder_basic():
     decoder = OptimizedUniversalDecoder()

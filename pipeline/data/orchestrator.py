@@ -12,7 +12,7 @@ from config.schemas import RootConfig
 from utils.exceptions import DataError
 from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
-from utils.common_utils import DirectoryManager
+from utils.common_utils import RuntimeDirectoryManager,  DirectoryManager, RuntimeDirectoryManager
 
 from pipeline.data.downloader import UnifiedDataDownloader, DatasetType
 from pipeline.data.sampler import SmartDataSampler
@@ -33,7 +33,6 @@ CORE_STAGES = [
     PipelineStage.SAMPLE_FILTER,
     PipelineStage.AUGMENT,
     PipelineStage.CREATE_READY,
-    PipelineStage.COMET_QUALITY,
     PipelineStage.VALIDATE,
     PipelineStage.VOCABULARY,
 ]
@@ -61,10 +60,9 @@ class UnifiedDataPipeline:
             # Initialize components
             self._initialize_components()
             
-            # Create directory structure
-            # Use the base data directory (parent of processed_dir) to avoid nested 'processed/processed'
-            base_dir = str(Path(self.config.data.processed_dir).parent)
-            self.dirs = DirectoryManager.create_data_structure(base_dir)
+            # Create directory structure via centralized manager
+            self.runtime_dirs = RuntimeDirectoryManager()
+            self.dirs = self.runtime_dirs.ensure_data_structure()
             
             # If dry_run, synthesize tiny sample data so later stages can run locally
             if self.dry_run:
@@ -708,7 +706,7 @@ class UnifiedDataPipeline:
             self.pipeline_connector.create_final_training_file()
             
             # Update stats using known output path
-            final_path = Path(self.config.data.processed_dir) / 'train_final.txt'
+            final_path = self.runtime_dirs.processed_dir / 'train_final.txt'
             if final_path.exists():
                 self.state.total_size_gb = final_path.stat().st_size / (1024**3)
                 
@@ -748,7 +746,7 @@ class UnifiedDataPipeline:
             
             created_packs = self.vocab_connector.create_vocabularies_from_pipeline(
                 processed_dir=str(self.dirs['processed']),
-                output_dir=self.config.vocabulary.vocab_dir,
+                output_dir=self.runtime_dirs.vocab_dir,
                 vocab_size=self.config.vocabulary.vocab_size,
             )
             
@@ -809,7 +807,7 @@ class UnifiedDataPipeline:
                 span.set_attribute("skipped", True)
                 return
 
-            processed = Path(self.config.data.processed_dir)
+            processed = self.runtime_dirs.processed_dir
             train_path = processed / 'train_final.txt'
             val_path = processed / 'val_final.txt'
             if not train_path.exists():
@@ -1018,35 +1016,28 @@ def main():
     # Create pipeline
     pipeline = UnifiedDataPipeline(config)
     
-    # Handle reset
     if args.reset:
         pipeline.reset_pipeline()
-        print("🔄 Pipeline state reset")
+        logger.info("Pipeline state reset")
         return
     
-    # Handle force (clear checkpoint, then run fresh)
     if args.force:
         pipeline.reset_pipeline()
-        print("🔁 Force mode: checkpoint cleared, starting fresh")
+        logger.info("Force mode: checkpoint cleared, starting fresh")
     
-    # Run pipeline
     if args.eval_only:
-        print("\n🧪 Running evaluation-only download...")
+        logger.info("Running evaluation-only download...")
         stage = PipelineStage.DOWNLOAD_EVAL
         asyncio.run(pipeline.run_single_stage(stage))
-        print("✅ Evaluation data download complete")
+        logger.info("Evaluation data download complete")
     elif args.stage:
-        # Run single stage
         stage = PipelineStage(args.stage)
         asyncio.run(pipeline.run_single_stage(stage))
     else:
-        # Run full pipeline (auto-resume by default)
         summary = asyncio.run(pipeline.run_pipeline(resume=args.resume, force=args.force))
-        
-        # Print summary
         if summary['execution_time_hours'] > 0:
-            print(f"\nPipeline completed in {summary['execution_time_hours']:.2f} hours")
-            print(f"Total data: {summary['total_sentences']:,} sentences ({summary['total_size_gb']:.2f} GB)")
+            logger.info(f"Pipeline completed in {summary['execution_time_hours']:.2f} hours — "
+                        f"{summary['total_sentences']:,} sentences ({summary['total_size_gb']:.2f} GB)")
 
 
 if __name__ == "__main__":

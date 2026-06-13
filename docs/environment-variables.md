@@ -71,6 +71,8 @@ The `*_FILE` pattern is the recommended approach for containers:
 
 ## Paths
 
+> **Deprecated in favor of `RuntimeDirectoryManager`** (`utils.common_utils.RuntimeDirectoryManager`). These env vars still work for backward compatibility (via `utils/constants.py`), but new code should obtain runtime paths through RDM. The env vars override RDM defaults when set.
+
 | Variable | Default | Description |
 |---|---|---|
 | `MODEL_PATH` | `/app/models/decoder_model.pt` | Decoder model path (universal-decoder-node) |

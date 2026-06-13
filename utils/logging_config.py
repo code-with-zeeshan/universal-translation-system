@@ -1,3 +1,4 @@
+from utils.common_utils import RuntimeDirectoryManager
 # utils/logging_config.py
 import logging
 import logging.config
@@ -11,7 +12,6 @@ try:
 except Exception:
     DirectoryManager = None  # Avoid import cycles during bootstrap
 
-from utils.constants import LOG_DIR
 
 def _get_memory_info() -> str:
     """Get memory information"""
@@ -136,7 +136,7 @@ def _is_worker_process() -> bool:
         return True
     return False
 
-def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
+def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_level: str = "INFO"):
     """Setup comprehensive logging configuration (idempotent, skips DataLoader workers)"""
     global _logging_initialized
     if _logging_initialized or _is_worker_process():
@@ -146,9 +146,8 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     try:
         if DirectoryManager:
-            DirectoryManager.create_logs_structure("logs")
+            DirectoryManager.create_logs_structure(str(RuntimeDirectoryManager().logs_dir))
     except Exception:
-        # Non-fatal; logging will still proceed
         pass
 
     # Choose formatter dynamically
@@ -209,7 +208,7 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
                 'level': 'DEBUG',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{LOG_DIR}/training/training.log',
+                'filename': f'{log_dir}/training/training.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -218,7 +217,7 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{LOG_DIR}/data/data.log',
+                'filename': f'{log_dir}/data/data.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -227,7 +226,7 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{LOG_DIR}/monitoring/monitoring.log',
+                'filename': f'{log_dir}/monitoring/monitoring.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -236,7 +235,7 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{LOG_DIR}/coordinator/coordinator.log',
+                'filename': f'{log_dir}/coordinator/coordinator.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -245,7 +244,7 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{LOG_DIR}/decoder/decoder.log',
+                'filename': f'{log_dir}/decoder/decoder.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -254,7 +253,7 @@ def setup_logging(log_dir: str = LOG_DIR, log_level: str = "INFO"):
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{LOG_DIR}/vocabulary/vocabulary.log',
+                'filename': f'{log_dir}/vocabulary/vocabulary.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },

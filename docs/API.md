@@ -16,7 +16,7 @@ Use binary `/decode` for highest performance.
 ---
 
 ## Decoder Node API
-FastAPI app in `cloud_decoder/optimized_decoder.py`, served via uvicorn.
+FastAPI app in `runtime/cloud_decoder/optimized_decoder.py`, served via uvicorn.
 
 ### POST /decode
 - Purpose: Decode locally encoded embeddings (binary) to a translation.
@@ -86,7 +86,7 @@ Binary Payload Format (see `docs/schemas/binary_payload_schema.md`):
 ---
 
 ## Coordinator API
-FastAPI app in `coordinator/advanced_coordinator.py`.
+FastAPI app in `runtime/coordinator/advanced_coordinator.py`.
 
 ### POST /api/decode
 - Purpose: Proxy binary decode requests to the least-loaded healthy decoder.

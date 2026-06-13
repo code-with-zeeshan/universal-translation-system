@@ -6,7 +6,8 @@ from typing import Dict, List, Optional
 
 import msgpack
 
-from utils.constants import VOCAB_DIR
+from utils.common_utils import RuntimeDirectoryManager
+
 from pipeline.vocabulary.creator import UnifiedVocabularyCreator as VocabularyPackCreator
 
 logger = logging.getLogger("vocabulary.evolve")
@@ -25,11 +26,13 @@ class VocabularyEvolver:
 
     def __init__(
         self,
-        vocab_dir: str = VOCAB_DIR,
+        vocab_dir: str = "",
         promotion_threshold: int = 1000,
     ):
-        self.vocab_dir = Path(vocab_dir)
-        self.pack_creator = VocabularyPackCreator(output_dir=vocab_dir)
+        self.runtime_dirs = RuntimeDirectoryManager()
+        resolved_dir = vocab_dir if vocab_dir else str(self.runtime_dirs.vocab_dir)
+        self.vocab_dir = Path(resolved_dir)
+        self.pack_creator = VocabularyPackCreator(output_dir=resolved_dir)
         self.promotion_threshold = promotion_threshold
 
     def evolve_all_packs(self) -> Dict[str, int]:
@@ -185,7 +188,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Evolve vocabulary packs")
     parser.add_argument(
-        "--vocab-dir", default=VOCAB_DIR, help="Vocabulary directory"
+        "--vocab-dir", default=str(self.runtime_dirs.vocab_dir), help="Vocabulary directory"
     )
     parser.add_argument(
         "--threshold",

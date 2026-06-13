@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENCODER_DIR="$PROJECT_DIR/encoder_core"
+ENCODER_DIR="$PROJECT_DIR/runtime/encoder_core"
 OUTPUT_DIR="$ENCODER_DIR/output"
 
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
@@ -193,7 +193,7 @@ Environment:
   ANDROID_NDK_HOME   Path to Android NDK (required for --android)
   ANDROID_NDK        Alternative NDK path variable
 
-Output directory: encoder_core/output/<platform>/
+Output directory: runtime/encoder_core/output/<platform>/
 EOF
 }
 

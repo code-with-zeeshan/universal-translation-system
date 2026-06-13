@@ -33,7 +33,7 @@ class TestIntegrationFixes(unittest.TestCase):
     
     def test_tokenization_implementation_fixed(self):
         """Test that tokenization implementation is complete"""
-        with open('encoder_core/src/vocabulary_pack.cpp', 'r', encoding='utf-8') as f:
+        with open('runtime/encoder_core/src/vocabulary_pack.cpp', 'r', encoding='utf-8') as f:
             content = f.read()
             # Should not contain TODO
             self.assertNotIn('TODO: Integrate production BPE or SentencePiece subword tokenization here', content)

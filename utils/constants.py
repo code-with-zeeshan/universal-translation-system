@@ -2,6 +2,12 @@
 """
 Centralized constants for the Universal Translation System with environment overrides.
 
+NOTE on file path constants (e.g. MODELS_DIR, DATA_PROCESSED_DIR, LOG_DIR, etc.):
+These are kept for backward compatibility and env-override support. For new code,
+prefer ``RuntimeDirectoryManager`` (``utils.common_utils.RuntimeDirectoryManager``)
+as the single source of truth for all runtime paths. The constants here match
+the RDM defaults and are overridable via environment variables.
+
 All values here can be overridden via environment variables. We check both
 UTS_<NAME> and <NAME> to make it easy to integrate with different env setups.
 

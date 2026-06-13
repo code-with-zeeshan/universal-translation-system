@@ -5,7 +5,7 @@ Common utilities for the Universal Translation System.
 Provides shared utilities for directory management, logging,
 and other common operations.
 """
-from .common_utils import DirectoryManager,ImportCleaner
+from .common_utils import DirectoryManager
 # Optional dependency: psutil (used by resource_tracker). Avoid hard requirement at import time.
 try:
     from .resource_tracker import ResourceTracker, ResourceTracked, track_resources, resource_tracker  # type: ignore
@@ -20,7 +20,7 @@ except Exception:
 # Import base classes
 from .base_classes import (
     BaseDataProcessor, BaseVocabularyManager, BaseVocabularyHandler,
-    BaseManager, BaseProcessor, BaseValidator, TokenizerMixin
+    BaseManager, BaseProcessor, BaseValidator,
 )
 
 # Import thread safety utilities
@@ -32,21 +32,21 @@ from .thread_safety import (
 
 # Import credential management
 from .credential_manager import (
-    CredentialManager, credential_manager, get_credential, set_credential, delete_credential
+    CredentialManager, credential_manager, get_credential, set_credential,
 )
 
 # Import secure serialization
 from .secure_serialization import (
     secure_serialize_json, secure_deserialize_json,
     secure_serialize_msgpack, secure_deserialize_msgpack,
-    safe_deserialize_json, safe_deserialize_msgpack
+    safe_deserialize_json,
 )
 
 # Import JWT authentication
 # Optional dependency: pyjwt and cryptography (used by jwt_auth). Avoid hard requirement at import time.
 try:
     from .jwt_auth import (
-        JWTAuth, jwt_auth, require_auth, require_user, require_scopes
+        JWTAuth, jwt_auth, require_auth, require_user,
     )  # type: ignore
 except Exception:
     JWTAuth = None  # type: ignore
@@ -58,7 +58,7 @@ except Exception:
     def require_user(*args, **kwargs):  # type: ignore
         def decorator(func): return func
         return decorator
-    def require_scopes(*args, **kwargs):  # type: ignore
+    def require_user(*args, **kwargs):  # type: ignore
         def decorator(func): return func
         return decorator
 
@@ -66,13 +66,11 @@ except Exception:
 from .exceptions import (
     UniversalTranslationError, DataError, VocabularyError, ModelError,
     ConfigurationError, TrainingError, InferenceError, ResourceError,
-    SecurityError, LoggingError, NetworkError, TimeoutError
+    SecurityError, LoggingError, NetworkError,
 )
 
 __all__ = [
     "DirectoryManager",
-    "ImportCleaner",
-    # ResourceTracker symbols exported only if available
     "document_thread_safety",
 ]
 if ResourceTracker is not None:  # type: ignore

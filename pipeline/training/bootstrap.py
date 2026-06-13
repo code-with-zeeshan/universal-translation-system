@@ -1,4 +1,5 @@
-# training/bootstrap_from_pretrained.py
+from utils.common_utils import RuntimeDirectoryManager
+# pipeline/training/bootstrap.py
 import torch
 import torch.nn as nn
 from transformers import (
@@ -54,7 +55,7 @@ class PretrainedModelBootstrapper:
     
     def create_encoder_from_pretrained(self, 
                                     model_name: str = 'xlm-roberta-base',
-                                    output_path: str = 'models/encoder/universal_encoder_initial.pt',
+                                    output_path: str = 'self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"',
                                     target_hidden_dim: int = 768) -> nn.Module:
         """Create encoder using modern AutoModel patterns with dimension adaptation"""
         
@@ -107,7 +108,7 @@ class PretrainedModelBootstrapper:
             )
         
         # Create encoder with proper initialization
-        from encoder.universal_encoder import UniversalEncoder
+        from runtime.encoder.universal_encoder import UniversalEncoder
         
         our_encoder = UniversalEncoder(
             max_vocab_size=min(32000, vocab_size),
@@ -292,7 +293,7 @@ class PretrainedModelBootstrapper:
 
     def create_decoder_from_mbart(self, 
                                 model_name: str = 'facebook/mbart-large-50',
-                                output_path: str = 'models/decoder/universal_decoder_initial.pt',
+                                output_path: str = 'self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"',
                                 encoder_dim: int = 512,
                                 decoder_dim: int = 768,
                                 max_seq_length: int = 512) -> nn.Module:
@@ -330,7 +331,7 @@ class PretrainedModelBootstrapper:
         
         logger.info("📦 Creating decoder with modern architecture...")
         
-        from cloud_decoder import OptimizedUniversalDecoder
+        from runtime.cloud_decoder import OptimizedUniversalDecoder
         
         our_decoder = OptimizedUniversalDecoder(
             encoder_dim=encoder_dim,

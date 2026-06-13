@@ -1,4 +1,5 @@
-# training/trainer.py
+from utils.common_utils import RuntimeDirectoryManager
+# pipeline/training/trainer.py
 """
 Intelligent Universal Trainer that automatically adapts to hardware and requirements.
 Consolidates single-GPU, multi-GPU, distributed, and memory-efficient training.
@@ -490,16 +491,6 @@ class IntelligentTrainer(BaseTrainer):
     
         # CPU fallback
         return strategies[HardwareProfile.CPU_ONLY]
-        
-        strategy = strategies.get(self.hardware_profile, strategies[HardwareProfile.CPU_ONLY])
-        
-        # Override with user config if specified
-        if hasattr(self.config.training, 'force_batch_size'):
-            strategy.batch_size = self.config.training.force_batch_size
-        if hasattr(self.config.training, 'force_learning_rate'):
-            strategy.learning_rate = self.config.training.force_learning_rate
-            
-        return strategy
     
     # ==================== Setup Methods ====================
     
@@ -885,7 +876,7 @@ class IntelligentTrainer(BaseTrainer):
             )
             
         # Setup checkpoint directory
-        self.checkpoint_dir = Path(self.config.data.checkpoint_dir) / self.experiment_name
+        self.checkpoint_dir = Path(self.runtime_dirs.checkpoints_dir) / self.experiment_name
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     def _log_initialization(self):

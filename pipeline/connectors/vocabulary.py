@@ -1,10 +1,11 @@
-# connector/vocabulary_connector.py
+# pipeline/connectors/vocabulary.py
 """Connect data pipeline to vocabulary creation"""
 from pathlib import Path
 import logging
 
+from utils.common_utils import RuntimeDirectoryManager
 from utils.exceptions import DataError
-from utils.constants import VOCAB_DIR, DATA_CORPUS_DIR
+
 
 
 class VocabularyConnector:
@@ -12,13 +13,16 @@ class VocabularyConnector:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.runtime_dirs = RuntimeDirectoryManager()
     
-    def create_vocabularies_from_pipeline(self, processed_dir: str = 'data/processed',
+    def create_vocabularies_from_pipeline(self, processed_dir: str = '',
                                            output_dir: str = '',
                                            vocab_size: int = 32000):
         """Create vocabulary packs after data pipeline completes"""
         if not output_dir:
-            output_dir = VOCAB_DIR
+            output_dir = str(self.runtime_dirs.vocab_dir)
+        if not processed_dir:
+            processed_dir = str(self.runtime_dirs.processed_dir)
         from pipeline.vocabulary.creator import UnifiedVocabularyCreator as VocabularyPackCreator
         from pipeline.vocabulary.config import UnifiedVocabConfig
         
@@ -31,7 +35,7 @@ class VocabularyConnector:
         
         # Create vocabulary packs with requested vocab size per pack
         creator = VocabularyPackCreator(
-            corpus_dir=str(Path(processed_dir) / DATA_CORPUS_DIR),
+            corpus_dir=str(self.runtime_dirs.corpus_dir),
             output_dir=output_dir,
             config=UnifiedVocabConfig(vocab_size=vocab_size),
         )

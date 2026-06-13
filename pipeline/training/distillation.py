@@ -67,7 +67,7 @@ class DistillationTrainer(IntelligentTrainer):
         if self.teacher_checkpoint:
             logger.info(f"Loading teacher from local checkpoint: {self.teacher_checkpoint}")
             ckpt = torch.load(self.teacher_checkpoint, map_location='cpu')
-            from encoder.universal_encoder import UniversalEncoder
+            from runtime.encoder.universal_encoder import UniversalEncoder
             from udn.decoder import OptimizedUniversalDecoder
             self.teacher_encoder = UniversalEncoder(
                 max_vocab_size=self.config.model.max_vocab_size,
@@ -166,7 +166,7 @@ def train_with_distillation(config_path: str = "config/base.yaml", **kwargs):
     """Convenience: load config, datasets, and run DistillationTrainer."""
     from config.schemas import load_config
     from pipeline.training.datasets import ModernParallelDataset as TranslationDataset
-    from encoder.universal_encoder import UniversalEncoder
+    from runtime.encoder.universal_encoder import UniversalEncoder
     from udn.decoder import OptimizedUniversalDecoder
 
     config = load_config(config_path)

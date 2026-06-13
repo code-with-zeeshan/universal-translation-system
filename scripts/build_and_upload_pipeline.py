@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from utils.common_utils import RuntimeDirectoryManager
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -41,7 +42,8 @@ def run_py(module_path: str, args: list[str] | None = None):
 
 
 def ensure_dirs():
-    for p in [ROOT / "models/production", ROOT / "models/adapters", ROOT / "vocabulary/vocab"]:
+    mgr = RuntimeDirectoryManager(root=ROOT)
+    for p in [mgr.production_dir, mgr.adapters_dir, mgr.vocab_dir]:
         p.mkdir(parents=True, exist_ok=True)
 
 

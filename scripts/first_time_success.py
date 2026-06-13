@@ -193,7 +193,9 @@ def main():
             report["metrics"][name] = {"ok": ok, "target": target, "status": status_code}
 
     # Artifacts checks
-    artifacts = verify_artifacts(Path("models"), Path("vocabulary/vocab"))
+    from utils.common_utils import RuntimeDirectoryManager
+    mgr = RuntimeDirectoryManager()
+    artifacts = verify_artifacts(mgr.models_dir, mgr.vocab_dir)
     report["artifacts"] = artifacts
     art_ok = all([
         artifacts["models_dir_exists"],

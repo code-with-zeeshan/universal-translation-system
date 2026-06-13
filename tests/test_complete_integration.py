@@ -103,7 +103,7 @@ class TestCompleteIntegration(unittest.TestCase):
     @patch('httpx.AsyncClient')
     async def test_coordinator_routing(self, mock_client):
         """Test that the coordinator properly routes requests to decoders"""
-        from coordinator.advanced_coordinator import httpx
+        from runtime.coordinator.advanced_coordinator import httpx
         
         async def route_translation_request(*, encoded_data: bytes, source_lang: str, target_lang: str, decoder_urls: list[str]):
             # Minimal shim to match updated coordinator responsibilities
@@ -284,7 +284,7 @@ class TestCompleteIntegration(unittest.TestCase):
     
     def test_dataset_classes_available(self):
         """Test dataset classes are properly defined"""
-        from utils.dataset_classes import ModernParallelDataset
+        from pipeline.training.datasets import ModernParallelDataset
         
         # Test instantiation
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
@@ -333,7 +333,7 @@ class TestCompleteIntegration(unittest.TestCase):
 
     def test_dataset_functionality(self):
         """Test dataset classes work correctly"""
-        from utils.dataset_classes import ModernParallelDataset
+        from pipeline.training.datasets import ModernParallelDataset
     
         # Create temporary test file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:

@@ -67,7 +67,7 @@ def test_jwt_tampering_rejected_headers_required(monkeypatch):
 def test_insecure_config_fail_fast(monkeypatch):
     # Decoder must have DECODER_JWT_SECRET
     monkeypatch.delenv('DECODER_JWT_SECRET', raising=False)
-    from cloud_decoder import optimized_decoder
+    from runtime.cloud_decoder import optimized_decoder
     # simulate startup_validation call directly should raise
     with pytest.raises(RuntimeError):
         import asyncio
@@ -76,7 +76,7 @@ def test_insecure_config_fail_fast(monkeypatch):
 
 def test_xss_sanitization_dashboard(monkeypatch):
     # Inject a malicious node value and verify it is escaped in the dashboard HTML
-    from coordinator.advanced_coordinator import DASHBOARD_TEMPLATE, DecoderNodeSchema
+    from runtime.coordinator.advanced_coordinator import DASHBOARD_TEMPLATE, DecoderNodeSchema
     nodes = [
         DecoderNodeSchema(
             node_id="n1",

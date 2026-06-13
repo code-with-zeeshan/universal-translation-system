@@ -1,4 +1,4 @@
-# training/profiling.py
+# pipeline/training/profiling.py
 """
 Profiling utilities for training optimization.
 Extracted from train_universal_system.py

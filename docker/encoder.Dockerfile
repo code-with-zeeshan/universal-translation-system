@@ -9,14 +9,14 @@ RUN apt-get update && apt-get install -y \
     make \
     liblz4-dev
 
-WORKDIR /encoder_core
-COPY encoder_core/ .
+WORKDIR /runtime/encoder_core
+COPY runtime/encoder_core/ .
 RUN mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
 # Stage 2: Minimal runtime image for CI/CD artifact or edge packaging
 FROM ubuntu:26.04
-COPY --from=builder /encoder_core/build/libuniversal_encoder_core.so /usr/lib/
-COPY --from=builder /encoder_core/include /usr/include/universal_encoder_core
+COPY --from=builder /runtime/encoder_core/build/libuniversal_encoder_core.so /usr/lib/
+COPY --from=builder /runtime/encoder_core/include /usr/include/universal_encoder_core
 # Optionally copy test binaries or examples if needed for CI
 # COPY --from=builder /encoder_core/build/tests /tests
 # COPY --from=builder /encoder_core/build/examples /examples

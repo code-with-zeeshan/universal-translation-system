@@ -1,4 +1,5 @@
-# training/launch.py
+from utils.common_utils import RuntimeDirectoryManager
+# pipeline/training/launch.py
 """
 Launch utilities for intelligent training system
 Handles CLI, distributed setup, and orchestration
@@ -23,23 +24,20 @@ from typing import Optional, Dict, Any, Tuple
 import time
 from datetime import datetime
 
-# Add project root to path
-sys.path.append(str(Path(__file__).parent.parent))
-
 from pipeline.training.trainer import IntelligentTrainer, train_intelligent
-from encoder.universal_encoder import UniversalEncoder
-from cloud_decoder import OptimizedUniversalDecoder
+from runtime.encoder.universal_encoder import UniversalEncoder
+from runtime.cloud_decoder import OptimizedUniversalDecoder
 from pipeline.training.datasets import ModernParallelDataset
 from utils.shutdown_handler import GracefulShutdown
 from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
 from config.schemas import RootConfig, load_config as load_pydantic_config
-from utils.constants import LOG_DIR, MODELS_ENCODER_DIR, MODELS_DECODER_DIR, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, TEST_FINAL_FILENAME, EVALUATION_REPORT_FILENAME
+from utils.constants import TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, TEST_FINAL_FILENAME, EVALUATION_REPORT_FILENAME
 from utils.pipeline_checkpoint import PhaseCheckpoint, mark_stage_complete, is_stage_complete, invalidate_downstream, hash_config
 
 # Centralized logging for training
-setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("training")
 
 
@@ -92,8 +90,8 @@ def initialize_models(config: RootConfig) -> Tuple[torch.nn.Module, torch.nn.Mod
     """Initialize encoder and decoder models, bootstrapping from pretrained if needed"""
     logger.info("🔧 Initializing models...")
     
-    encoder_path = Path(f"{MODELS_ENCODER_DIR}/universal_encoder_initial.pt")
-    decoder_path = Path(f"{MODELS_DECODER_DIR}/universal_decoder_initial.pt")
+    encoder_path = RuntimeDirectoryManager().encoder_models_dir / "universal_encoder_initial.pt"
+    decoder_path = RuntimeDirectoryManager().decoder_models_dir / "universal_decoder_initial.pt"
     
     # Bootstrap from pretrained if weight files don't exist
     if not encoder_path.exists() or not decoder_path.exists():
@@ -179,14 +177,14 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     train_dataset = ModernParallelDataset(
         str(train_path),
         cache_dir=getattr(config.data, 'cache_dir', None),
-        vocab_dir=config.vocabulary.vocab_dir,
+        vocab_dir=self.runtime_dirs.vocab_dir,
         config=config
     )
     
     val_dataset = ModernParallelDataset(
         str(val_path),
         cache_dir=getattr(config.data, 'cache_dir', None),
-        vocab_dir=config.vocabulary.vocab_dir,
+        vocab_dir=self.runtime_dirs.vocab_dir,
         config=config
     )
     
@@ -315,7 +313,7 @@ def launch_training(args: argparse.Namespace):
     logger.info("="*60)
     
     # Register final model
-    final_model_path = Path(config.data.checkpoint_dir) / experiment_name / BEST_MODEL_FILENAME
+    final_model_path = Path(self.runtime_dirs.checkpoints_dir) / experiment_name / BEST_MODEL_FILENAME
     if final_model_path.exists():
         version = versioning.register_model(
             model_path=str(final_model_path),
@@ -391,7 +389,7 @@ def launch_evaluation(args: argparse.Namespace):
     # Load test dataset
     test_dataset = ModernParallelDataset(
         args.test_data or str(Path(config.data.processed_dir) / TEST_FINAL_FILENAME),
-        vocab_dir=config.vocabulary.vocab_dir
+        vocab_dir=self.runtime_dirs.vocab_dir
     )
     
     # Run evaluation
@@ -488,7 +486,7 @@ def main():
                             help='Override number of epochs')
     train_parser.add_argument('--force', action='store_true',
                             help='Ignore training checkpoint and re-train from scratch')
-    train_parser.add_argument('--log-dir', type=str, default=LOG_DIR,
+    train_parser.add_argument('--log-dir', type=str, default=str(RuntimeDirectoryManager().logs_dir),
                             help='Directory for logs')
     train_parser.add_argument('--log-level', type=str, default='info',
                             choices=['debug', 'info', 'warning', 'error'],

@@ -17,7 +17,7 @@ This document explains how to add, remove, and manage decoders in the Universal 
 9. [Troubleshooting](#troubleshooting)
 
 ## Overview
-The system uses a pool of decoders managed by the Coordinator (see `coordinator/advanced_coordinator.py`):
+The system uses a pool of decoders managed by the Coordinator (see `runtime/coordinator/advanced_coordinator.py`):
 - **Horizontal Scaling**: Add more decoders for increased load
 - **High Availability**: Multiple decoders provide redundancy
 - **Resource Optimization**: Distribute workloads across machines/regions/GPUs

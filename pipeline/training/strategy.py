@@ -1,4 +1,4 @@
-# training/training_strategy.py
+# pipeline/training/strategy.py
 """
 Training strategy dataclass for hardware-aware training configuration.
 """

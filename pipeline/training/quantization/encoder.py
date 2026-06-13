@@ -1,4 +1,4 @@
-# training/encoder_quantizer.py
+# pipeline/training/quantization/encoder.py
 """
 Production-ready quantization pipeline with quality testing
 """

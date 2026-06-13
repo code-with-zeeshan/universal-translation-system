@@ -1,4 +1,5 @@
-# training/training_utils.py (ENHANCED VERSION)
+from utils.common_utils import RuntimeDirectoryManager
+# pipeline/training/utils.py
 """
 Common utilities for training modules - Enhanced with more shared functions
 """
@@ -34,7 +35,7 @@ class BaseTrainer(ABC):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_step = 0
         self.best_val_loss = float('inf')
-        self.checkpoint_dir = Path(self.config.data.checkpoint_dir)
+        self.checkpoint_dir = Path(self.runtime_dirs.checkpoints_dir)
         self.checkpoint_dir.mkdir(exist_ok=True)
 
         self._setup_models()

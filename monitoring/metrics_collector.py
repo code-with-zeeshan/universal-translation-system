@@ -5,9 +5,6 @@ import sys
 import os
 from pathlib import Path
 
-# Add the parent directory to sys.path to import vocabulary modules
-sys.path.append(str(Path(__file__).parent.parent))
-
 try:
     from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
     HAS_VOCAB_MANAGER = True
@@ -90,7 +87,8 @@ vocabulary_pack_tokens = _safe_gauge(
 
 # Logging setup (centralized)
 from utils.logging_config import setup_logging
-setup_logging(log_dir="logs", log_level=os.environ.get("LOG_LEVEL", "INFO"))
+from utils.common_utils import RuntimeDirectoryManager
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("monitoring")
 
 

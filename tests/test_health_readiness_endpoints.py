@@ -2,8 +2,8 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from coordinator.advanced_coordinator import app as coord_app
-from cloud_decoder.optimized_decoder import app as decoder_app
+from runtime.coordinator.advanced_coordinator import app as coord_app
+from runtime.cloud_decoder.optimized_decoder import app as decoder_app
 
 
 # -- Coordinator endpoint tests --

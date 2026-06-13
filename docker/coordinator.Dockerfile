@@ -30,7 +30,7 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-COPY coordinator/ coordinator/
+COPY runtime/coordinator/ runtime/coordinator/
 COPY utils/ utils/
 COPY config/ config/
 COPY version-config.json .
@@ -51,5 +51,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 USER appuser
 
-ENTRYPOINT ["uvicorn", "coordinator.advanced_coordinator:app", "--host", "0.0.0.0", "--port", "5100"]
+ENTRYPOINT ["uvicorn", "runtime.coordinator.advanced_coordinator:app", "--host", "0.0.0.0", "--port", "5100"]
 # Override port via COORDINATOR_PORT env var (default 5100)

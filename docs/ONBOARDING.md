@@ -22,11 +22,11 @@ If you haven't yet, run `./uts` — it organizes every tool into workflow groups
 
 | Component | Description | Location |
 |---|---|---|
-| **Edge Encoder** | 42.7M params, 512d/6L/8H, on-device | `encoder/` |
-| **Cloud Decoder** | 108.1M params, 768d/8L/12H, cloud | `cloud_decoder/` |
+| **Edge Encoder** | 42.7M params, 512d/6L/8H, on-device | `runtime/encoder/` |
+| **Cloud Decoder** | 108.1M params, 768d/8L/12H, cloud | `runtime/cloud_decoder/` |
 | **Vocabulary** | 6 per-script SentencePiece packs | `vocabulary/` |
-| **Data Pipeline** | Multi-stage download → process | `data/` |
-| **Coordinator** | Load-balances decoder pool | `coordinator/` |
+| **Data Pipeline** | Multi-stage download → process | `pipeline/data/` |
+| **Coordinator** | Load-balances decoder pool | `runtime/coordinator/` |
 | **SDKs** | Android, iOS, Flutter, RN, Web | `sdk/` |
 
 ## CLI Reference
@@ -69,7 +69,8 @@ Run `./uts <group> --help` for full options.
 
 | Flag | Description |
 |---|---|
-| `--pipeline` | Run full data pipeline (download → sample → augment → validate) |
+| `--pipeline` | Run data pipeline (download → sample → augment → create → validate → vocab). Eval data not included; use `uts eval --download` |
+| `--interactive` | Interactive stage selector (TUI wizard) — toggle stages on/off with dynamic time estimates, generates config override |
 | `--download-only` | Download evaluation test data only (skip training data) |
 | `--augment` | Run synthetic data augmentation only |
 | `--validate-data` | Validate pipeline output |
@@ -82,14 +83,20 @@ Run `./uts <group> --help` for full options.
 | `--reset` | Reset pipeline state (start fresh) |
 | `--stage NAME` | Run a single pipeline stage |
 
-**Pipeline stages (in order):**
-1. `download_training` — opus-100 + extra sources, evaluation test splits
+**Pipeline stages (in order, default set):**
+1. `download_training` — OPUS-100 + extra sources
 2. `sample_filter` — Deduplicate, filter length/content
 3. `augment` — False friends, idioms, backtranslation, pivots
-4. `comet_quality` — Quality filter with COMET (preserves 4-column format)
-5. `create_ready` — Merge all sources into train_final.txt / val_final.txt
-6. `validate` — Validate output data and vocabulary files
-7. `vocabulary` — Build vocabulary packs from monolingual corpora
+4. `create_ready` — Merge all sources into train_final.txt / val_final.txt
+5. `validate` — Validate output data and vocabulary files
+6. `vocabulary` — Build vocabulary packs from monolingual corpora
+
+**Optional heavy stages** (enable via `config.pipeline.enabled_stages`):
+- `wikipedia_backtranslation` — Download Wikipedia monolingual data for backtranslation (~200K sentences/lang)
+- `direct_opus` — Direct OPUS.nlpl.eu fallback download for missing pairs
+- `knowledge_distillation` — Distill NLLB-3.3B teacher into training data (GPU required)
+- `download_evaluation` — Pre-fetch evaluation test sets (use `uts eval --download` instead)
+- `comet_quality` — Neural quality filter with Unbabel/wmt22-comet-da (GPU + 12GB+ VRAM)
 
 ### `./uts vocab` — Vocabulary Management
 

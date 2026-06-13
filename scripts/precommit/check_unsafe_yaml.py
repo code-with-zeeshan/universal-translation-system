@@ -24,16 +24,14 @@ def file_uses_unsafe_yaml(path: Path) -> bool:
 
 def main() -> int:
     src_dirs = [
-        ROOT / "encoder",
-        ROOT / "cloud_decoder",
-        ROOT / "coordinator",
+        ROOT / "runtime",
         ROOT / "utils",
         ROOT / "tools",
-        ROOT / "training",
         ROOT / "tests",
         ROOT / "scripts",
         ROOT / "universal-decoder-node",
         ROOT / "vocabulary",
+        ROOT / "pipeline",
     ]
 
     offenders = []

@@ -17,7 +17,8 @@ from typing import Any, Dict, List, Optional
 
 import msgpack
 
-from utils.constants import LOG_DIR, DATA_PROCESSED_DIR, DATA_CORPUS_DIR, VOCAB_DIR
+from utils.common_utils import RuntimeDirectoryManager
+
 from utils.exceptions import VocabularyError
 from utils.logging_config import setup_logging
 
@@ -36,7 +37,7 @@ from pipeline.vocabulary.research import (
 from pipeline.vocabulary.validation import validate_pack, compare_packs, _get_pack_version, _save_pack, _cleanup_temp_files
 
 
-setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("vocabulary")
 
 
@@ -67,8 +68,8 @@ class UnifiedVocabularyCreator:
 
     def __init__(
         self,
-        corpus_dir: str = str(Path(DATA_PROCESSED_DIR) / DATA_CORPUS_DIR),
-        output_dir: str = VOCAB_DIR,
+        corpus_dir: str = "",
+        output_dir: str = "",
         config: Optional[UnifiedVocabConfig] = None,
         default_mode: CreationMode = CreationMode.PRODUCTION
     ):
@@ -81,8 +82,9 @@ class UnifiedVocabularyCreator:
             config: Unified configuration
             default_mode: Default creation mode
         """
-        self.corpus_dir = Path(corpus_dir)
-        self.output_dir = Path(output_dir)
+        self.runtime_dirs = RuntimeDirectoryManager()
+        self.corpus_dir = Path(corpus_dir) if corpus_dir else self.runtime_dirs.corpus_dir
+        self.output_dir = Path(output_dir) if output_dir else self.runtime_dirs.vocab_dir
         self.config = config or UnifiedVocabConfig()
         self.default_mode = default_mode
 
@@ -637,8 +639,8 @@ if __name__ == "__main__":
     parser.add_argument("--pack", dest="pack_name", help="Pack name (for create)")
     parser.add_argument("--langs", nargs="*", help="Languages (for create)")
     parser.add_argument("--mode", choices=["production", "research", "hybrid"], default="production")
-    parser.add_argument("--corpus_dir", default=DATA_PROCESSED_DIR)
-    parser.add_argument("--output_dir", default=VOCAB_DIR)
+    parser.add_argument("--corpus_dir", default=str(self.runtime_dirs.processed_dir))
+    parser.add_argument("--output_dir", default=str(RuntimeDirectoryManager().vocab_dir))
     parser.add_argument("--groups", nargs="*", help="Groups to create for create_all")
     args = parser.parse_args()
 

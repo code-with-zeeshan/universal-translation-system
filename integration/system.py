@@ -16,7 +16,7 @@ from prometheus_client import Gauge, start_http_server
 from .system_config import SystemConfig
 from .system_health import SystemHealthMonitor
 from monitoring.health_service import start_health_service
-from utils.dataset_classes import ModernParallelDataset
+from pipeline.training.datasets import ModernParallelDataset
 from utils.constants import DATA_PROCESSED_DIR
 
 logger = logging.getLogger(__name__)
@@ -261,9 +261,9 @@ class UniversalTranslationSystem:
             logger.info("🤖 Setting up models...")
 
             # Import model components
-            from encoder.universal_encoder import UniversalEncoder
-            from encoder.language_adapters import AdapterUniversalEncoder
-            from cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
+            from runtime.encoder.universal_encoder import UniversalEncoder
+            from runtime.encoder.language_adapters import AdapterUniversalEncoder
+            from runtime.cloud_decoder.optimized_decoder import OptimizedUniversalDecoder
 
             # Create encoder
             if self.config.use_adapters:
@@ -321,9 +321,11 @@ class UniversalTranslationSystem:
 
             # Create datasets
             from pipeline.training.datasets import ModernParallelDataset
+            from utils.common_utils import RuntimeDirectoryManager
+            _rdm = RuntimeDirectoryManager()
 
-            train_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "train_final.txt"
-            val_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "val_final.txt"
+            train_path = _rdm.train_final_path
+            val_path = _rdm.val_final_path
 
             if not train_path.exists():
                 logger.warning("⚠️  Training data not found. Run data pipeline first.")
@@ -396,7 +398,7 @@ class UniversalTranslationSystem:
             logger.error("❌ Adapter system not enabled")
             return
 
-        from encoder.train_adapters import AdapterTrainer
+        from runtime.encoder.train_adapters import AdapterTrainer
 
         adapter_trainer = AdapterTrainer(
             base_model_path=f"{self.config.model_dir}/universal_encoder.pt"
@@ -552,8 +554,10 @@ class UniversalTranslationSystem:
     def optimize_hyperparameters(self, trial_budget: int = 20):
         """Use Optuna for hyperparameter optimization"""
         import optuna
-        train_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "train_final.txt"
-        val_path = Path(self.config.data_dir) / DATA_PROCESSED_DIR / "val_final.txt"
+        from utils.common_utils import RuntimeDirectoryManager
+        _rdm = RuntimeDirectoryManager()
+        train_path = _rdm.train_final_path
+        val_path = _rdm.val_final_path
 
         def objective(trial):
             from pipeline.training.trainer import IntelligentTrainer

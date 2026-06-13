@@ -87,7 +87,6 @@ CORE_STAGES = [
     "sample",
     "augment",
     "create_ready",
-    "comet_quality",
     "validate",
     "vocabulary",
 ]

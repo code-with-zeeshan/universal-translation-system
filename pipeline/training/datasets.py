@@ -1,4 +1,5 @@
-# data/dataset_classes.py
+from utils.common_utils import RuntimeDirectoryManager
+# pipeline/training/datasets.py
 """
 Dataset classes for the Universal Translation System
 """
@@ -22,7 +23,9 @@ class ModernParallelDataset(Dataset, TokenizerMixin):
     workers share the OS page cache via mmap, eliminating per-process copies.
     """
 
-    def __init__(self, data_path: str, cache_dir: Optional[str] = None, vocab_dir: str = 'vocabulary/vocab', config: Optional[RootConfig] = None):
+    def __init__(self, data_path: str, cache_dir: Optional[str] = None, vocab_dir: str = "", config: Optional[RootConfig] = None):
+        if not vocab_dir:
+            vocab_dir = str(RuntimeDirectoryManager().vocab_dir)
         self.data_path = Path(data_path)
         self.config = config or load_pydantic_config()
         self.max_length = self.config.model.max_seq_length

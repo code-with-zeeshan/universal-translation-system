@@ -10,8 +10,8 @@ __version__ = "1.0.0"
 __author__ = "Universal Translation Team"
 
 # Make key components easily importable
-from encoder.universal_encoder import UniversalEncoder
-from cloud_decoder import OptimizedUniversalDecoder
+from runtime.encoder.universal_encoder import UniversalEncoder
+from runtime.cloud_decoder import OptimizedUniversalDecoder
 from integration.system import UniversalTranslationSystem
 
 __all__ = [

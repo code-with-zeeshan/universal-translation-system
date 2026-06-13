@@ -1,4 +1,4 @@
-# training/model_profiler.py
+# pipeline/training/quantization/profiler.py
 """
 Profiling for quantized models
 """

@@ -1,3 +1,4 @@
+from utils.common_utils import RuntimeDirectoryManager
 # coordinator/advanced_coordinator.py
 import json
 import uuid
@@ -7,6 +8,7 @@ import time
 import logging
 import os
 import threading
+from pathlib import Path
 
 # Conditional etcd import to avoid hard dependency when USE_ETCD=false
 USE_ETCD = os.environ.get("USE_ETCD", "false").lower() == "true"
@@ -48,21 +50,21 @@ from utils.rate_limiter import RateLimiter
 from utils.redis_manager import RedisManager
 from utils.exceptions import ConfigurationError, NetworkError
 from utils.security import validate_model_source, safe_load_model
-from coordinator.circuit_breaker import CircuitBreakerRegistry, CircuitState
+from runtime.coordinator.circuit_breaker import CircuitBreakerRegistry, CircuitState
 
 # --- Configuration and Constants ---
 from utils.logging_config import setup_logging, get_logger
-setup_logging(log_dir=LOG_DIR, log_level=os.environ.get("LOG_LEVEL", "INFO"))
+setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))
 # Use structured logger adapter to encourage structured fields usage
 logger = get_logger("coordinator", context={"component": "coordinator"})
 
 # Configuration paths
-POOL_PATH = os.environ.get("POOL_CONFIG_PATH", os.path.join(CONFIGS_DIR, "decoder_pool.json"))
+POOL_PATH = os.environ.get("POOL_CONFIG_PATH", str(RuntimeDirectoryManager().generated_config_dir / "decoder_pool.json"))
 
 # Version information
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 # Shared API version for surface compatibility
-from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, LOG_DIR, CONFIGS_DIR, VERSION_CONFIG_FILENAME
+from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, VERSION_CONFIG_FILENAME
 
 # Security keys and tokens
 from utils.secrets_bootstrap import bootstrap_secrets, get_secret, validate_runtime_secrets
@@ -272,8 +274,6 @@ async def _install_shutdown():
 async def _startup_api_policy():
     try:
         import json
-        from pathlib import Path
-        # 1) Ensure API_VERSION matches core.apiVersion
         cfg = json.loads(Path(VERSION_CONFIG_FILENAME).read_text(encoding="utf-8"))
         core_api = str(cfg.get("core", {}).get("apiVersion", ""))
         if not core_api:
@@ -281,7 +281,7 @@ async def _startup_api_policy():
         if str(API_VERSION) != core_api:
             raise RuntimeError(f"API_VERSION ({API_VERSION}) != core.apiVersion ({core_api})")
         # 2) If vocabulary manifest exists, ensure major matches SUPPORTED_VOCAB_FORMAT
-        manifest = Path("vocabulary/manifest.json")
+        manifest = Path(str(RuntimeDirectoryManager().vocab_manifest_path))
         if manifest.exists():
             data = json.loads(manifest.read_text(encoding="utf-8"))
             fmt = str(data.get("format_version", "")).split(".")[0]
@@ -465,7 +465,7 @@ CONFIG_NEEDS_RELOAD = threading.Event()
 class PoolReloadHandler(FileSystemEventHandler):
     """Handles file system events for the decoder pool configuration."""
     def on_modified(self, event):
-        if event.src_path.endswith(os.path.basename(POOL_PATH)):
+        if event.src_path.endswith(Path(POOL_PATH).name):
             logger.info(f"Configuration file {event.src_path} changed. Scheduling reload.")
             # Set the event to signal the main loop to reload
             CONFIG_NEEDS_RELOAD.set()
@@ -702,7 +702,7 @@ class DecoderPool:
                 
                 # Always mirror to disk so fallback stays up-to-date
                 try:
-                    os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+                    Path(self.pool_path).parent.mkdir(parents=True, exist_ok=True)
                     with open(self.pool_path, "w") as f:
                         json.dump({
                             "nodes": self.nodes,
@@ -711,7 +711,6 @@ class DecoderPool:
                 except Exception as e:
                     logger.error(f"Failed to mirror decoder pool to disk: {e}")
             else:
-                # No Redis, load from disk
                 self._load_from_disk()
         except Exception as e:
             logger.error(f"Error during sync reload: {e}")
@@ -729,10 +728,9 @@ class DecoderPool:
     def _load_from_disk(self):
         """Synchronously loads the pool nodes and AB tests configuration from the JSON file."""
         try:
-            if os.path.exists(self.pool_path):
+            if Path(self.pool_path).exists():
                 with open(self.pool_path, "r") as f:
                     config_data = json.load(f)
-                    # Load both nodes and A/B tests
                     self.nodes = config_data.get("nodes", [])
                     self.ab_tests = config_data.get("ab_tests", [])
                 logger.info(f"Loaded {len(self.nodes)} nodes and {len(self.ab_tests)} A/B tests from disk")
@@ -746,7 +744,7 @@ class DecoderPool:
     def _load_ab_tests_from_disk(self):
         """Load only A/B tests from disk (used when Redis has nodes but no A/B tests)"""
         try:
-            if os.path.exists(self.pool_path):
+            if Path(self.pool_path).exists():
                 with open(self.pool_path, "r") as f:
                     config_data = json.load(f)
                     self.ab_tests = config_data.get("ab_tests", [])
@@ -819,7 +817,7 @@ class DecoderPool:
 
             # Mirror to disk so file fallback is always up-to-date
             try:
-                os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+                Path(self.pool_path).parent.mkdir(parents=True, exist_ok=True)
                 with open(self.pool_path, "w") as f:
                     json.dump({"nodes": self.nodes, "ab_tests": self.ab_tests}, f, indent=2)
             except Exception as e:
@@ -934,8 +932,7 @@ class DecoderPool:
         
         # Always save to disk (as backup or primary if Redis not configured)
         try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.pool_path), exist_ok=True)
+            Path(self.pool_path).parent.mkdir(parents=True, exist_ok=True)
             
             with open(self.pool_path, "w") as f:
                 json.dump({
@@ -1205,9 +1202,9 @@ async def startup_event():
     # Start the watchdog observer to monitor the config file
     global FILE_OBSERVER
     FILE_OBSERVER = Observer()
-    pool_dir = os.path.dirname(POOL_PATH)
-    if not os.path.exists(pool_dir):
-        os.makedirs(pool_dir)
+    pool_dir = Path(POOL_PATH).parent
+    if not pool_dir.exists():
+        pool_dir.mkdir(parents=True)
     FILE_OBSERVER.schedule(PoolReloadHandler(), pool_dir, recursive=False)
     FILE_OBSERVER.start()
     logger.info(f"Started watching {pool_dir} for configuration changes.")    
@@ -1496,7 +1493,6 @@ async def metrics(credentials: HTTPAuthorizationCredentials = Depends(security))
 async def health():
     """Liveness probe with build/version info."""
     try:
-        from pathlib import Path
         import json
         vc = json.loads(Path(VERSION_CONFIG_FILENAME).read_text(encoding='utf-8'))
         core = vc.get('core', {})

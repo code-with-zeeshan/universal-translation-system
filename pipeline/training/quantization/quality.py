@@ -1,4 +1,4 @@
-# training/quality_comparator.py
+# pipeline/training/quantization/quality.py
 """
 A/B Testing for different quality levels
 """
