@@ -7,6 +7,6 @@ mypy>=1.6.0
 ninja>=1.11.0
 pre-commit>=3.5.0
 pybloom-live>=4.0.0
-pytest>=7.4.0
+pytest>=8.4.2
 pytest-asyncio>=0.21.0
 # tenacity is used at runtime (decoder), not dev-only
