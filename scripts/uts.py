@@ -40,6 +40,7 @@ if str(ROOT) not in sys.path:
 
 PY = sys.executable
 
+from utils.common_utils import RuntimeDirectoryManager
 from utils.pipeline_checkpoint import mark_stage_complete, hash_config
 
 
