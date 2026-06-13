@@ -151,6 +151,9 @@ cloud_decoder/logs/
 # Runtime app config directory
 .universaltranslationsystem/
 
+# Runtime output directory (RDM root)
+output/
+
 # Profiling outputs
 profiling/
 
