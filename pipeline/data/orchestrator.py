@@ -23,8 +23,9 @@ from pipeline.data.backtranslation import WikipediaBacktranslator
 from pipeline.data.distillation import KnowledgeDistillator
 from pipeline.connectors.data import PipelineConnector
 from pipeline.connectors.vocabulary import VocabularyConnector
-from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, LOG_DIR, TRAIN_FINAL_FILENAME
+from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, TRAIN_FINAL_FILENAME
 
+logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
@@ -999,7 +1000,7 @@ def main():
     args = parser.parse_args()
 
     # Setup logging
-    setup_logging(log_dir=f"{LOG_DIR}/data", log_level="INFO")
+    setup_logging(log_level="INFO")
 
     # Load configuration
     from config.schemas import load_config
