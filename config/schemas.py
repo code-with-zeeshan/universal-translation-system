@@ -234,7 +234,7 @@ class PipelineConfig(BaseModel):
     enabled_stages: List[str] = Field(
         default_factory=lambda: [
             "download_training", "sample_filter",
-            "augment", "create_ready", "validate", "vocabulary"
+            "create_ready", "validate", "vocabulary"
         ]
     )
     comet_quality_threshold: float = Field(0.7, ge=0.0, le=1.0)

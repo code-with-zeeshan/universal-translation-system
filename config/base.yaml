@@ -209,8 +209,6 @@ pipeline:
   enabled_stages:
     - download_training
     - sample_filter
-    - augment
-    - comet_quality
     - create_ready
     - validate
     - vocabulary
