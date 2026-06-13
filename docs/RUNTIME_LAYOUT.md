@@ -131,15 +131,29 @@ evaluation_reports/
 
 ```
 logs/
-├── translation_system.log                     All components (rotating, 10×10MB)
-├── errors.log                                 ERROR+ only (rotating, 5×10MB)
-├── data/data.log                              Data pipeline
-├── training/training.log                      Training run
-├── monitoring/monitoring.log                  System metrics
-├── coordinator/coordinator.log                Coordinator service
-├── decoder/decoder.log                        Decoder service
-├── evaluation/                                Evaluation output
-└── vocabulary/vocabulary.log                  Vocabulary operations
+├── universal_translation_system.log           All components (rotating, 10×10MB)
+├── errors.log                                 All ERROR+ (rotating, 5×10MB)
+├── data/
+│   ├── data.log                               Data pipeline INFO+
+│   └── error.log                              Data pipeline ERROR+
+├── training/
+│   ├── training.log                           Training run DEBUG+
+│   └── error.log                              Training run ERROR+
+├── monitoring/
+│   ├── monitoring.log                         System metrics INFO+
+│   └── error.log                              System metrics ERROR+
+├── coordinator/
+│   ├── coordinator.log                        Coordinator INFO+
+│   └── error.log                              Coordinator ERROR+
+├── decoder/
+│   ├── decoder.log                            Decoder INFO+
+│   └── error.log                              Decoder ERROR+
+├── evaluation/
+│   ├── evaluation.log                         Evaluation INFO+
+│   └── error.log                              Evaluation ERROR+
+└── vocabulary/
+    ├── vocabulary.log                         Vocabulary INFO+
+    └── error.log                              Vocabulary ERROR+
 ```
 
 **Created by:** `utils/logging_config.py` (sectioned logging handlers)

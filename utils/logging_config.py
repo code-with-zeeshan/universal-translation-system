@@ -146,9 +146,10 @@ def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_le
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     try:
         if DirectoryManager:
-            DirectoryManager.create_logs_structure(str(RuntimeDirectoryManager().logs_dir))
+            DirectoryManager.create_logs_structure(log_dir)
     except Exception:
-        pass
+        logger = logging.getLogger(__name__)
+        logger.debug("logs_subdirectory_creation_failed", exc_info=True)
 
     # Choose formatter dynamically
     use_json = os.getenv('LOG_FORMAT', '').lower() == 'json'
@@ -189,7 +190,7 @@ def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_le
                 'level': 'DEBUG',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/translation_system.log',
+                'filename': f'{log_dir}/universal_translation_system.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -212,12 +213,30 @@ def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_le
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
+            'file_training_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/training/error.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
             'file_data': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': f'{log_dir}/data/data.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
+            'file_data_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/data/error.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -230,12 +249,30 @@ def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_le
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
+            'file_monitoring_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/monitoring/error.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
             'file_coordinator': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
                 'filename': f'{log_dir}/coordinator/coordinator.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
+            'file_coordinator_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/coordinator/error.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -248,6 +285,15 @@ def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_le
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
+            'file_decoder_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/decoder/error.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
             'file_vocabulary': {
                 'class': 'logging.handlers.RotatingFileHandler',
                 'level': 'INFO',
@@ -257,36 +303,68 @@ def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_le
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
+            'file_vocabulary_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/vocabulary/error.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
+            'file_evaluation': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'INFO',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/evaluation/evaluation.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
+            'file_evaluation_error': {
+                'class': 'logging.handlers.RotatingFileHandler',
+                'level': 'ERROR',
+                'formatter': 'json' if use_json else 'detailed',
+                'filters': ['sensitive'],
+                'filename': f'{log_dir}/evaluation/error.log',
+                'maxBytes': 10485760,
+                'backupCount': 5
+            },
         },
         'loggers': {
             'training': {
                 'level': 'DEBUG',
-                'handlers': ['console', 'file_training'],
+                'handlers': ['console', 'file_training', 'file_training_error', 'error_file'],
                 'propagate': False
             },
             'data': {
                 'level': 'INFO',
-                'handlers': ['console', 'file_data'],
+                'handlers': ['console', 'file_data', 'file_data_error', 'error_file'],
                 'propagate': False
             },
             'monitoring': {
                 'level': 'INFO',
-                'handlers': ['console', 'file_monitoring'],
+                'handlers': ['console', 'file_monitoring', 'file_monitoring_error', 'error_file'],
                 'propagate': False
             },
             'coordinator': {
                 'level': 'INFO',
-                'handlers': ['console', 'file_coordinator'],
+                'handlers': ['console', 'file_coordinator', 'file_coordinator_error', 'error_file'],
                 'propagate': False
             },
             'decoder': {
                 'level': 'INFO',
-                'handlers': ['console', 'file_decoder'],
+                'handlers': ['console', 'file_decoder', 'file_decoder_error', 'error_file'],
                 'propagate': False
             },
             'vocabulary': {
                 'level': 'INFO',
-                'handlers': ['console', 'file_vocabulary'],
+                'handlers': ['console', 'file_vocabulary', 'file_vocabulary_error', 'error_file'],
+                'propagate': False
+            },
+            'evaluation': {
+                'level': 'INFO',
+                'handlers': ['console', 'file_evaluation', 'file_evaluation_error', 'error_file'],
                 'propagate': False
             },
         },
