@@ -33,10 +33,14 @@ import tempfile
 from dotenv import load_dotenv
 load_dotenv()
 from pathlib import Path
-from utils.pipeline_checkpoint import mark_stage_complete, hash_config
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 PY = sys.executable
+
+from utils.pipeline_checkpoint import mark_stage_complete, hash_config
 
 
 # ── helpers ──────────────────────────────────────────────────────────

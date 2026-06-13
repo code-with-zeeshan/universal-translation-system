@@ -1,6 +1,12 @@
 # scripts/upload_artifacts.py
 import argparse
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from utils.common_utils import RuntimeDirectoryManager
 from huggingface_hub import HfApi, HfFolder
 import logging

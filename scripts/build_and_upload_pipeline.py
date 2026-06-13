@@ -25,12 +25,15 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from utils.common_utils import RuntimeDirectoryManager
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-ROOT = Path(__file__).resolve().parent.parent
 
 
 def run_py(module_path: str, args: list[str] | None = None):
