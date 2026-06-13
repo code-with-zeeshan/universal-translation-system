@@ -169,7 +169,7 @@ class UnifiedVocabularyCreator:
         """SHA-256 fingerprint of config + corpus state to detect changes."""
         h = hashlib.sha256()
         h.update(str(self.config.vocab_size).encode())
-        h.update(str(self.config.vocab_type).encode())
+        h.update(str(self.config.model_type).encode())
         h.update(str(mode).encode() if mode else b'')
         h.update(str(sorted(groups_to_create or list(self.language_groups.keys()))).encode())
         for lang in sorted(self.corpus_paths):
