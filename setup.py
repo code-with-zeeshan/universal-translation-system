@@ -50,6 +50,7 @@ setup(
     python_requires=">=3.8",
     entry_points={
         "console_scripts": [
+            "uts=scripts.uts:main",
             "uts-tui=tui.app:main",
         ],
     },

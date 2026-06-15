@@ -40,11 +40,23 @@ cd universal-translation-system
 pip install -e ".[train]" 2>&1 | tail -10
 ```
 
-This installs base + training + serving extras. Takes ~2 min.
+This installs base + training + serving extras. Takes ~2 min. After this, `uts` (without `./`) will be available everywhere — the package registers a `uts` console script automatically.
+
+**If pip is not available:**
+```bash
+conda install pip -y && pip install -e ".[train]"
+```
+
+**If you cannot use pip at all,** manually link the wrapper:
+```bash
+ln -sf "$PWD/bin/uts" ~/.local/bin/uts   # then add ~/.local/bin to your PATH
+# or use any existing PATH directory like ~/.global_modules/bin/
+```
 
 **Troubleshoot:**
 - `pip: command not found` → `conda install pip -y`
 - `error: externally-managed-environment` → Same fix
+- `uts: command not found` after install → Restart your terminal or run `hash -r`
 
 ### 3. Set up environment variables
 

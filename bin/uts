@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# bin/uts — Wrapper so `uts` works from anywhere in the repo.
+# Usage:
+#   ./bin/uts <command> [args...]
+#   ln -sf "$PWD/bin/uts" ~/.local/bin/uts   # after adding ~/.local/bin to PATH
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel 2>/dev/null || dirname "$(dirname "$(readlink -f "$0")")")"
+exec python3 scripts/uts.py "$@"

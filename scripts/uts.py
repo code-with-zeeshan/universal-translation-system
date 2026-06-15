@@ -44,6 +44,14 @@ from utils.common_utils import RuntimeDirectoryManager
 from utils.pipeline_checkpoint import mark_stage_complete, hash_config
 
 
+def _is_installed_globally() -> bool:
+    """Check if 'uts' is available via PATH (not just ./uts)."""
+    uts_path = shutil.which("uts")
+    if not uts_path:
+        return False
+    return True
+
+
 # ── helpers ──────────────────────────────────────────────────────────
 
 def _scale_config(config_path: str, scale: float) -> str:
@@ -643,6 +651,9 @@ BANNER = """
 ╔══════════════════════════════════════════════════════════════╗
 ║   Universal Translation System  —  unified CLI              ║
 ║   uts <command> [--help]  to explore                       ║
+║                                                             ║
+║   Tip: run  pip install -e .  to make 'uts' available       ║
+║   from anywhere (not just ./uts).                           ║
 ╚══════════════════════════════════════════════════════════════╝
 """
 
@@ -735,6 +746,9 @@ def main():
     args = parser.parse_args()
     if not args.group:
         print(BANNER)
+        if not _is_installed_globally():
+            print("  ⚡ Run  pip install -e .  to make 'uts' work from anywhere")
+            print()
         print(GROUP_HELP)
         print("Quick start on Lightning AI:\n")
         print("  1. uts setup --config-wizard")
