@@ -12,7 +12,7 @@ Rather than bundling a huge model per language, the system splits the workflow f
 - **Edge Universal Encoder (42.7M params)**: 512-dim, 6-layer, 8-head encoder with RoPE + SwiGLU for on-device inference.
 - **On-demand Vocabulary Packs (2–4MB)**: 32K BPE vocabulary via SentencePiece, grouped by script (latin, cjk, cyrillic, arabic, devanagari, thai).
 - **Cloud Decoder (108.1M params)**: 768-dim, 8-layer, 12-head cross-attention decoder, served via FastAPI/LitServe.
-- **Dual-Phase Training**: Phase 1 trains all 150.8M params for strong multilingual representations. Phase 2 freezes the backbone and trains only LoRA adapters (~7M params) when adding new languages — no full retraining needed. Knowledge distillation supported (`--distill`).
+- **Dual-Phase Training**: Phase 1 trains all 150.8M params for strong multilingual representations. Phase 2 (live) freezes the backbone and trains only LoRA adapters (~7M params) when adding new languages — no full retraining needed. Knowledge distillation and progressive curriculum training supported.
 - **Smart Coordinator**: Routes to least-loaded decoders, circuit breaker, elastic scaling, 50ms batch window.
 - **Auto-Resume Pipeline**: Config-hash checkpointing across data→train→eval. Crashes resume from last completed step.
 - **Multi-SDK**: Native Android/iOS/Flutter/React Native/Web SDKs under `sdk/` with coordinator-aware routing + local decoder preference.
@@ -22,7 +22,7 @@ Rather than bundling a huge model per language, the system splits the workflow f
 - 20 language support with dynamic vocabulary loading (32K BPE, SentencePiece)
 - Edge encoding, cloud decoding architecture
 - Native SDKs for Android, iOS, Flutter, React Native, Web — coordinator-aware, local decoder auto-discovery
-- **Dual-phase training**: Full backbone → LoRA adapters + **knowledge distillation**
+- **Multi-mode training**: Full backbone, knowledge distillation, progressive curriculum, LoRA adapters
 - **Auto-resume pipeline**: Checkpointing with config-hash invalidation across data→train→eval
 - **Terminal UI dashboard**: `uts tui` for real-time pipeline + training + GPU monitoring
 - Full-system monitoring with Prometheus/Grafana
@@ -31,6 +31,8 @@ Rather than bundling a huge model per language, the system splits the workflow f
 - mDNS auto-discovery for decoder nodes
 - Secret management (keyring + encrypted file + file-based bootstrap)
 - Centralized version management with semver compatibility checks
+- Model conversion: ONNX, CoreML, TFLite, TensorRT — `uts tools --convert-task`
+- End-to-end build → upload pipeline: `uts tools --build-and-upload`
 - ONNX export + quantization pipeline for edge deployment
 
 ## Getting Started
@@ -54,7 +56,7 @@ pip install -e ".[train]"
 # Full pipeline (auto-resumes if interrupted)
 ./uts data --pipeline             # ~30 min
 ./uts train --full                # ~6h on A100 for 10 epochs
-./uts eval --model                # Evaluate all language pairs
+./uts eval --model --checkpoint checkpoints/*/best_model.pt  # Evaluate all pairs
 ```
 
 See [SETUP_COMMANDS.md](SETUP_COMMANDS.md) for GPU-tier-specific batch sizes and config.
@@ -86,17 +88,17 @@ All tools are organized into 10 workflow groups. Run `./uts <group> --help` for 
 | `./uts train` | Full model / distillation / progressive / LoRA training (auto-resume, `--force`) |
 | `./uts eval` | Evaluate model, benchmark, download test data (per-file checkpoint, `--force`) |
 | `./uts publish` | Publish model to HF Hub (split, ONNX, quantize, upload) |
-| `./uts serve` | Start decoder server, coordinator, Redis |
+| `./uts serve` | Start decoder server, coordinator, Redis, check API version compatibility |
 | `./uts tui` | Terminal UI dashboard for live pipeline + training + GPU monitoring |
-| `./uts tools` | Config validation, GPU check, secrets rotation, prefetch, version, compatibility |
-| `./uts docs` | Open documentation by topic (`--list` for 28 topics) |
+| `./uts tools` | Config validation, GPU check, secrets rotation, prefetch, version, compatibility, model conversion, build & upload, dependency check |
+| `./uts docs` | Open documentation by topic (`--list` for 33 topics) |
 
 ## Language Expansion Strategy
 
 The system is designed for zero-full-retraining language expansion:
 
-1. **Phase 1 (current):** Train full backbone on 20 languages (`use_lora: false` in config). Builds strong multilingual representations.
-2. **Phase 2 (future):** Freeze backbone, set `use_lora: true`, train LoRA adapters + target language adapter for languages 21+. Only ~7M trainable params vs 150.8M.
+1. **Phase 1:** Train full backbone on 20 languages (`use_lora: false` in config). Builds strong multilingual representations.
+2. **Phase 2 (live):** Freeze backbone, set `use_lora: true`, train LoRA adapters + target language adapter for languages 21+. Only ~7M trainable params vs 150.8M — no full retraining needed.
 
 ```bash
 # Phase 1: Full model training
@@ -137,12 +139,13 @@ See [docs/SDK_INTEGRATION.md](docs/SDK_INTEGRATION.md) for code examples.
 
 ## Documentation
 
-Run `./uts docs --list` for all 28 topics. Key ones:
+Run `./uts docs --list` for all 33 topics. Key ones:
 
 | Topic | Command | Covers |
 |---|---|---|
 | Getting Started | `uts docs --open start` | Builder (scratch) vs Consumer (pre-built) paths |
-| Onboarding | `uts docs --open setup` | Full CLI reference, config, language expansion |
+| Onboarding | `uts docs --open onboarding` | Full CLI reference with 40+ role-based scenarios, config, language expansion |
+| Setup Guide | `uts docs --open setup` | GPU-tier-specific install and batch sizes |
 | Training | `uts docs --open train` | Strategy, distillation, memory, monitoring |
 | Architecture | `uts docs --open arch` | System design, model specs, data flow |
 | API | `uts docs --open api` | Decoder + coordinator endpoints, auth |
