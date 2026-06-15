@@ -19,6 +19,8 @@ This repo supports **two distinct user paths**. Choose the one that matches your
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git
 cd universal-translation-system
 pip install -e ".[train]"
+# Note: ".[train]" installs only base.txt + train.txt.
+# For all features (serve, decoder, export, tui): pip install -e ".[all]"
 cp .env.example .env
 export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"
 export JWT_SECRET="dev-jwt-secret-change-in-production"

@@ -92,10 +92,10 @@ training:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--full` | — | Full model training (all params) |
+| `--full` | — | Run training pipeline (reads `use_lora` from config — all 150.8M or LoRA depending on config) |
 | `--distill` | — | Knowledge distillation from a teacher model |
 | `--progressive` | — | Progressive multi-tier training (curriculum) |
-| `--lora` | — | Show LoRA adapter training instructions |
+| `--lora` | — | LoRA adapter training (forces `use_lora=true`, overrides config) |
 | `--config` | `config/base.yaml` | Config file path |
 | `--distributed` | off | Multi-GPU distributed training |
 | `--num-epochs` | from config | Override training epochs |

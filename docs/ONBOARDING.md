@@ -53,7 +53,7 @@ Run `./uts <group> --help` for full options.
 | **Builder** | Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
 | **Builder** | Convert model to ONNX/CoreML/TFLite | `./uts tools --convert-task onnx` | Requires `--convert-model-path` |
 | **Builder** | End-to-end build + upload to HF Hub | `./uts tools --build-and-upload <repo>` | Add `--create-vocabs`, `--convert-models` |
-| **Builder** | Add a new language (#21+) | Phase 1 backbone must exist: train it yourself or `./uts tools --prefetch --repo-id <org>/model` for a community one. Then edit config: `use_lora: true`, add language code | `./uts train --full --experiment-name "lang-21-adapter" --num-epochs 5`. 1 epoch = BLEU ~0. |
+| **Builder** | Add a new language (#21+) | Phase 1 backbone must exist. Then: `./uts train --lora --experiment-name "lang-21-adapter" --num-epochs 5` | LoRA mode is auto-forced by `--lora`; no need to edit config. `--experiment-name` is just a log label. 1 epoch = BLEU ~0. |
 | **Consumer** | Download pre-built artifacts from HF Hub | `./uts tools --prefetch --repo-id <id>` | Artifacts go to `models/production/`, `vocabs/`, `adapters/` |
 | **Consumer** | Evaluate without training | `./uts eval --model --checkpoint models/production/best_model.pt` | Eval data downloads automatically |
 | **Consumer** | Serve the decoder locally | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
@@ -138,16 +138,16 @@ Run `./uts <group> --help` for full options.
 
 | Flag | Description |
 |---|---|
-| `--full` | Full model training (all 150.8M params) |
+| `--full` | Run training pipeline (reads `use_lora` from config — all 150.8M or LoRA depending on config) |
 | `--distill` | Knowledge distillation from a teacher model (see TRAINING.md) |
 | `--progressive` | Progressive multi-tier training (curriculum) |
-| `--lora` | Show LoRA adapter training instructions |
+| `--lora` | LoRA adapter training (forces `use_lora=true`, overrides config) |
 | `--config PATH` | Config file (default: `config/base.yaml`) |
 | `--distributed` | Enable distributed (multi-GPU) training |
 | `--num-epochs N` | Override number of epochs (default from config) |
 | `--batch-size N` | Override batch size |
 | `--lr FLOAT` | Override learning rate |
-| `--experiment-name NAME` | Experiment name for logging |
+| `--experiment-name NAME` | Experiment name for logging (does NOT change training mode) |
 | `--checkpoint PATH` | Resume training from checkpoint |
 | `--force` | Ignore training checkpoint, re-train from scratch |
 | `--start-tier TIER` | Progressive: start from specific tier (`tier1`–`tier4`) |

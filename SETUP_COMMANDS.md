@@ -40,7 +40,9 @@ cd universal-translation-system
 pip install -e ".[train]" 2>&1 | tail -10
 ```
 
-This installs base + training + serving extras. Takes ~2 min. After this, `uts` (without `./`) will be available everywhere — the package registers a `uts` console script automatically.
+This installs `requirements/base.txt` + `requirements/train.txt`. Takes ~2 min. After this, `uts` (without `./`) will be available everywhere — the package registers a `uts` console script automatically.
+
+**For all features** (serving, decoder, export, TUI): `pip install -e ".[all]"`
 
 **If pip is not available:**
 ```bash
