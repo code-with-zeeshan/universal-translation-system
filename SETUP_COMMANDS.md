@@ -237,10 +237,9 @@ training:
 ```
 
 **Critical — LoRA prerequisites:**
-1. LoRA requires a **fully-trained backbone** (all 150.8M params, 10 epochs). Training LoRA on a randomly initialized or bootstrapped-only backbone yields BLEU ~0.
+1. LoRA requires a **fully-trained backbone** (all 150.8M params, 10 epochs). You can get one by training it yourself or by **downloading a community-published checkpoint** (`./uts tools --prefetch --repo-id <id>`). Training LoRA on a randomly initialized or bootstrapped-only backbone yields BLEU ~0.
 2. Even with a trained backbone, train LoRA for **5–10 epochs minimum**. Single-epoch LoRA also yields BLEU ~0.
 3. LoRA is for **adding new languages after full training**, not a shortcut to skip full training.
-4. If you can only afford LoRA training, download a **community-published fully-trained checkpoint** first (`./uts tools --prefetch --repo-id <id>`), then train LoRA adapters on top.
 
 ---
 
@@ -272,9 +271,10 @@ training:
 
 ### Option C: Use pre-trained models
 
-Once the community publishes trained checkpoints, you can:
-1. Download from Hugging Face Hub
-2. Run evaluation only: `./uts eval --model`
+If a community-published Phase 1 checkpoint is available on Hugging Face Hub:
+1. Download artifacts: `./uts tools --prefetch --repo-id <org>/universal-translation-system`
+2. Run evaluation: `./uts eval --model --checkpoint models/production/best_model.pt`
+3. Train LoRA adapters for new languages on top: (edit config `use_lora: true`, add language code, then `./uts train --full --experiment-name "new-lang" --num-epochs 5`)
 
 ---
 

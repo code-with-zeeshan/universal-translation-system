@@ -53,7 +53,7 @@ Run `./uts <group> --help` for full options.
 | **Builder** | Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
 | **Builder** | Convert model to ONNX/CoreML/TFLite | `./uts tools --convert-task onnx` | Requires `--convert-model-path` |
 | **Builder** | End-to-end build + upload to HF Hub | `./uts tools --build-and-upload <repo>` | Add `--create-vocabs`, `--convert-models` |
-| **Builder** | Add a new language (#21+) | First complete Phase 1 (full backbone training). Then edit config: `use_lora: true`, add language code | `./uts train --full --experiment-name "lang-21-adapter" --num-epochs 5`. 1 epoch = BLEU ~0. |
+| **Builder** | Add a new language (#21+) | Phase 1 backbone must exist: train it yourself or `./uts tools --prefetch --repo-id <org>/model` for a community one. Then edit config: `use_lora: true`, add language code | `./uts train --full --experiment-name "lang-21-adapter" --num-epochs 5`. 1 epoch = BLEU ~0. |
 | **Consumer** | Download pre-built artifacts from HF Hub | `./uts tools --prefetch --repo-id <id>` | Artifacts go to `models/production/`, `vocabs/`, `adapters/` |
 | **Consumer** | Evaluate without training | `./uts eval --model --checkpoint models/production/best_model.pt` | Eval data downloads automatically |
 | **Consumer** | Serve the decoder locally | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
@@ -286,24 +286,32 @@ Run `./uts docs --list` to see the latest list with descriptions.
 
 ## Language Expansion Strategy (Adding Languages Beyond 20)
 
-The system is designed for zero-full-retraining language expansion, **but Phase 1 must complete first**:
+The system is designed for zero-full-retraining language expansion, **but a fully-trained Phase 1 backbone must exist**:
 
-1. **Phase 1 (mandatory)** — Train full backbone on 20 languages (`use_lora: false`). This trains all 150.8M params and is required before any LoRA training will produce usable results.
-2. **Phase 2 (add languages)** — When adding language #21+:
+1. **Phase 1 (required)** — Train full backbone on 20 languages (`use_lora: false`). This trains all 150.8M params and must exist before LoRA produces usable results. You can get a Phase 1 backbone in two ways:
+   - **Train it yourself** — Run `uts train --full` (10 epochs, ~$9 on A100)
+   - **Download a community-published one** — `uts tools --prefetch --repo-id <org>/universal-translation-system` (free, if someone has published)
+
+2. **Phase 2 (add languages)** — Once you have a trained backbone (yours or downloaded), add language #21+:
    - Set `use_lora: true` in config
    - Add language code to `data.languages`
    - Train only LoRA adapters + target language adapter (~7M params)
-   - This preserves the trained backbone while adding capacity
    - **Train 5–10 LoRA epochs minimum** — 1 epoch still yields BLEU ~0
 
 ```bash
-# To train LoRA adapters for new languages (after Phase 1 is complete):
-# 1. Update config: add language to active_languages, set use_lora: true
-# 2. Run:
+# Option A: Train Phase 1 from scratch (takes ~6h on A100)
+./uts data --pipeline
+./uts train --full
+
+# Option B: Download a completed Phase 1 backbone (free, if available)
+./uts tools --prefetch --repo-id your-org/universal-translation-system
+
+# Then train LoRA adapters for new languages:
+# (edit config: add language to active_languages, set use_lora: true)
 ./uts train --full --experiment-name "lang-21-adapter" --num-epochs 5
 ```
 
 **Why BLEU is ~0 with LoRA?** Three common causes:
-- Backbone was never fully trained (only bootstrapped or randomly initialized)
+- Backbone was never fully trained (only bootstrapped or randomly initialized — downloading a trained checkpoint fixes this)
 - Only 1 epoch of LoRA training (needs 5–10)
 - LoRA on a randomly initialized model (needs the full 150.8M backbone trained first)

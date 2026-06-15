@@ -12,7 +12,7 @@ Rather than bundling a huge model per language, the system splits the workflow f
 - **Edge Universal Encoder (42.7M params)**: 512-dim, 6-layer, 8-head encoder with RoPE + SwiGLU for on-device inference.
 - **On-demand Vocabulary Packs (2–4MB)**: 32K BPE vocabulary via SentencePiece, grouped by script (latin, cjk, cyrillic, arabic, devanagari, thai).
 - **Cloud Decoder (108.1M params)**: 768-dim, 8-layer, 12-head cross-attention decoder, served via FastAPI/LitServe.
-- **Dual-Phase Training**: Phase 1 trains all 150.8M params for strong multilingual representations (required first). Phase 2 freezes the trained backbone and trains only LoRA adapters (~7M params) when adding new languages — no need to re-train Phase 1. Knowledge distillation and progressive curriculum training supported.
+- **Dual-Phase Training**: Phase 1 trains all 150.8M params for strong multilingual representations (required first — train yourself or download a community checkpoint). Phase 2 freezes the trained backbone and trains only LoRA adapters (~7M params) when adding new languages — no need to re-train Phase 1. Knowledge distillation and progressive curriculum training supported.
 - **Smart Coordinator**: Routes to least-loaded decoders, circuit breaker, elastic scaling, 50ms batch window.
 - **Auto-Resume Pipeline**: Config-hash checkpointing across data→train→eval. Crashes resume from last completed step.
 - **Multi-SDK**: Native Android/iOS/Flutter/React Native/Web SDKs under `sdk/` with coordinator-aware routing + local decoder preference.
@@ -97,7 +97,7 @@ All tools are organized into 10 workflow groups. Run `./uts <group> --help` for 
 
 The system is designed for zero-full-retraining language expansion:
 
-1. **Phase 1 (mandatory):** Train full backbone on 20 languages (`use_lora: false` in config). Builds strong multilingual representations. Must complete this phase before LoRA adapters will work.
+1. **Phase 1 (required):** Train full backbone on 20 languages (`use_lora: false` in config) — **or** download a community-published fully-trained checkpoint (`./uts tools --prefetch --repo-id <org>/model`). This must exist before LoRA adapters will work.
 2. **Phase 2 (add languages):** Freeze the trained backbone, set `use_lora: true`, train LoRA adapters + target language adapter for languages 21+. Only ~7M trainable params vs 150.8M. Requires 5–10 LoRA epochs for usable quality.
 
 ```bash
