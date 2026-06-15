@@ -282,9 +282,18 @@ def cmd_train(args: argparse.Namespace):
                      *(("--start-from-tier", args.start_tier) if args.start_tier else []),
                      *(("--validate-final",) if args.validate_final else []))
     elif args.lora:
-        print("NOTE: For LoRA adapter training (adding new languages after full training),")
-        print("      set use_lora: true in config/base.yaml and run:")
-        print("      uts train --full")
+        print("NOTE: LoRA adapter training — how it works:")
+        print("")
+        print("  PREREQUISITE: A fully-trained backbone (150.8M params, Phase 1).")
+        print("  LoRA on a randomly initialized or bootstrapped-only backbone = BLEU ~0.")
+        print("")
+        print("  Steps:")
+        print("    1. Complete Phase 1: uts train --full (trains all 150.8M params)")
+        print("    2. Set use_lora: true in config/base.yaml")
+        print("    3. Add new language code to data.active_languages")
+        print("    4. Run: uts train --full --experiment-name 'new-lang-adapter' --num-epochs 5")
+        print("")
+        print("  WARNING: 1 LoRA epoch = BLEU ~0. Train 5-10 LoRA epochs minimum.")
     else:
         print("See: uts train --help")
 

@@ -236,7 +236,11 @@ training:
 ./uts train --full --num-epochs 5
 ```
 
-Note: LoRA on a randomly initialized backbone gives **poor quality** (BLEU ~0.001). Use only for testing the pipeline, not for production.
+**Critical — LoRA prerequisites:**
+1. LoRA requires a **fully-trained backbone** (all 150.8M params, 10 epochs). Training LoRA on a randomly initialized or bootstrapped-only backbone yields BLEU ~0.
+2. Even with a trained backbone, train LoRA for **5–10 epochs minimum**. Single-epoch LoRA also yields BLEU ~0.
+3. LoRA is for **adding new languages after full training**, not a shortcut to skip full training.
+4. If you can only afford LoRA training, download a **community-published fully-trained checkpoint** first (`./uts tools --prefetch --repo-id <id>`), then train LoRA adapters on top.
 
 ---
 
@@ -293,7 +297,7 @@ Data pipeline (one-time): ~$0.50–$1.00 on any GPU, ~$0.10 on CPU.
 | Budget | Best strategy | Est. cost | Expected BLEU | Why |
 |--------|--------------|-----------|---------------|-----|
 | **$1–$2** | Skip training. Use pre-trained community checkpoint → eval only | $0.50–$1 | Highest (pre-trained) | Training any model on this budget yields poor quality. Better to evaluate a published model. |
-| **$2–$4** | LoRA adapter training on T4 (5 epochs) + pre-trained backbone | $2.50–$3.50 | Good for new languages | Train only 7M LoRA params on top of a community backbone. Data pipeline on CPU ($0.10). |
+| **$2–$4** | LoRA adapter training on T4 (5 epochs) + **already fully-trained backbone** | $2.50–$3.50 | Moderate for new languages | ⚠️ LoRA requires a fully-trained backbone (all 150.8M params). BLEU ~0 on random init. Train 5+ LoRA epochs minimum. Data pipeline on CPU ($0.10). |
 | **$4–$6** | Full training on A100 — 5 epochs, default data | ~$5.15 | Solid baseline | A100 is 2× faster per dollar than T4. 5 epochs gives ~70% of full quality. Add `--scale 2` if budget allows. |
 | **$6–$9** | Full training on L4 — 10 epochs, default data | ~$5.50 | Strong | L4 is most cost-efficient for full budget. 10 epochs at $5.50 leaves room for `--scale 3` data. |
 | **$9–$12** | Full training on A100 — 10 epochs, default data | ~$9.80 | Best single run | Full default pipeline. A100 finishes in 6h instead of L4's 10h. Use saved time for experimentation. |
@@ -306,7 +310,7 @@ Data pipeline (one-time): ~$0.50–$1.00 on any GPU, ~$0.10 on CPU.
 3. **`--scale` before `--num-epochs`** — More unique data (--scale) improves quality more than extra epochs on the same data. Default: 10 epochs. If budget is tight, prefer `--scale 2` over 15 epochs.
 4. **Progressive training as budget extender** — `--progressive` starts from tier 2 or 3, skipping the most expensive early tiers. Good for $8–$12 budgets.
 5. **Monitor with `./uts tui`** — If loss plateaus by epoch 5, kill the job and save the remaining budget.
-6. **Colab T4 is free** — Use Colab's free T4 tier for data pipeline + LoRA experiments. Spend your budget only on the final A100 full training run.
+6. **Colab T4 is free** — Use Colab's free T4 for data pipeline. For LoRA: only useful if you already have a fully-trained backbone checkpoint. Without it, BLEU ~0.
 
 ### Quick budget-reference commands
 
