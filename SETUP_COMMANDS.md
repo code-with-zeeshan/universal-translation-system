@@ -274,7 +274,61 @@ Once the community publishes trained checkpoints, you can:
 
 ---
 
-## Quick Reference
+## Budget Optimization Guide
+
+If you have **$1–$15** to spend on a cloud GPU (Lightning AI, Colab, etc.), here's how to maximize translation quality for your budget.
+
+### Cost assumptions (Lightning AI approx.)
+
+| GPU | Hourly rate | 10 epochs | 5 epochs |
+|-----|-------------|-----------|----------|
+| A100 40GB | ~$1.55/hr | ~$9.30 | ~$4.65 |
+| L4 24GB | ~$0.50/hr | ~$5.00 | ~$2.50 |
+| T4 16GB | ~$0.30/hr | ~$6.00 | ~$3.00 |
+
+Data pipeline (one-time): ~$0.50–$1.00 on any GPU, ~$0.10 on CPU.
+
+### Decision matrix: get the best model for your budget
+
+| Budget | Best strategy | Est. cost | Expected BLEU | Why |
+|--------|--------------|-----------|---------------|-----|
+| **$1–$2** | Skip training. Use pre-trained community checkpoint → eval only | $0.50–$1 | Highest (pre-trained) | Training any model on this budget yields poor quality. Better to evaluate a published model. |
+| **$2–$4** | LoRA adapter training on T4 (5 epochs) + pre-trained backbone | $2.50–$3.50 | Good for new languages | Train only 7M LoRA params on top of a community backbone. Data pipeline on CPU ($0.10). |
+| **$4–$6** | Full training on A100 — 5 epochs, default data | ~$5.15 | Solid baseline | A100 is 2× faster per dollar than T4. 5 epochs gives ~70% of full quality. Add `--scale 2` if budget allows. |
+| **$6–$9** | Full training on L4 — 10 epochs, default data | ~$5.50 | Strong | L4 is most cost-efficient for full budget. 10 epochs at $5.50 leaves room for `--scale 3` data. |
+| **$9–$12** | Full training on A100 — 10 epochs, default data | ~$9.80 | Best single run | Full default pipeline. A100 finishes in 6h instead of L4's 10h. Use saved time for experimentation. |
+| **$12–$15** | Full training on A100 — 10 epochs, `--scale 3` data | ~$13 | Near-production | 3× more training data + full 10 epochs yields the best quality your budget allows. Add progressive training on any remaining budget. |
+
+### Pro tips for maximum outcome
+
+1. **CPU for data pipeline** — `./uts data --pipeline` runs fine on CPU. Only switch to GPU for training. Saves $0.50–$1.00.
+2. **Auto-resume is free** — If your session disconnects (common on spot instances), re-run the same command. It picks up where it left off. No lost cost.
+3. **`--scale` before `--num-epochs`** — More unique data (--scale) improves quality more than extra epochs on the same data. Default: 10 epochs. If budget is tight, prefer `--scale 2` over 15 epochs.
+4. **Progressive training as budget extender** — `--progressive` starts from tier 2 or 3, skipping the most expensive early tiers. Good for $8–$12 budgets.
+5. **Monitor with `./uts tui`** — If loss plateaus by epoch 5, kill the job and save the remaining budget.
+6. **Colab T4 is free** — Use Colab's free T4 tier for data pipeline + LoRA experiments. Spend your budget only on the final A100 full training run.
+
+### Quick budget-reference commands
+
+```bash
+# $0  — Evaluate pre-trained model (no training cost)
+./uts eval --model --checkpoint models/production/best_model.pt
+
+# $2  — LoRA adapter on T4 (uses pre-trained backbone)
+./uts train --full --num-epochs 5 --experiment-name "lora-adapter"
+
+# $5  — Full training 5 epochs on A100
+./uts train --full --num-epochs 5
+
+# $10 — Full training 10 epochs on A100 (default)
+./uts train --full
+
+# $13 — Full training 10 epochs × 3× data on A100
+./uts data --pipeline --scale 3
+./uts train --full
+```
+
+---
 
 ```bash
 # Full workflow (copy-paste for A100, ~$8 for full run)
