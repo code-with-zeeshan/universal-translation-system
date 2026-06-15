@@ -54,6 +54,7 @@ from utils.shutdown_handler import GracefulShutdown
 from config.schemas import RootConfig
 from pipeline.training.quantization.pipeline import fake_quantize_tensor
 from utils.constants import EMERGENCY_CHECKPOINT_FILENAME, BEST_MODEL_FILENAME, TRAINING_REPORT_FILENAME
+from pipeline.training.health_monitor import TrainingHealthMonitor
 
 # Dataset imports
 from pipeline.training.samplers import TemperatureSampler  # If you have this file
@@ -1547,6 +1548,10 @@ def train_intelligent(
     This automatically detects hardware and runs optimal training strategy.
     """
     
+    # Initialize health monitor
+    checkpoint_dir = Path(RuntimeDirectoryManager().checkpoints_dir) / experiment_name
+    health_monitor = TrainingHealthMonitor(checkpoint_dir, experiment_name)
+    
     # Initialize intelligent trainer
     trainer = IntelligentTrainer(
         encoder=encoder,
@@ -1555,7 +1560,8 @@ def train_intelligent(
         val_dataset=val_dataset,
         config=config,
         experiment_name=experiment_name,
-        resume_from_checkpoint=resume_from
+        resume_from_checkpoint=resume_from,
+        on_epoch_end=health_monitor.on_epoch_end
     )
     
     # Run training
@@ -1563,5 +1569,15 @@ def train_intelligent(
         num_epochs=config.training.num_epochs,
         shutdown_handler=shutdown_handler
     )
+    
+    # Log final health report
+    report = health_monitor.final_report()
+    if report["healthy"]:
+        logger.info("✅ Training health: all checks passed")
+    else:
+        logger.warning(f"⚠️  Training health: {len(report['issues'])} issue(s) detected")
+        for issue in report["issues"]:
+            logger.warning(f"  • {issue}")
+    results["health"] = report
     
     return results
