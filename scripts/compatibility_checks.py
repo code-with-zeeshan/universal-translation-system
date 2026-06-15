@@ -58,7 +58,7 @@ def validate_protobuf(path: Path) -> List[str]:
 def validate_onnx_models() -> List[str]:
     warnings: List[str] = []
     onnx_paths: List[Path] = []
-    for base in [ROOT / 'models', ROOT / 'cloud_decoder', ROOT / 'encoder']:
+    for base in [ROOT / 'models', ROOT / 'runtime' / 'cloud_decoder', ROOT / 'runtime' / 'encoder']:
         if base.exists():
             onnx_paths.extend(list(base.rglob('*.onnx')))
     if not onnx_paths:

@@ -14,12 +14,11 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def upload_artifacts(repo_id: str, local_base_dir: str = "."):
+def upload_artifacts(repo_id: str):
     """
     Uploads models, adapters, and vocabularies to a Hugging Face Hub repository.
     """
     api = HfApi()
-    local_path = Path(local_base_dir)
 
     logger.info(f"🚀 Starting upload to repository: {repo_id}")
     
@@ -36,7 +35,7 @@ def upload_artifacts(repo_id: str, local_base_dir: str = "."):
     }
 
     for local_dir, repo_dir in dirs_to_upload.items():
-        full_local_path = local_path / local_dir
+        full_local_path = Path(local_dir)
         if full_local_path.exists() and full_local_path.is_dir():
             logger.info(f"\nUploading '{local_dir}' to '{repo_dir}' in the repo...")
             try:

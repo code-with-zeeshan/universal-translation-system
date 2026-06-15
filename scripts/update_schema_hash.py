@@ -4,6 +4,7 @@ Compute combined API schema hash and update version-config.json core.schemaHash.
 - Scans docs/schemas, openapi.(yml|yaml|json), and proto/*.proto
 - Writes the sha256 to core.schemaHash and sets core.schemaHashVersion=core.apiVersion
 """
+import hashlib
 import json
 from pathlib import Path
 import sys

@@ -63,7 +63,7 @@ setup_cloud() {
     echo "  litserve serve $app_path --host 0.0.0.0 --port 8000"
     echo ""
     echo "  # Or run directly:"
-    echo "  python cloud_decoder/optimized_decoder.py"
+    echo "  python runtime/cloud_decoder/optimized_decoder.py"
     echo ""
     echo "  # Docker:"
     echo "  docker build -f docker/Dockerfile.cloud -t uts-cloud-decoder ."

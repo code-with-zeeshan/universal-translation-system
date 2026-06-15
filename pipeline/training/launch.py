@@ -314,7 +314,7 @@ def launch_training(args: argparse.Namespace):
     logger.info("="*60)
     
     # Register final model
-    final_model_path = Path(self.runtime_dirs.checkpoints_dir) / experiment_name / BEST_MODEL_FILENAME
+    final_model_path = Path(RuntimeDirectoryManager().checkpoints_dir) / experiment_name / BEST_MODEL_FILENAME
     if final_model_path.exists():
         version = versioning.register_model(
             model_path=str(final_model_path),

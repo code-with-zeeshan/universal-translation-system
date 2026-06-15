@@ -67,7 +67,13 @@ def check_models(cfg=None) -> dict:
 
 def print_summary(cfg, data_info, vocab_info, model_info):
     print("=== Cloud Preflight Checklist ===")
-    print(f"Config loaded from: {cfg.dict().get('source', 'config/base.yaml') if hasattr(cfg, 'dict') else 'config/base.yaml'}")
+    if hasattr(cfg, 'model_dump'):
+        cfg_source = cfg.model_dump().get('source', 'config/base.yaml')
+    elif hasattr(cfg, 'dict'):
+        cfg_source = cfg.dict().get('source', 'config/base.yaml')
+    else:
+        cfg_source = 'config/base.yaml'
+    print(f"Config loaded from: {cfg_source}")
 
     # Data
     data_ok = all(data_info["present"].values())

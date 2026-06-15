@@ -313,8 +313,8 @@ uts eval --model --force     # Re-evaluate all files
 uts serve --decoder          # Start decoder server
 uts serve --coordinator      # Start coordinator
 uts publish --repo-id ...    # Publish to HF Hub
-uts publish --optimize-decoder  # Quantize + ONNX optimize
-uts publish --preflight      # Validate before publishing
+uts publish --optimize-decoder  # [standalone] Quantize + ONNX optimize (no publish)
+uts publish --preflight      # [standalone] Validate before publishing (exits after check)
 uts tools --version          # Check component versions
 uts tools --check-compat     # Compatibility checks
 uts tools --rotate-secrets   # Rotate API secrets

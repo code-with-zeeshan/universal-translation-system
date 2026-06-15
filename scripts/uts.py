@@ -107,9 +107,14 @@ def _run_script(script: str, *args: str, check: bool = True):
     subprocess.run(cmd, cwd=str(ROOT), check=check)
 
 
-def _run_module(module: str, *args: str):
+def _run_module(module: str, *args: str, **kwargs):
     """Run `python module_path.py [args...]`."""
     cmd = [PY, str(ROOT / module)] + list(args)
+    for k, v in kwargs.items():
+        if v is not None and v is not False:
+            cmd.append(f"--{k.replace('_', '-')}")
+            if v is not True:
+                cmd.append(str(v))
     print(f"\n$ {' '.join(shlex.join(c) for c in cmd)}\n")
     sys.stdout.flush()
     subprocess.run(cmd, cwd=str(ROOT), check=True)
@@ -130,6 +135,9 @@ def cmd_setup(args: argparse.Namespace):
     if args.verify:
         _run_script("scripts/first_time_success.py", check=False)
         return
+    if args.check_deps:
+        _run_script("scripts/check_dependencies.py", check=False)
+        return
     parser.print_help()
 
 
@@ -138,6 +146,7 @@ def build_setup_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--config-wizard", action="store_true", help="Interactive config wizard")
     sub.add_argument("--validate", metavar="CONFIG_PATH", help="Validate a config YAML file")
     sub.add_argument("--verify", action="store_true", help="Verify post-deployment setup (check services, endpoints, sample translation)")
+    sub.add_argument("--check-deps", action="store_true", help="Check installed dependencies against requirements files")
 
 
 # ── data ─────────────────────────────────────────────────────────────
@@ -156,7 +165,7 @@ def cmd_data(args: argparse.Namespace):
         # Mark data pipeline complete in global state
         try:
             with open(config_path) as f:
-                raw = json.load(f)
+                raw = yaml.safe_load(f) or {}
             dh = hash_config(raw.get("data", {}))
             mark_stage_complete("data", dh)
         except Exception:
@@ -241,7 +250,7 @@ def _data_config_hash(config_path: str) -> str:
     """Fingerprint the data pipeline config."""
     try:
         with open(config_path) as f:
-            cfg = json.load(f)
+            cfg = yaml.safe_load(f) or {}
         data_section = cfg.get("data", {})
         return hash_config(data_section)
     except Exception:
@@ -360,17 +369,20 @@ def cmd_publish(args: argparse.Namespace):
     if args.optimize_decoder:
         _run_module("runtime/cloud_decoder/quantize_optimize.py")
         return
+    if not args.repo_id:
+        print("error: --repo-id is required for publishing")
+        return
     _run_script("scripts/publish.py", *cmd)
 
 
 def build_publish_parser(sub: argparse.ArgumentParser):
-    sub.add_argument("--repo-id", required=True, help="HF Hub repo ID (e.g., your-org/universal-translation-system)")
+    sub.add_argument("--repo-id", help="HF Hub repo ID (e.g., your-org/universal-translation-system) — required for publish")
     sub.add_argument("--checkpoint", help="Path to best_model.pt (auto-discovers)")
     sub.add_argument("--no-onnx", action="store_true", help="Skip ONNX export")
     sub.add_argument("--no-quantize", action="store_true", help="Skip quantization")
     sub.add_argument("--upload-only", action="store_true", help="Just upload existing artifacts")
-    sub.add_argument("--preflight", action="store_true", help="Run cloud preflight checks before publish")
-    sub.add_argument("--optimize-decoder", action="store_true", help="Quantize and optimize the decoder model")
+    sub.add_argument("--preflight", action="store_true", help="[standalone] Run cloud preflight checks (no publish)")
+    sub.add_argument("--optimize-decoder", action="store_true", help="[standalone] Quantize and optimize the decoder model (no publish)")
 
 
 # ── serve ────────────────────────────────────────────────────────────
@@ -385,6 +397,12 @@ def cmd_serve(args: argparse.Namespace):
     elif args.redis:
         _run_script("scripts/setup_redis.sh",
                      "--install" if args.install else "--start" if args.start else "--stop" if args.stop else "--status")
+    elif args.check_api_versions:
+        if not args.coordinator_url or not args.decoder_url:
+            print("error: --coordinator-url and --decoder-url required for --check-api-versions")
+            return
+        _run_script("scripts/runtime_api_version_check.py",
+                     f"--coordinator={args.coordinator_url}", f"--decoder={args.decoder_url}")
     else:
         print("See: uts serve --help")
 
@@ -396,6 +414,10 @@ def build_serve_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--all", action="store_true", help="Setup all serving components")
     sub.add_argument("--redis", choices=["install", "start", "stop", "status"],
                      help="Manage Redis for decoder pool coordination")
+    sub.add_argument("--check-api-versions", action="store_true",
+                     help="Check runtime API version compatibility between coordinator and decoder")
+    sub.add_argument("--coordinator-url", help="Coordinator URL (required with --check-api-versions)")
+    sub.add_argument("--decoder-url", help="Decoder URL (required with --check-api-versions)")
 
 
 # ── tools ────────────────────────────────────────────────────────────
@@ -415,11 +437,20 @@ def cmd_tools(args: argparse.Namespace):
                      *(("--packs", *args.packs) if args.packs else []),
                      repo_id=args.repo_id)
     elif args.rotate_secrets:
-        _run_module("tools/rotate_secrets.py",
-                     type=args.key_type,
-                     *(("--set-env",) if args.set_env else []))
+        rotate_args = [f"type={args.key_type}"]
+        if args.key_name:
+            rotate_args.append(f"key={args.key_name}")
+        if args.kid:
+            rotate_args.append(f"kid={args.kid}")
+        if args.set_env:
+            rotate_args.append("--set-env")
+        _run_module("tools/rotate_secrets.py", *rotate_args)
     elif args.upload:
-        _run_script("scripts/upload_artifacts.py", f"--repo-id={args.repo_id or args.upload}")
+        repo_id = args.repo_id or (args.upload if isinstance(args.upload, str) else None)
+        if not repo_id:
+            print("error: --repo-id required for --upload (use: uts tools --upload <repo-id> or --upload --repo-id <id>)")
+            return
+        _run_script("scripts/upload_artifacts.py", f"--repo-id={repo_id}")
     elif args.version:
         _run_script("scripts/version_manager.py", "show")
     elif args.register_decoder:
@@ -429,6 +460,30 @@ def cmd_tools(args: argparse.Namespace):
     elif args.check_compat:
         _run_script("scripts/compatibility_checks.py",
                      *(("--version-config", args.version_config) if args.version_config else []))
+    elif args.version_config:
+        try:
+            print(json.dumps(json.load(open(args.version_config)), indent=2))
+        except Exception as e:
+            print(f"error reading {args.version_config}: {e}")
+    elif args.check_deps:
+        _run_script("scripts/check_dependencies.py", check=False)
+    elif args.update_schema_hash:
+        _run_script("scripts/update_schema_hash.py")
+    elif args.convert_task:
+        _run_module("tools/convert.py",
+                     task=args.convert_task,
+                     model_path=args.convert_model_path,
+                     onnx_path=args.convert_onnx_path,
+                     opset=args.convert_opset)
+    elif args.build_and_upload:
+        cmd = ["--repo-id", args.repo_id or args.build_and_upload]
+        if args.create_vocabs:
+            cmd.append("--create-vocabs")
+        if args.convert_models:
+            cmd.append("--convert-models")
+        if args.vocab_groups:
+            cmd += ["--vocab-groups", *args.vocab_groups]
+        _run_script("scripts/build_and_upload_pipeline.py", *cmd)
     elif args.install:
         _run_script("scripts/install.sh",
                      *(["--train"] if args.train else []),
@@ -452,7 +507,9 @@ def build_tools_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--rotate-secrets", action="store_true", help="Rotate JWT secrets")
     sub.add_argument("--key-type", choices=["hs256", "rs256", "all"], default="hs256",
                      help="Key type to rotate")
-    sub.add_argument("--set-env", action="store_true", help="Set env vars for preview")
+    sub.add_argument("--key-name", help="Secret key name to rotate (e.g., coordinator_jwt_secret)")
+    sub.add_argument("--kid", help="Key ID for RS256 rotation")
+    sub.add_argument("--set-env", action="store_true", help="Set rotated secrets in current env for preview")
     sub.add_argument("--upload", nargs="?", const=True, help="Upload artifacts to HF Hub")
     sub.add_argument("--version", action="store_true", help="Show component versions")
     sub.add_argument("--register-decoder", action="store_true", help="Register a decoder node with the coordinator pool")
@@ -460,7 +517,19 @@ def build_tools_parser(sub: argparse.ArgumentParser):
                      help="Build native C++ encoder core for all platforms")
     sub.add_argument("--build-target", help="Target platform for encoder build (auto: --all)")
     sub.add_argument("--check-compat", action="store_true", help="Run API/schema/version compatibility checks")
-    sub.add_argument("--version-config", help="Path to version-config.json for compatibility check")
+    sub.add_argument("--version-config", help="Path to version-config.json (standalone: show contents; with --check-compat: pass to checker)")
+    sub.add_argument("--check-deps", action="store_true", help="Check installed dependencies against requirements")
+    sub.add_argument("--update-schema-hash", action="store_true", help="Recompute API schema hash and update version-config.json")
+    sub.add_argument("--convert-task", choices=["onnx", "coreml", "tflite", "tensorrt"],
+                     help="Model conversion task (requires --convert-model-path)")
+    sub.add_argument("--convert-model-path", help="Source model path for conversion")
+    sub.add_argument("--convert-onnx-path", help="Target ONNX path for conversion")
+    sub.add_argument("--convert-opset", type=int, default=17, help="ONNX opset version")
+    sub.add_argument("--build-and-upload", nargs="?", const=True,
+                     help="End-to-end build vocab, convert models, and upload to HF Hub")
+    sub.add_argument("--create-vocabs", action="store_true", help="Create vocabulary packs (with --build-and-upload)")
+    sub.add_argument("--convert-models", action="store_true", help="Convert models to ONNX (with --build-and-upload)")
+    sub.add_argument("--vocab-groups", nargs="*", help="Vocab groups for --build-and-upload")
     sub.add_argument("--install", action="store_true", help="Install system dependencies")
     sub.add_argument("--train", action="store_true", help="Install training deps")
     sub.add_argument("--serve", action="store_true", help="Install serving deps")
@@ -509,9 +578,15 @@ def cmd_docs(args: argparse.Namespace):
         target = TOPICS.get(args.open)
         if target and target.exists():
             if sys.platform == "linux":
-                subprocess.run(["xdg-open", str(target)], check=False)
+                try:
+                    subprocess.run(["xdg-open", str(target)], check=False)
+                except FileNotFoundError:
+                    print(target.read_text())
             elif sys.platform == "darwin":
-                subprocess.run(["open", str(target)], check=False)
+                try:
+                    subprocess.run(["open", str(target)], check=False)
+                except FileNotFoundError:
+                    print(target.read_text())
             else:
                 print(target.read_text())
         else:
@@ -560,14 +635,14 @@ BANNER = """
 GROUP_HELP = """\
 Workflows (run `uts <group> --help` for details):
 
-  setup          Environment setup, validation, config wizard
-  data           Data pipeline: download, augment, validate
+  setup          Environment setup, validation, config wizard, dep checker
+  data           Data pipeline: download, augment, validate, domain data
   vocab          Vocabulary pack: build or evolve
-  train          Training: full model / progressive / LoRA
+  train          Training: full model / progressive / distillation / LoRA
   eval           Evaluation: model eval, benchmark, data download
-  publish        Publish model to Hugging Face Hub (single source of truth)
-  serve          Services: decoder server, coordinator, Redis
-  tools          Utilities: config, GPU, secrets, upload, prefetch
+  publish        Publish model to Hugging Face Hub, preflight, optimize
+  serve          Services: decoder server, coordinator, Redis, API version check
+  tools          Utilities: config, GPU, secrets, upload, prefetch, convert, compat
   tui            Terminal UI dashboard for pipeline/training
   docs           Open documentation by topic
 
@@ -652,7 +727,8 @@ def main():
         print("  2. uts data --pipeline")
         print("  3. uts train --full")
         print("  4. uts eval --model --checkpoint checkpoints/*/best_model.pt")
-        print("  5. uts publish --repo-id your-org/universal-translation-system")
+        print("  5. uts publish --preflight && uts publish --optimize-decoder")
+        print("  6. uts publish --repo-id your-org/universal-translation-system")
         print("  Dashboard: uts tui --config config/base.yaml")
         print()
         print("  uts docs --open setup     Full setup guide")

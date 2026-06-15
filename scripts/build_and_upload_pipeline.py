@@ -15,8 +15,8 @@ Environment requirements:
 - Optional: HF_HUB_REVISION (default: main)
 
 This script reuses:
-- training/convert_models.py for conversion
-- vocabulary/unified_vocabulary_creator.py for pack creation
+- tools/convert.py for conversion
+- pipeline/vocabulary/creator.py for pack creation
 - scripts/upload_artifacts.py for upload
 """
 import argparse

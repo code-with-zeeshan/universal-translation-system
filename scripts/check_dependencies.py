@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # scripts/check_dependencies.py
 import json
-import pkg_resources
 import sys
 from pathlib import Path
+from importlib.metadata import distribution, PackageNotFoundError
 import importlib
 import subprocess
 import platform
@@ -47,10 +47,10 @@ def check_dependencies():
                 version_req = None
             
             try:
-                installed = pkg_resources.get_distribution(pkg_name)
-                if version_req and pkg_resources.parse_version(installed.version) < pkg_resources.parse_version(version_req):
+                installed = distribution(pkg_name)
+                if version_req and installed.version < version_req:
                     outdated.append(f"{pkg_name} (installed: {installed.version}, required: >={version_req})")
-            except pkg_resources.DistributionNotFound:
+            except PackageNotFoundError:
                 missing.append(pkg_name)
         
         # Check critical dependencies

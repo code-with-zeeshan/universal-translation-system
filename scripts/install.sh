@@ -157,7 +157,7 @@ fi
 if [ "$INSTALL_ENCODER_CORE" = true ]; then
     echo ""
     echo "Building encoder C++ core..."
-    ENCODER_DIR="$PROJECT_DIR/encoder_core"
+    ENCODER_DIR="$PROJECT_DIR/runtime/encoder_core"
     BUILD_DIR="$ENCODER_DIR/build"
 
     if ! command -v cmake &> /dev/null; then

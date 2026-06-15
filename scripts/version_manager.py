@@ -613,8 +613,8 @@ def main():
             print(f"\n✓ Release {args.version} prepared!")
             print("Don't forget to:")
             print("  1. Update CHANGELOG.md")
-            print("  2. Create git tag: git tag -a v{args.version} -m 'Release {args.version}'")
-            print("  3. Push changes: git push && git push --tags")
+            print(f"  2. Create git tag: git tag -a v{args.version} -m 'Release {args.version}'")
+            print(f"  3. Push changes: git push && git push --tags")
             
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)

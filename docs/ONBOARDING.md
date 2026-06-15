@@ -46,7 +46,7 @@ Run `./uts <group> --help` for full options.
 | Evaluate a trained model | `./uts eval --model --checkpoint <path>` | Add `--benchmark` for latency/throughput |
 | Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
 | Deploy decoder server | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
-| Publish model to HF Hub | `./uts publish --preflight` | Then `./uts publish --optimize-decoder` |
+| Publish model to HF Hub | `./uts publish --repo-id your-org/model` | First run `--preflight`, then `--optimize-decoder`, then publish with `--repo-id` |
 | Monitor pipeline/training live | `./uts tui` | Or `--pipeline` / `--train` for focused views |
 | Add a new language (#21+) | Edit `config/base.yaml` → `use_lora: true`, add language code | Then `./uts train --full --experiment-name "lang-21-adapter"` |
 | Fix CUDA out-of-memory | Reduce `batch_size` or increase `accumulation_steps` | Check GPU tier in SETUP_COMMANDS.md |
@@ -64,6 +64,7 @@ Run `./uts <group> --help` for full options.
 | `--config-wizard` | Interactive config file creator |
 | `--validate CONFIG` | Validate a config YAML file |
 | `--verify` | Verify post-deployment setup (all services reachable, env vars set) |
+| `--check-deps` | Check installed dependencies against requirements files |
 
 ### `./uts data` — Data Pipeline
 
@@ -180,6 +181,9 @@ data:
 | `--setup` | Configure serving infrastructure (Docker, etc.) |
 | `--all` | Setup all serving components |
 | `--redis MODE` | Manage Redis: `install`, `start`, `stop`, `status` |
+| `--check-api-versions` | Check runtime API version compatibility (requires `--coordinator-url` + `--decoder-url`) |
+| `--coordinator-url URL` | Coordinator URL for API version check |
+| `--decoder-url URL` | Decoder URL for API version check |
 
 ### `./uts publish` — Model Publishing
 
@@ -187,12 +191,13 @@ Publish a trained model to Hugging Face Hub with optional ONNX export and quanti
 
 | Flag | Description |
 |---|---|
-| `--preflight` | Run preflight checks before publishing |
-| `--optimize-decoder` | Optimize decoder for deployment |
+| `--repo-id ID` | **Required for publish:** HF Hub repo ID (e.g., `your-org/universal-translation-system`) |
 | `--checkpoint PATH` | Path to trained model checkpoint |
 | `--no-onnx` | Skip ONNX export |
 | `--no-quantize` | Skip quantization |
 | `--upload-only` | Upload existing artifacts without rebuilding |
+| `--preflight` | **[standalone]** Run preflight checks (exits after check, no publish) |
+| `--optimize-decoder` | **[standalone]** Quantize + optimize decoder (exits after, no publish) |
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md) for details.
 
@@ -222,14 +227,26 @@ See [docs/TUI.md](docs/TUI.md) for keyboard shortcuts and layout.
 | `--repo-id ID` | Hugging Face Hub repository ID |
 | `--rotate-secrets` | Rotate JWT secrets |
 | `--key-type TYPE` | Key type for rotation (`hs256`, `rs256`, `all`) |
-| `--set-env` | Set environment variables from `.env` template |
+| `--key-name NAME` | Specific secret key to rotate (e.g., `coordinator_jwt_secret`) |
+| `--kid KID` | Key ID for RS256 rotation |
+| `--set-env` | Set rotated secrets in current env (only with `--rotate-secrets`) |
 | `--upload [REPO]` | Upload artifacts to Hugging Face Hub |
 | `--register-decoder` | Register a decoder node with the coordinator |
 | `--build-encoder` | Build the encoder core for edge deployment |
 | `--build-target TARGET` | Build target (e.g., `wasm`, `android`, `ios`) |
 | `--check-compat` | Check decoder node compatibility with current coordinator |
 | `--version` | Show component versions |
-| `--version-config PATH` | Show version info for specific config file |
+| `--version-config PATH` | Show version-config.json contents (standalone) or pass to `--check-compat` |
+| `--check-deps` | Check installed dependencies against requirements (same as `setup --check-deps`) |
+| `--update-schema-hash` | Recompute API schema hash and update version-config.json |
+| `--convert-task TASK` | Model conversion task (`onnx`, `coreml`, `tflite`, `tensorrt`) |
+| `--convert-model-path PATH` | Source model for conversion (required with `--convert-task`) |
+| `--convert-onnx-path PATH` | Target ONNX path for conversion |
+| `--convert-opset N` | ONNX opset version (default: 17) |
+| `--build-and-upload [REPO]` | End-to-end: create vocabs, convert models, upload to HF Hub |
+| `--create-vocabs` | Create vocab packs (with `--build-and-upload`) |
+| `--convert-models` | Convert models to ONNX (with `--build-and-upload`) |
+| `--vocab-groups [list]` | Vocab groups for `--build-and-upload` |
 | `--install` | Install system dependencies |
 | `--train` | Install training dependencies |
 | `--serve` | Install serving dependencies |

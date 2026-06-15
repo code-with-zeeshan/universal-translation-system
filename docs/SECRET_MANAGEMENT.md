@@ -131,13 +131,13 @@ Each secret can have a companion `*_EXPIRY` env var (Unix timestamp). `rotate_se
 uts tools --rotate-secrets
 
 # Rotate a specific secret
-uts tools --rotate-secrets --key coordinator_jwt_secret
+uts tools --rotate-secrets --key-name coordinator_jwt_secret
 
 # Generate RS256 keypair
 uts tools --rotate-secrets --type rs256 --kid key-1
 
 # Preview without persisting (sets in current env)
-uts tools --rotate-secrets --key coordinator_jwt_secret --set-env
+uts tools --rotate-secrets --key-name coordinator_jwt_secret --set-env
 ```
 
 ### Rotation Workflow

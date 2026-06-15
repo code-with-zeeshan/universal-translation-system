@@ -42,7 +42,7 @@ All notable changes to the Universal Translation System will be documented in th
 - **Dynamic batch sizing for training** (`training/dynamic_batch_sizer.py`): `probe()` now scales probe limit with GPU memory (`total_gb * 10`), allowing H100/A100 80GB to find batch sizes beyond the old 256 cap
 - **CLI flags for download tuning**: `--download-max-workers`, `--download-parallel-batches`, `--datasets-cache-dir` on `uts data --pipeline` and `uts data --download-only`
 - **`--force` flags** on `uts data`, `uts train`, `uts eval` — re-run any stage from scratch, invalidating downstream
-- **Knowledge distillation** (`training/distillation_trainer.py`): KL-divergence loss from NLLB-200-3.3B teacher, configurable alpha/temperature, `uts train --distill`
+- **Knowledge distillation** (`pipeline/training/distillation.py`): KL-divergence loss from NLLB-200-3.3B teacher, configurable alpha/temperature, `uts train --distill`
 - **Evaluation per-file checkpointing**: tracks individual test file completion, auto-resumes mid-eval
 - **Coordinator batcher** (`runtime/coordinator/advanced_coordinator.py`): 50ms accumulation window per endpoint, concurrent forward to LitServe
 - **Coordinator `/api/status` endpoint**: returns `single_decoder: bool` — SDKs use this for routing decisions

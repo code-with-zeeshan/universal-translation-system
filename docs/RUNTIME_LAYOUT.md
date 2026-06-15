@@ -111,7 +111,7 @@ models/
     └── encoder.onnx                           ONNX export
 ```
 
-**Created by:** `pipeline/training/launch.py`, `pipeline/training/peft.py`, `pipeline/training/quantization/pipeline.py`, `pipeline/training/model_init.py`, `scripts/publish.py`
+**Created by:** `pipeline/training/launch.py`, `pipeline/training/peft.py`, `pipeline/training/quantization/pipeline.py`, `scripts/publish.py`
 
 ---
 

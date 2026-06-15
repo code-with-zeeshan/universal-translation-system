@@ -85,8 +85,8 @@ def split_and_save(ckpt: dict, output_dir: Path):
     else:
         # Try loading via the evaluate_model infrastructure
         logger.warning("Checkpoint format not recognized — saving full checkpoint as-is")
-        shutil.copy(ckpt_path, encoder_path)
-        shutil.copy(ckpt_path, decoder_path)
+        shutil.copy(path, encoder_path)
+        shutil.copy(path, decoder_path)
         return encoder_path, decoder_path
 
     import torch

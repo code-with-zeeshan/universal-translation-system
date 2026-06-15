@@ -149,7 +149,7 @@ def main():
 
 if __name__ == "__main__":
     # Example Usage from command line:
-    # python -m data.acquire_domain_data --domain medical --pairs "en-es"
-    # python -m data.acquire_domain_data --domain legal --pairs "en-de,en-fr"
-    # python -m data.acquire_domain_data --domain all --pairs "en-es,en-de,en-fr"
+    # python -m tools.domain_data --domain medical --pairs "en-es"
+    # python -m tools.domain_data --domain legal --pairs "en-de,en-fr"
+    # python -m tools.domain_data --domain all --pairs "en-es,en-de,en-fr"
     main()
