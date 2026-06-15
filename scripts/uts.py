@@ -265,6 +265,34 @@ def _data_config_hash(config_path: str) -> str:
         return ""
 
 
+def _run_lora_training(config_path: str, num_epochs: int, experiment_name: str | None = None,
+                       learning_rate: float | None = None, batch_size: int | None = None):
+    """Launch LoRA adapter training by creating a temp config with use_lora=true."""
+    try:
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"error: cannot read {config_path}: {e}")
+        sys.exit(1)
+    cfg.setdefault("training", {})["use_lora"] = True
+    if num_epochs:
+        cfg["training"]["num_epochs"] = num_epochs
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False)
+    yaml.dump(cfg, tmp)
+    tmp.close()
+    print(f"→ LoRA config written to {tmp.name} (use_lora=true, epochs={num_epochs})")
+
+    checkpoint = _find_latest_checkpoint()
+    _run("pipeline.training.launch",
+         "train",
+         config=tmp.name,
+         num_epochs=num_epochs,
+         experiment_name=experiment_name or "lora-adapter",
+         learning_rate=learning_rate,
+         batch_size=batch_size,
+         checkpoint=checkpoint)
+
+
 def cmd_train(args: argparse.Namespace):
     if args.full:
         checkpoint = args.checkpoint or _find_latest_checkpoint()
@@ -290,30 +318,22 @@ def cmd_train(args: argparse.Namespace):
                      *(("--start-from-tier", args.start_tier) if args.start_tier else []),
                      *(("--validate-final",) if args.validate_final else []))
     elif args.lora:
-        print("NOTE: LoRA adapter training — how it works:")
-        print("")
-        print("  PREREQUISITE: A fully-trained backbone (150.8M params, Phase 1).")
-        print("  LoRA on a randomly initialized or bootstrapped-only backbone = BLEU ~0.")
-        print("")
-        print("  Steps:")
-        print("    1. Complete Phase 1: uts train --full (trains all 150.8M params)")
-        print("    2. Set use_lora: true in config/base.yaml")
-        print("    3. Add new language code to data.active_languages")
-        print("    4. Run: uts train --full --experiment-name 'new-lang-adapter' --num-epochs 5")
-        print("")
-        print("  WARNING: 1 LoRA epoch = BLEU ~0. Train 5-10 LoRA epochs minimum.")
+        config_path = args.config
+        if args.num_epochs is None:
+            args.num_epochs = 5
+        _run_lora_training(config_path, args.num_epochs, args.experiment_name, args.lr, args.batch_size)
     else:
         print("See: uts train --help")
 
 
 def build_train_parser(sub: argparse.ArgumentParser):
-    sub.add_argument("--full", action="store_true", help="Full model training (all parameters)")
+    sub.add_argument("--full", action="store_true", help="Train (reads use_lora from config; all params or LoRA depending on config)")
     sub.add_argument("--distill", action="store_true", help="Knowledge distillation from a teacher model")
     sub.add_argument("--teacher", default="facebook/nllb-200-3.3B", help="Teacher model for distillation")
     sub.add_argument("--distill-alpha", type=float, default=0.5, help="CE vs KD loss weight (0-1)")
     sub.add_argument("--distill-temp", type=float, default=4.0, help="Distillation temperature")
     sub.add_argument("--progressive", action="store_true", help="Progressive multi-tier training")
-    sub.add_argument("--lora", action="store_true", help="Show LoRA adapter training instructions")
+    sub.add_argument("--lora", action="store_true", help="LoRA adapter training (forces use_lora=true, overrides config)")
     sub.add_argument("--config", default="config/base.yaml", help="Config file path")
     sub.add_argument("--distributed", action="store_true", help="Enable distributed training")
     sub.add_argument("--num-epochs", type=int, help="Override number of epochs")
