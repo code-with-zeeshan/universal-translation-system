@@ -3,8 +3,6 @@
 #   -r base.txt
 #   -r serve.txt
 
-# Retry helpers used in node/HTTP ops
-tenacity>=8.2.3
 # Decoder CLI
 click>=8.1.0
 docker>=6.1.0

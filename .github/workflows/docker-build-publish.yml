@@ -100,14 +100,15 @@ jobs:
 
       - name: Healthcheck decoder
         run: |
-          docker run -d --name decoder -p 8000:8000 ghcr.io/${{ env.IMAGE_NAMESPACE }}/decoder:sha-${{ steps.vars.outputs.sha_tag }} || docker run -d --name decoder -p 8000:8000 local/decoder:health
+          docker run -d --name decoder -p 8000:8000 ghcr.io/${{ env.IMAGE_NAMESPACE }}/decoder:sha-${{ steps.vars.outputs.sha_tag }}
+          healthy=false
           for i in {1..30}; do
             sleep 2
-            if curl -fsS http://localhost:8000/health >/dev/null; then echo "decoder healthy"; break; fi
-            echo "waiting for decoder...";
+            if curl -fsS http://localhost:8000/health >/dev/null; then healthy=true; echo "decoder healthy"; break; fi
+            echo "waiting for decoder... (attempt $i/30)";
           done
-          curl -fsS http://localhost:8000/health
-          curl -fsS -o /dev/null -w "%{http_code}\n" http://localhost:8000/ready || true
+          if [ "$healthy" != "true" ]; then echo "decoder healthcheck FAILED"; exit 1; fi
+          curl -fsS -o /dev/null -w "/ready HTTP %{http_code}\n" http://localhost:8000/ready || true
 
       - name: Stop decoder
         if: always()
@@ -115,14 +116,15 @@ jobs:
 
       - name: Healthcheck coordinator
         run: |
-          docker run -d --name coordinator -p 5100:5100 ghcr.io/${{ env.IMAGE_NAMESPACE }}/coordinator:sha-${{ steps.vars.outputs.sha_tag }} || docker run -d --name coordinator -p 5100:5100 local/coordinator:health
+          docker run -d --name coordinator -p 5100:5100 ghcr.io/${{ env.IMAGE_NAMESPACE }}/coordinator:sha-${{ steps.vars.outputs.sha_tag }}
+          healthy=false
           for i in {1..30}; do
             sleep 2
-            if curl -fsS http://localhost:5100/health >/dev/null; then echo "coordinator healthy"; break; fi
-            echo "waiting for coordinator...";
+            if curl -fsS http://localhost:5100/health >/dev/null; then healthy=true; echo "coordinator healthy"; break; fi
+            echo "waiting for coordinator... (attempt $i/30)";
           done
-          curl -fsS http://localhost:5100/health
-          curl -fsS -o /dev/null -w "%{http_code}\n" http://localhost:5100/ready || true
+          if [ "$healthy" != "true" ]; then echo "coordinator healthcheck FAILED"; exit 1; fi
+          curl -fsS -o /dev/null -w "/ready HTTP %{http_code}\n" http://localhost:5100/ready || true
 
       - name: Stop coordinator
         if: always()

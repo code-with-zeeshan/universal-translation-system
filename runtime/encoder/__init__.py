@@ -11,11 +11,6 @@ from .language_adapters import (
     LanguageAdapter,
     AdapterUniversalEncoder
 )
-# AdapterManager is not implemented; keep import optional for backward compat
-try:
-    from .adapter_manager import AdapterManager  # type: ignore
-except Exception:
-    AdapterManager = None  # type: ignore
 from .train_adapters import AdapterTrainer
 
 __all__ = [
@@ -24,6 +19,3 @@ __all__ = [
     "AdapterUniversalEncoder",
     "AdapterTrainer",
 ]
-# Expose AdapterManager only if available
-if AdapterManager is not None:  # type: ignore
-    __all__.append("AdapterManager")

@@ -84,9 +84,12 @@ class VocabularyManager(private val context: Context) {
         val LANGUAGE_TO_PACK = mapOf(
             "en" to "latin", "es" to "latin", "fr" to "latin",
             "de" to "latin", "it" to "latin", "pt" to "latin",
+            "nl" to "latin", "sv" to "latin",
+            "pl" to "latin", "id" to "latin", "vi" to "latin", "tr" to "latin",
             "zh" to "cjk", "ja" to "cjk", "ko" to "cjk",
             "ar" to "arabic", "hi" to "devanagari",
-            "ru" to "cyrillic", "uk" to "cyrillic"
+            "ru" to "cyrillic", "uk" to "cyrillic",
+            "th" to "thai"
         )
     }
     
@@ -112,11 +115,12 @@ class VocabularyManager(private val context: Context) {
     
     private fun getLanguagesForPack(packName: String): List<String> {
         return when (packName) {
-            "latin" -> listOf("en", "es", "fr", "de", "it", "pt")
+            "latin" -> listOf("en", "es", "fr", "de", "it", "pt", "nl", "sv", "pl", "id", "vi", "tr")
             "cjk" -> listOf("zh", "ja", "ko")
             "arabic" -> listOf("ar")
             "devanagari" -> listOf("hi")
             "cyrillic" -> listOf("ru", "uk")
+            "thai" -> listOf("th")
             else -> listOf()
         }
     }

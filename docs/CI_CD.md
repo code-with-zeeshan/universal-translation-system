@@ -59,7 +59,7 @@ jobs:
   build-encoder:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build Encoder Core
         run: docker build -f docker/encoder.Dockerfile -t universal-encoder-core:latest .
       - name: Extract Artifact
@@ -67,7 +67,7 @@ jobs:
           id=$(docker create universal-encoder-core:latest)
           docker cp $id:/usr/lib/libuniversal_encoder_core.so ./artifacts/
           docker rm $id
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: encoder-core
           path: ./artifacts/
@@ -75,10 +75,10 @@ jobs:
   build-decoder:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build Decoder
         run: docker build -f docker/decoder.Dockerfile -t universal-decoder:latest .
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: decoder-image
           path: .
@@ -86,7 +86,7 @@ jobs:
   verify-schema-hash:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Verify schema hash
         run: |
           pip install -r requirements/base.txt
@@ -99,13 +99,13 @@ jobs:
   build-flutter-sdk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build Flutter SDK
         run: |
           cd sdk/flutter/universal_translation_sdk
           flutter pub get
           flutter build aar
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: flutter-sdk
           path: sdk/flutter/universal_translation_sdk/build/

@@ -1,8 +1,8 @@
-# data/acquire_domain_data.py
+# tools/domain_data.py
 
 import logging
 from pathlib import Path
-from datasets import load_dataset, get_dataset_split_names
+from datasets import load_dataset
 from tqdm import tqdm
 import argparse
 

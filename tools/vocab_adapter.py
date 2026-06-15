@@ -1,13 +1,10 @@
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
-
-from runtime.cloud_decoder import OptimizedUniversalDecoder
-from runtime.encoder.universal_encoder import UniversalEncoder
 
 logger = logging.getLogger("training.vocab_adapter")
 
@@ -49,7 +46,9 @@ class EmbeddingResizeAdapter:
         if self.old_encoder_vocab is None:
             self.old_encoder_vocab = self.encoder.embedding_layer.weight.size(0)
 
-        self.old_decoder_vocab = self.decoder.vocab_size
+        self.old_decoder_vocab = getattr(self.decoder, "vocab_size", None)
+        if self.old_decoder_vocab is None:
+            self.old_decoder_vocab = self.decoder.output_projection.weight.size(1)
 
         if new_vocab_size <= self.old_encoder_vocab and new_decoder_vocab_size <= self.old_decoder_vocab:
             logger.info("No resize needed — new vocab size <= existing size")
@@ -88,7 +87,7 @@ class EmbeddingResizeAdapter:
         old_proj = self.decoder.output_projection
         new_proj = nn.Linear(decoder_dim, new_size, bias=False)
         new_proj = new_proj.to(old_proj.weight.device)
-        new_proj.weight = new_embed.weight
+        new_proj.weight.data.copy_(new_embed.weight.data)
 
         self.decoder.embedding = new_embed
         self.decoder.output_projection = new_proj

@@ -3,7 +3,7 @@
 coordinator:
   image:
     repository: ghcr.io/code-with-zeeshan/universal-translation-system/coordinator
-    tag: "1.0.0"
+    tag: "v1.0.0"
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -19,7 +19,7 @@ coordinator:
 decoder:
   image:
     repository: ghcr.io/code-with-zeeshan/universal-translation-system/decoder
-    tag: "1.0.0"
+    tag: "v1.0.0"
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -33,7 +33,7 @@ encoder:
   enabled: false
   image:
     repository: ghcr.io/code-with-zeeshan/universal-translation-system/encoder
-    tag: "1.0.0"
+    tag: "v1.0.0"
     pullPolicy: IfNotPresent
   resources: {}
 

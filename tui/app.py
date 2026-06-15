@@ -18,10 +18,8 @@ from typing import Optional
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Static
-from textual.worker import Worker, WorkerState, get_current_worker
 
 from tui.bridge import (
     GPUMonitor,
@@ -138,7 +136,7 @@ class MainScreen(Screen[None]):
 
         # Start GPU monitor
         self._gpu_monitor = GPUMonitor(self._post_event, interval_s=2.0)
-        asyncio.ensure_future(self._gpu_monitor.start())
+        asyncio.create_task(self._gpu_monitor.start())
 
         # Start the pipeline/training in background workers
         if self._run_mode in ("all", "pipeline"):
@@ -302,6 +300,4 @@ def main() -> None:
     app.run()
 
 
-if __name__ == "__main__":
-    from utils.error_boundary import run_safely
-    raise SystemExit(run_safely(main))
+

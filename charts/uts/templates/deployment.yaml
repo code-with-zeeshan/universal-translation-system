@@ -117,7 +117,7 @@ spec:
         - name: encoder
           image: "{{ include "uts.image" .Values.encoder.image }}"
           imagePullPolicy: {{ .Values.encoder.image.pullPolicy }}
-          command: ["sleep", "infinity"]
+          command: ["/bin/sh", "-c", "echo 'Encoder artifacts container ready'; tail -f /dev/null"]
           volumeMounts:
             - name: encoder-artifacts
               mountPath: /usr/lib

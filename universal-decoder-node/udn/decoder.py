@@ -38,7 +38,9 @@ config = DecoderConfig()
 api_key_manager = APIKeyManager()
 rate_limiter = RateLimiter(requests_per_minute=60, requests_per_hour=1000)
 memory_manager = MemoryManager.get_instance(config=config.memory)
-function_profiler = function_profiler.get_instance(config=config.profiling)
+if hasattr(function_profiler, 'config') and config.profiling:
+    function_profiler.config = config.profiling
+    function_profiler.enabled = config.profiling.enable_profiling
 
 
 class OptimizedUniversalDecoder(nn.Module):
@@ -142,7 +144,7 @@ class OptimizedUniversalDecoder(nn.Module):
         self,
         encoder_hidden_states: torch.Tensor,
         encoder_attention_mask: torch.Tensor,
-        target_lang_id: int,
+        target_lang_id: "Union[int, torch.Tensor]",
         max_length: int = 128,
         temperature: float = 0.7,
         top_k: int = 50,
@@ -154,8 +156,11 @@ class OptimizedUniversalDecoder(nn.Module):
         batch_size = encoder_hidden_states.size(0)
         device = encoder_hidden_states.device
         
-        # Initialize with target language token
-        decoder_input_ids = torch.full((batch_size, 1), target_lang_id, device=device)
+        # Initialize with target language token(s)
+        if isinstance(target_lang_id, torch.Tensor):
+            decoder_input_ids = target_lang_id.to(device).unsqueeze(1)
+        else:
+            decoder_input_ids = torch.full((batch_size, 1), target_lang_id, device=device)
         
         # Track finished sequences
         finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
@@ -543,7 +548,7 @@ class DecoderService:
     
                                     n = int.from_bytes(base64.urlsafe_b64decode(k["n"] + "=="), byteorder="big")
                                     e = int.from_bytes(base64.urlsafe_b64decode(k["e"] + "=="), byteorder="big")
-                                    pub_numbers = rsa.RSAPublicNumbers(e, n)
+                                    pub_numbers = rsa.RSAPublicNumbers(n, e)
                                     key_to_use = pub_numbers.public_key(default_backend())
                                 except Exception:
                                     key_to_use = None
@@ -759,7 +764,7 @@ class DecoderService:
                     num_heads=getattr(self.config.model, 'num_heads', 8),
                     vocab_size=getattr(self.config.model, 'vocab_size', 50000),
                     max_length=getattr(self.config.model, 'max_length', 256),
-                    dropout=getattr(self.config.model, 'dropout', 0.1)
+
                 ).to(self.device)
         
         # Optimize model for inference
@@ -797,23 +802,24 @@ class DecoderService:
                 encoder_hidden = torch.tensor(np.stack(encoder_outputs)).to(self.device)
                 encoder_mask = torch.tensor(np.stack(encoder_masks)).to(self.device)
                 
-                # Get target language IDs
+                # Get target language token IDs
                 target_lang_ids = [
-                    self.vocabulary_manager.language_to_pack.get(lang, 3) 
+                    VocabularyManager.get_token_id_for_lang(lang)
                     for lang in target_langs
                 ]
             
             # Generate translations
             with profile_section("model_inference"):
                 with torch.no_grad():
-                    output_ids, scores = self.model.generate(
+                    target_lang_tensor = torch.tensor(target_lang_ids, device=self.device)
+                    output_ids, raw_scores = self.model.generate(
                         encoder_hidden,
                         encoder_mask,
-                        target_lang_ids[0],
+                        target_lang_tensor,
                         max_length=128,
                         temperature=0.7,
                         top_k=50,
-                        top_p=0.9
+                        top_p=0.9,
                     )
             
             # Decode to text
@@ -827,10 +833,11 @@ class DecoderService:
                     tokens = output.cpu().numpy()
                     text = self._decode_tokens_to_text(tokens, vocab_pack)
                     
+                    item_scores = [step_scores[i] for step_scores in raw_scores] if raw_scores else None
                     results.append({
                         'translation': text,
                         'target_lang': target_langs[i],
-                        'scores': scores[i] if i < len(scores) else None
+                        'scores': item_scores,
                 })
             
             # Periodically clean up memory if needed

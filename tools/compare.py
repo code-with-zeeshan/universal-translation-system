@@ -1,10 +1,11 @@
-# training/comparison.py
+# tools/comparison.py
 """
 Experiment comparison utilities for analyzing multiple training runs
 Extracted from train_universal_system.py
 """
 
 import json
+import hashlib
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -80,6 +81,12 @@ class ExperimentComparator:
                 except Exception as e:
                     logger.warning(f"Could not load best checkpoint for {exp_name}: {e}")
             
+            # Warn on missing metric keys
+            expected_keys = ['train_loss', 'val_loss', 'step_times', 'gpu_memory']
+            for key in expected_keys:
+                if key not in exp_data['metrics']:
+                    logger.warning(f"Expected metric key '{key}' not found in {exp_name} metrics")
+            
             # Calculate additional metrics
             if 'train_loss' in exp_data['metrics']:
                 train_losses = exp_data['metrics']['train_loss']
@@ -122,10 +129,10 @@ class ExperimentComparator:
                 'best_epoch': exp_data.get('best_epoch', -1),
                 'total_time_hours': exp_data.get('total_time', 0) / 3600,
                 'avg_step_time_s': exp_data.get('avg_step_time', 0),
-                'peak_gpu_memory_gb': exp_data.get('peak_memory', 0),
-                'avg_gpu_memory_gb': exp_data.get('avg_memory', 0),
+                'peak_gpu_memory_gb': exp_data.get('peak_memory', 0) / (1024**3) if exp_data.get('peak_memory', 0) else 0,
+                'avg_gpu_memory_gb': exp_data.get('avg_memory', 0) / (1024**3) if exp_data.get('avg_memory', 0) else 0,
                 'num_checkpoints': len(exp_data['checkpoints']),
-                'config_hash': hash(str(exp_data['config']))
+                'config_hash': hashlib.md5(str(exp_data['config']).encode()).hexdigest()
             }
             
             # Add config details
@@ -239,7 +246,12 @@ class ExperimentComparator:
         
         # Efficiency: Loss reduction per hour
         ax = axes[1, 0]
-        df['efficiency'] = (df['min_train_loss'] - df['final_train_loss']) / df['total_time_hours']
+        df['efficiency'] = df.apply(
+            lambda row: (row['min_train_loss'] - row['final_train_loss']) / row['total_time_hours']
+            if pd.notna(row['min_train_loss']) and pd.notna(row['final_train_loss']) and row['total_time_hours'] > 0
+            else None,
+            axis=1
+        )
         df_sorted = df.sort_values('efficiency')
         ax.barh(range(len(df_sorted)), df_sorted['efficiency'].values)
         ax.set_yticks(range(len(df_sorted)))

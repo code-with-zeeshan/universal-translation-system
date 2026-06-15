@@ -63,6 +63,7 @@ endif()
 add_library(universal_encoder_core
     src/universal_encoder.cpp
     src/vocabulary_pack.cpp
+    src/universal_encoder_c_api.cpp
 )
 
 # Include directories

@@ -44,34 +44,24 @@ _LOG_LEVEL_MAP = {
 class _TUILogHandler(logging.Handler):
     """Redirects log records to the TUI event stream."""
 
-    def __init__(self, on_event: OnEvent) -> None:
+    def __init__(self, on_event: OnEvent, use_training_event: bool = False) -> None:
         super().__init__(level=logging.DEBUG)
         self._on_event = on_event
+        self._use_training_event = use_training_event
 
     def emit(self, record: logging.Record) -> None:
         try:
-            self._on_event(PipelineLogEvent(
-                level=_LOG_LEVEL_MAP.get(record.levelno, "INFO"),
-                message=self.format(record),
-                logger=record.name,
-            ))
-        except Exception:
-            self.handleError(record)
-
-
-class _TrainingLogHandler(logging.Handler):
-    """Redirects training log records to the TUI event stream as raw text."""
-
-    def __init__(self, on_event: OnEvent) -> None:
-        super().__init__(level=logging.DEBUG)
-        self._on_event = on_event
-
-    def emit(self, record: logging.Record) -> None:
-        try:
-            self._on_event(TrainingLogEvent(
-                level=_LOG_LEVEL_MAP.get(record.levelno, "INFO"),
-                message=self.format(record),
-            ))
+            if self._use_training_event:
+                self._on_event(TrainingLogEvent(
+                    level=_LOG_LEVEL_MAP.get(record.levelno, "INFO"),
+                    message=self.format(record),
+                ))
+            else:
+                self._on_event(PipelineLogEvent(
+                    level=_LOG_LEVEL_MAP.get(record.levelno, "INFO"),
+                    message=self.format(record),
+                    logger=record.name,
+                ))
         except Exception:
             self.handleError(record)
 
@@ -107,7 +97,7 @@ class PipelineBridge:
             if stages:
                 for s in stages:
                     try:
-                        stage_list.append(PipelineStage(s))
+                        stage_list.append(PipelineStage(s.upper()))
                     except ValueError:
                         pass
             else:
@@ -170,7 +160,7 @@ class TrainingBridge:
 
         # Attach log interceptor for raw text log forwarding
         root_logger = logging.getLogger()
-        self._log_handler = _TrainingLogHandler(self._on_event)
+        self._log_handler = _TUILogHandler(self._on_event, use_training_event=True)
         self._log_handler.setFormatter(logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         ))
@@ -190,10 +180,10 @@ class TrainingBridge:
                 train_loss=trl, val_loss=vl,
                 learning_rate=lr, tokens_per_second=tps,
             )))
-        on_eval = (lambda ep, vl, trl, bleu, chrf, comet:
+        on_eval = (lambda ep, vl, trl, bleu, chrf:
             self._on_event(TrainingEvalEvent(
                 epoch=ep, val_loss=vl, bleu=bleu or 0.0,
-                chrf=chrf, comet_score=comet,
+                chrf=chrf, comet_score=None,
             )))
 
         try:
@@ -213,14 +203,16 @@ class TrainingBridge:
             result = trainer.train()
 
             total_time = time.time() - start_time
-            best_bleu = result.get("best_bleu", 0.0)
-            best_epoch = result.get("best_epoch", 0)
+            training_history = result if isinstance(result, dict) else {}
+            val_losses = training_history.get("val_loss", [])
+            best_bleu = training_history.get("best_bleu", 0.0) or training_history.get("best_val_loss", {}).get("bleu", 0.0)
+            best_epoch = training_history.get("best_epoch", 0) or (val_losses.index(min(val_losses)) + 1 if val_losses else 0)
 
             self._on_event(TrainingDoneEvent(
-                best_bleu=best_bleu,
+                best_bleu=best_bleu or 0.0,
                 best_epoch=best_epoch,
                 total_time_s=total_time,
-                model_path=result.get("model_path", ""),
+                model_path=training_history.get("checkpoint_dir", ""),
             ))
 
             return result
@@ -242,10 +234,14 @@ class GPUMonitor:
 
     async def start(self) -> None:
         self._running = True
+        import pynvml
+        try:
+            pynvml.nvmlInit()
+        except pynvml.NVMLError as e:
+            logging.getLogger(__name__).warning(f"NVML init failed — GPU monitoring disabled: {e}")
+            return
         while self._running:
             try:
-                import pynvml
-                pynvml.nvmlInit()
                 handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 util = pynvml.nvmlDeviceGetUtilizationRates(handle)
                 mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -256,8 +252,8 @@ class GPUMonitor:
                     memory_total_gb=mem_info.total / (1024**3),
                     temperature_c=float(temp),
                 ))
-            except Exception:
-                pass
+            except Exception as e:
+                logging.getLogger(__name__).debug(f"GPU poll failed: {e}")
             await asyncio.sleep(self._interval)
 
     def stop(self) -> None:

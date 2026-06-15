@@ -40,7 +40,7 @@ class RateLimiter:
         try:
             # Try to import the main project's RedisManager
             try:
-                from utils.redis_manager import RedisManager
+                from udn.utils.redis_manager import RedisManager
                 self.redis_manager = RedisManager.get_instance()
                 
                 # Override default URL if provided

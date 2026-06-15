@@ -17,7 +17,7 @@ spec:
       containers:
       - name: decoder
         image: universal-decoder:latest
-        command: ["uvicorn", "cloud_decoder.optimized_decoder:app", "--host", "0.0.0.0", "--port", "8001"]
+        command: ["uvicorn", "runtime.cloud_decoder.optimized_decoder:app", "--host", "0.0.0.0", "--port", "8001"]
         ports:
         - containerPort: 8001
         livenessProbe:

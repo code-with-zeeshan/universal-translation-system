@@ -6,7 +6,7 @@ import math
 import os
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 
 os.environ.setdefault("UTS_HMAC_KEY", "a" * 40)
 
@@ -1065,14 +1065,14 @@ _PROJECT_SUBMODULE_MOCKS = {
         'integrate_full_pipeline_async': MagicMock(),
     }),
     'encoding.base64': _make_mock_module('base64', {}),
-    'cloud_decoder.optimized_decoder': _make_mock_module('optimized_decoder', {
+    'runtime.cloud_decoder.optimized_decoder': _make_mock_module('optimized_decoder', {
         'OptimizedUniversalDecoder': MagicMock(),
         'OptimizedDecoderLayer': MagicMock(),
         'ContinuousBatcher': MagicMock(),
-        'startup_validation': MagicMock(),
+        'startup_validation': AsyncMock(side_effect=RuntimeError("JWT secret not configured")),
         'app': MagicMock(),
     }),
-    'coordinator.advanced_coordinator': _make_mock_module('advanced_coordinator', {
+    'runtime.coordinator.advanced_coordinator': _make_mock_module('advanced_coordinator', {
         'DASHBOARD_TEMPLATE': MagicMock(),
         'DecoderNodeSchema': MagicMock(),
         'app': MagicMock(),

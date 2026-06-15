@@ -8,7 +8,7 @@ groups:
 
       # Error rate by component
       - record: component:error_rate:ratio
-        expr: sum(rate(translation_error_total[5m])) by (component) / sum(rate(translation_requests_total[5m])) by (component)
+        expr: sum(rate(encoder_errors_total[5m])) by (component) / sum(rate(translation_requests_total[5m])) by (component)
 
       # 95th percentile latency by component
       - record: component:latency_p95:histogram_quantile
@@ -28,7 +28,7 @@ groups:
 
       # Error rate by language pair
       - record: language_pair:error_rate:ratio
-        expr: sum(rate(translation_error_total[5m])) by (source_lang, target_lang) / sum(rate(translation_requests_total[5m])) by (source_lang, target_lang)
+        expr: sum(rate(encoder_errors_total[5m])) by (source_lang, target_lang) / sum(rate(translation_requests_total[5m])) by (source_lang, target_lang)
 
       # 95th percentile latency by language pair
       - record: language_pair:latency_p95:histogram_quantile
@@ -44,11 +44,11 @@ groups:
 
       # GPU utilization by component
       - record: component:gpu_utilization:percent
-        expr: avg(gpu_utilization_percent) by (component)
+        expr: avg(system_gpu_utilization_percent) by (component)
 
       # GPU memory usage by component
       - record: component:gpu_memory_usage:ratio
-        expr: sum(gpu_memory_used_bytes) by (component) / sum(gpu_memory_total_bytes) by (component)
+        expr: sum(system_gpu_memory_usage_bytes) by (component) / (8 * 1024^3)
 
       # Vocabulary cache hit ratio
       - record: vocabulary:cache_hit_ratio:ratio
@@ -56,4 +56,4 @@ groups:
 
       # Circuit breaker status by decoder
       - record: decoder:circuit_breaker_open:count
-        expr: sum(circuit_breaker_state{state="open"}) by (decoder)
+        expr: count(circuit_breaker_state == 2) by (name)

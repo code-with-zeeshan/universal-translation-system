@@ -1,5 +1,14 @@
 # monitoring/metrics_collector.py
-from prometheus_client import Counter, Histogram, Gauge, REGISTRY
+"""
+Vocabulary-specific metrics collector.
+Shared metrics are imported from monitoring.metrics to avoid conflicts.
+"""
+from prometheus_client import Gauge, REGISTRY
+from monitoring.metrics import (
+    TRANSLATION_REQUESTS, TRANSLATION_LATENCY,
+    SYSTEM_GPU_UTILIZATION, COORDINATOR_ACTIVE_CONNECTIONS,
+)
+
 import logging
 import sys
 import os
@@ -12,77 +21,35 @@ except ImportError:
     HAS_VOCAB_MANAGER = False
     logging.warning("VocabularyManager not available - vocabulary metrics disabled")
 
-def _safe_counter(name, documentation, labels=None, registry=REGISTRY, **kwargs):
-    try:
-        if labels is not None:
-            return Counter(name, documentation, labels, registry=registry, **kwargs)
-        return Counter(name, documentation, registry=registry, **kwargs)
-    except ValueError:
-        return registry._names_to_collectors[name]
+# Re-export aliases for backward compatibility
+translation_requests = TRANSLATION_REQUESTS
+translation_latency = TRANSLATION_LATENCY
+gpu_utilization = SYSTEM_GPU_UTILIZATION
+active_connections = COORDINATOR_ACTIVE_CONNECTIONS
 
-def _safe_histogram(name, documentation, labels=None, registry=REGISTRY, **kwargs):
-    try:
-        if labels is not None:
-            return Histogram(name, documentation, labels, registry=registry, **kwargs)
-        return Histogram(name, documentation, registry=registry, **kwargs)
-    except ValueError:
-        return registry._names_to_collectors[name]
-
-def _safe_gauge(name, documentation, labels=None, registry=REGISTRY, **kwargs):
-    try:
-        if labels is not None:
-            return Gauge(name, documentation, labels, registry=registry, **kwargs)
-        return Gauge(name, documentation, registry=registry, **kwargs)
-    except ValueError:
-        return registry._names_to_collectors[name]
-
-# Metrics
-translation_requests = _safe_counter(
-    'translation_requests_total',
-    'Total translation requests',
-    ['source_lang', 'target_lang', 'status']
-)
-
-translation_latency = _safe_histogram(
-    'translation_latency_seconds',
-    'Translation latency',
-    ['source_lang', 'target_lang'],
-    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
-)
-
-gpu_utilization = _safe_gauge(
-    'gpu_utilization_percent',
-    'GPU utilization percentage'
-)
-
-active_connections = _safe_gauge(
-    'active_connections',
-    'Number of active connections'
-)
-
-# Vocabulary metrics
-vocabulary_pack_info = _safe_gauge(
+# Vocabulary metrics (unique to this collector)
+vocabulary_pack_info = Gauge(
     'vocabulary_pack_info',
     'Vocabulary pack version information',
-    ['pack_name', 'version', 'status']  # status: available, loaded, error
+    ['pack_name', 'version', 'status']
 )
 
-vocabulary_packs_total = _safe_gauge(
+vocabulary_packs_total = Gauge(
     'vocabulary_packs_total',
     'Total number of vocabulary packs',
-    ['type']  # type: available, loaded
+    ['status']
 )
 
-vocabulary_pack_size_mb = _safe_gauge(
+vocabulary_pack_size_mb = Gauge(
     'vocabulary_pack_size_mb',
     'Size of vocabulary pack in MB',
     ['pack_name', 'version']
 )
 
-vocabulary_pack_tokens = _safe_gauge(
+vocabulary_pack_tokens = Gauge(
     'vocabulary_pack_tokens',
     'Number of tokens in vocabulary pack',
-    ['pack_name', 'version', 'token_type']  # token_type: regular, subword, special
+    ['pack_name', 'version', 'token_type']
 )
 
 # Logging setup (centralized)
@@ -111,8 +78,8 @@ class VocabularyMetricsCollector:
             loaded_packs = self._get_loaded_packs()
             
             # Update total counts
-            vocabulary_packs_total.labels(type='available').set(len(available_packs))
-            vocabulary_packs_total.labels(type='loaded').set(len(loaded_packs))
+            vocabulary_packs_total.labels(status='available').set(len(available_packs))
+            vocabulary_packs_total.labels(status='loaded').set(len(loaded_packs))
             
             # Update per-pack metrics
             for pack_name, pack_info in available_packs.items():

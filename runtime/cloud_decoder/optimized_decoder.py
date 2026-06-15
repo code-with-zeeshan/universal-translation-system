@@ -1,10 +1,7 @@
-from utils.common_utils import RuntimeDirectoryManager
 # cloud_decoder/optimized_decoder.py
 import torch
 import torch.nn as nn
 from pathlib import Path
-import struct
-import numpy as np
 from fastapi import FastAPI, Request, Header, Depends, HTTPException, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -23,7 +20,6 @@ try:
     import triton_python_backend_utils as pb_utils  # type: ignore
 except Exception:
     pb_utils = None  # Safe fallback when not running under Triton
-import lz4.frame
 import logging
 import os
 import threading
@@ -40,7 +36,8 @@ from utils.constants import API_VERSION, SUPPORTED_VOCAB_FORMAT, VERSION_CONFIG_
 from utils.logging_config import setup_logging, get_logger
 from collections import OrderedDict
 # Import core model classes (no server deps)
-from .decoder_core import OptimizedUniversalDecoder, OptimizedDecoderLayer, ContinuousBatcher
+from .decoder_core import OptimizedUniversalDecoder, OptimizedDecoderLayer, ContinuousBatcher, decompress_encoder_output, decode_tokens_to_text
+from utils.common_utils import RuntimeDirectoryManager
 
 # Import vocabulary manager
 from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
@@ -502,13 +499,22 @@ def require_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
         raise HTTPException(status_code=401, detail="Invalid token")
 
 # Live config reload
+_config_cache: Dict[str, Any] = {}
+
 class ConfigReloadHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.src_path.endswith(CONFIG_PATH):
             with tracer.start_as_current_span("config_reload"):
                 logger.info("Config file changed, reloading...")
-                # Reload config logic here
-                # (For demo, just print. In production, update in-memory config.)
+                global _config_cache
+                try:
+                    import yaml
+                    with open(CONFIG_PATH) as f:
+                        new_config = yaml.safe_load(f) or {}
+                    _config_cache.update(new_config)
+                    logger.info("Config reloaded successfully: %s", {k: v for k, v in new_config.items() if not k.startswith('_')})
+                except Exception as exc:
+                    logger.error("Config reload failed: %s", exc)
 # Track file observer for shutdown
 FILE_OBSERVER = Observer()
 FILE_OBSERVER.schedule(ConfigReloadHandler(), path=os.path.dirname(CONFIG_PATH) or '.', recursive=False)
@@ -902,61 +908,7 @@ async def process_batch_gpu(batch: List[Dict]) -> List[Dict]:
     return all_results
 
 
-def decompress_encoder_output(compressed_data: bytes) -> Dict:
-    """Decompress encoder output with correct 16-byte header parsing.
-    Expects bytes; raises if provided a different type.
-    """
-    if not isinstance(compressed_data, (bytes, bytearray)):
-        raise ValueError("decompress_encoder_output expects bytes/bytearray")
-
-    header_size = 16  # 4*int32 + 4*float32
-    if len(compressed_data) < header_size:
-        raise ValueError("Invalid compressed data: header is too short.")
-
-    # Unpack the 16-byte header using struct: seq_len (i), hidden_dim (i), scale (f), reserved (i)
-    seq_len, hidden_dim, scale, _ = struct.unpack('<iifi', compressed_data[:header_size])
-
-    # Decompress the payload
-    compressed_payload = compressed_data[header_size:]
-    decompressed_payload = lz4.frame.decompress(compressed_payload)
-
-    # Dequantize the int8 data to float32
-    quantized_embeddings = np.frombuffer(decompressed_payload, dtype=np.int8)
-    dequantized_embeddings = quantized_embeddings.astype(np.float32) * (1.0 / scale)
-
-    # Reshape to the original 3D tensor shape
-    hidden_states = dequantized_embeddings.reshape(1, seq_len, hidden_dim)
-
-    dev = get_device()
-    return {
-        'hidden_states': torch.tensor(hidden_states, device=dev),
-        'attention_mask': torch.ones((1, seq_len), dtype=torch.long, device=dev)
-    }
-
-def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
-    """Decode token IDs to text using vocabulary pack (production-grade)."""
-    # Use SentencePiece if available
-    try:
-        import sentencepiece as spm
-        if hasattr(vocab_pack, 'sp_model'):
-            return vocab_pack.sp_model.decode_ids(list(tokens))
-    except ImportError:
-        pass
-    # Fallback: reconstruct text using vocab pack
-    id_to_token = {idx: tok for tok, idx in vocab_pack.tokens.items()}
-    text_tokens = []
-    for token_id in tokens:
-        if token_id == 2:  # EOS token
-            break
-        elif token_id == 0:  # Padding
-            continue
-        token = id_to_token.get(token_id, '<unk>')
-        text_tokens.append(token)
-    # Join tokens and clean up subwords
-    text = ' '.join(text_tokens)
-    text = text.replace(' ##', '')
-    text = text.replace('▁', ' ')
-    return text.strip()
+# (decompress_encoder_output and decode_tokens_to_text moved to decoder_core.py)
 
 #Endpoint for adapter composition 
 @app.post("/compose_adapter", status_code=201, dependencies=[Depends(verify_internal_request)])

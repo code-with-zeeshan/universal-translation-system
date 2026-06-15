@@ -20,6 +20,10 @@ class ModelError(UniversalTranslationError):
     """Raised when there are issues with model operations"""
     pass
 
+class ModelNotFoundError(ModelError):
+    """Raised when a requested model is not found"""
+    pass
+
 class ConfigurationError(UniversalTranslationError):
     """Raised when there are configuration issues"""
     pass

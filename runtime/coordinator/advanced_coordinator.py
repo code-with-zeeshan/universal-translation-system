@@ -1443,7 +1443,7 @@ DASHBOARD_TEMPLATE = _jinja_env.from_string("""
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, logged_in: bool = Depends(get_session)):
     """Serves the main dashboard UI."""
-    nodes_data = [DecoderNodeSchema(**n) for n in pool.pool]
+    nodes_data = [DecoderNodeSchema(**n) for n in pool.nodes]
     return DASHBOARD_TEMPLATE.render(nodes=nodes_data, logged_in=logged_in)
 
 @app.post("/login")

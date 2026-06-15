@@ -9,7 +9,6 @@ class TestRateLimiter(unittest.TestCase):
     def test_init_defaults(self):
         rl = RateLimiter()
         self.assertEqual(rl.requests_per_minute, 60)
-        self.assertEqual(rl.requests_per_hour, 1000)
 
     def test_is_allowed_returns_true_for_first_request(self):
         rl = RateLimiter(requests_per_minute=10)
@@ -49,7 +48,7 @@ class TestRateLimiter(unittest.TestCase):
     def test_slowapi_limiter_creation(self):
         with patch("utils.rate_limiter._slowapi_available", True):
             with patch("utils.rate_limiter.SlowapiLimiter") as MockLimiter:
-                rl = RateLimiter(requests_per_minute=30, requests_per_hour=500)
+                rl = RateLimiter(requests_per_minute=30)
                 self.assertIsNotNone(rl._limiter)
                 MockLimiter.assert_called_once()
 

@@ -37,7 +37,16 @@ class JWTAuth:
         self.secret_key = secret_key or os.getenv("JWT_SECRET") or os.getenv("COORDINATOR_JWT_SECRET") or os.getenv("DECODER_JWT_SECRET")
         self.public_keys: List[str] = []
         if algorithm.startswith("RS"):
-            for src in [os.getenv("JWT_PUBLIC_KEY", ""), *(open(p).read() for p in os.getenv("JWT_PUBLIC_KEY_PATH", "").split("||") if p)]:
+            pub_key_env = os.getenv("JWT_PUBLIC_KEY", "")
+            pub_key_path = os.getenv("JWT_PUBLIC_KEY_PATH", "")
+            sources = [pub_key_env]
+            for p in pub_key_path.split("||"):
+                if p:
+                    try:
+                        sources.append(open(p).read())
+                    except FileNotFoundError:
+                        logger.warning(f"JWT public key file not found: {p}")
+            for src in sources:
                 if src.strip():
                     self.public_keys.append(src.strip())
         if not self.secret_key and not self.public_keys:

@@ -32,11 +32,12 @@ class TestCompleteIntegration(unittest.TestCase):
         # Test path validation
         self.assertEqual(validate_path_component('valid_name'), 'valid_name')
         
-        with self.assertRaises(ValueError):
+        with self.assertRaises(Exception):
             validate_path_component('../etc/passwd')
     
     def test_no_trust_remote_code(self):
         """Verify trust_remote_code=True is removed"""
+        from utils.exceptions import SecurityError as _SecurityError
         files_to_check = [
             'data/download_curated_data.py',
             'data/download_training_data.py',

@@ -1,6 +1,11 @@
 # config/base.yaml
 # Base configuration - shared across all GPU types
 # This file contains common settings to reduce duplication
+#
+# NOTE: config_version, data_version, pipeline_version below are
+# informational metadata. RootConfig drops unknown top-level keys
+# (extra = "allow"), so these fields do NOT map to any Pydantic field.
+# They are kept for human readability only.
 
 config_version: "1.0.0"
 data_version: "1.0.0"

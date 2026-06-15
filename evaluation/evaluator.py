@@ -1,6 +1,6 @@
 from utils.common_utils import RuntimeDirectoryManager
 import torch
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Optional, Any
 from pathlib import Path
 import numpy as np
 from tqdm import tqdm
@@ -19,11 +19,6 @@ class TranslationPair:
     source_lang: str
     target_lang: str
     predicted: Optional[str] = None
-try:
-    import pandas as pd
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -198,26 +193,27 @@ class TranslationEvaluator:
         """Subword tokenization for OOV words"""
         subword_tokens = []
 
-        # First, check if the word with ## prefix exists
         if hasattr(vocab_pack, 'subwords'):
-            # Try progressively smaller subwords
-            for i in range(len(word)):
-                for j in range(len(word), i, -1):
-                    subword = word[i:j]
-
-                    # First subword doesn't need ##
-                    if i == 0:
+            idx = 0
+            while idx < len(word):
+                found = False
+                for j in range(len(word), idx, -1):
+                    subword = word[idx:j]
+                    if idx == 0:
                         if subword in vocab_pack.tokens:
                             subword_tokens.append(vocab_pack.tokens[subword])
-                            i = j - 1
+                            idx = j
+                            found = True
                             break
                     else:
-                        # Subsequent subwords need ## prefix
                         subword_with_prefix = f"##{subword}"
                         if subword_with_prefix in vocab_pack.subwords:
                             subword_tokens.append(vocab_pack.subwords[subword_with_prefix])
-                            i = j - 1
+                            idx = j
+                            found = True
                             break
+                if not found:
+                    idx += 1
 
         # If no subwords found, use UNK token
         if not subword_tokens:
@@ -495,36 +491,6 @@ class TranslationEvaluator:
                 return 0.0
         return 0.0
 
-    # Adding streaming support to file evaluation:
-    def evaluate_file_streaming(self, test_file: str,
-                               file_format: str = 'tsv',
-                               chunk_size: int = 1000) -> Dict[str, Any]:
-        """
-        Evaluate from a test file using streaming
-        """
-        def file_iterator():
-            """Generator that yields TranslationPair objects from file"""
-            with open(test_file, 'r', encoding='utf-8') as f:
-                for line_no, line in enumerate(f, 1):
-                    if file_format == 'tsv':
-                        parts = line.strip().split('\t')
-                        if len(parts) >= 4:
-                            yield TranslationPair(
-                                source=parts[0],
-                                target=parts[1],
-                                source_lang=parts[2],
-                                target_lang=parts[3]
-                            )
-                    elif file_format == 'json':
-                        data = json.loads(line)
-                        yield TranslationPair(**data)
-
-                    # Log progress
-                    if line_no % 10000 == 0:
-                        logger.info(f"Read {line_no} lines from {test_file}")
-
-        return self.evaluate_dataset_streaming(file_iterator())
-
     def evaluate_dataset(self,
                         test_data: List[TranslationPair],
                         batch_size: int = 32,
@@ -755,57 +721,6 @@ class TranslationEvaluator:
         logger.info("="*50)
 
         return report
-
-    def compare_models(self,
-                       models: List[Tuple[torch.nn.Module, torch.nn.Module, str]],
-                       test_data: List[TranslationPair]) -> Optional['pd.DataFrame']:
-        """Compare multiple models on the same test set"""
-        if not PANDAS_AVAILABLE:
-            logger.warning("pandas not available for model comparison")
-            return None
-
-        results = []
-
-        for encoder, decoder, model_name in models:
-            # Temporarily swap models
-            old_encoder, old_decoder = self.encoder, self.decoder
-            self.encoder, self.decoder = encoder, decoder
-
-            # Evaluate
-            metrics = self.evaluate_dataset(test_data)
-            metrics['model'] = model_name
-            results.append(metrics)
-
-            # Restore original models
-            self.encoder, self.decoder = old_encoder, old_decoder
-
-        # Create comparison dataframe
-        df = pd.DataFrame(results)
-        return df
-
-    def profile_memory_usage(self, test_data: List[TranslationPair]) -> Dict[str, float]:
-        """Profile memory usage during evaluation"""
-        import tracemalloc
-
-        gc.collect()
-        tracemalloc.start()
-
-        # Get baseline
-        baseline = tracemalloc.get_traced_memory()[0]
-
-        # Run evaluation
-        metrics = self.evaluate_dataset(test_data[:100])  # Small sample
-
-        # Get peak memory
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-
-        return {
-            'baseline_mb': baseline / 1024 / 1024,
-            'peak_mb': peak / 1024 / 1024,
-            'increase_mb': (peak - baseline) / 1024 / 1024,
-            'per_sample_kb': (peak - baseline) / 1024 / len(test_data[:100])
-        }
 
 
 # Standalone evaluation function

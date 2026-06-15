@@ -48,17 +48,6 @@ class IntegrationSystemConfig(BaseModel):
             logger.warning(f"Vocab cache size may use {estimated_cache_size_gb:.1f}GB RAM")
         return v
 
-    @validator('monitoring_port')
-    def validate_monitoring_port(cls, v):
-        import socket
-        try:
-            # Check if port is available
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('127.0.0.1', v))
-            return v
-        except OSError:
-            raise ValueError(f"Port {v} is already in use")
-
     class Config:
         env_file = '.env'
         env_file_encoding = 'utf-8'

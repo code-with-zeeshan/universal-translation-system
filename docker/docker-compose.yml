@@ -35,8 +35,8 @@ services:
       context: ..
       dockerfile: docker/encoder.Dockerfile
     volumes:
-      - ../models/encoder:/models/encoder
-      - ../vocabulary/vocab:/vocabs
+      - ../output/models/encoder:/models/encoder
+      - ../output/vocabulary/vocab:/vocabs
     container_name: encoder_service
     restart: unless-stopped
     # Add ports or command as needed
@@ -46,9 +46,9 @@ services:
       context: ..
       dockerfile: docker/decoder.Dockerfile
     volumes:
-      - ../models/decoder:/models/decoder:ro
-      - ../vocabulary/vocab:/vocabs:ro
-      - ../logs:/app/logs
+      - ../output/models/decoder:/models/decoder:ro
+      - ../output/vocabulary/vocab:/vocabs:ro
+      - ../output/logs:/app/logs
       - decoder_cache:/app/.cache
     container_name: decoder_service
     restart: unless-stopped
@@ -94,16 +94,16 @@ volumes:
 
 secrets:
   decoder_jwt_secret:
-    file: ../secrets/decoder_jwt_secret.txt
+    file: ../output/secrets/decoder_jwt_secret.txt
   coordinator_secret:
-    file: ../secrets/coordinator_secret.txt
+    file: ../output/secrets/coordinator_secret.txt
   coordinator_jwt_secret:
-    file: ../secrets/coordinator_jwt_secret.txt
+    file: ../output/secrets/coordinator_jwt_secret.txt
   coordinator_token:
-    file: ../secrets/coordinator_token.txt
+    file: ../output/secrets/coordinator_token.txt
   internal_service_token:
-    file: ../secrets/internal_service_token.txt
+    file: ../output/secrets/internal_service_token.txt
   jwt_private_key:
-    file: ../secrets/jwt_private_key.pem
+    file: ../output/secrets/jwt_private_key.pem
   jwt_public_key:
-    file: ../secrets/jwt_public_key.pem
+    file: ../output/secrets/jwt_public_key.pem

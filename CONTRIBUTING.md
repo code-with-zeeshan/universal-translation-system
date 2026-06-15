@@ -138,8 +138,8 @@ pip install -r requirements/train.txt -r requirements/serve.txt
 pip install -r requirements/decoder.txt -r requirements/coordinator.txt
 
 # Run components individually
-python cloud_decoder/optimized_decoder.py
-python coordinator/advanced_coordinator.py
+python runtime/cloud_decoder/optimized_decoder.py
+python runtime/coordinator/advanced_coordinator.py
 ```
 
 ### Contributing Compute Resources

@@ -50,12 +50,13 @@ def check_vocab(cfg) -> dict:
     }
 
 
-def check_models() -> dict:
+def check_models(cfg=None) -> dict:
     from utils.common_utils import RuntimeDirectoryManager
-    models_dir = RuntimeDirectoryManager().models_dir
-    production_best = RuntimeDirectoryManager().production_dir / "best_model.pt"
+    _rdm = RuntimeDirectoryManager(config=cfg)
+    models_dir = _rdm.models_dir
+    production_best = _rdm.production_dir / "best_model.pt"
     registry = models_dir / "model_registry.json"
-    versioned = list(RuntimeDirectoryManager().production_dir.glob("*_v1.*.pt")) if RuntimeDirectoryManager().production_dir.exists() else []
+    versioned = list(_rdm.production_dir.glob("*_v1.*.pt")) if _rdm.production_dir.exists() else []
     return {
         "path": str(models_dir),
         "has_production_best": exists(production_best),
@@ -88,9 +89,11 @@ def print_summary(cfg, data_info, vocab_info, model_info):
     print(f"  - versioned copies: {model_info['versioned_count']}")
 
     # Mount guidance
+    from utils.common_utils import RuntimeDirectoryManager
+    _rdm = RuntimeDirectoryManager(config=cfg)
     print("\nMounts required for decoder:")
-    print("  - ./models -> /app/models")
-    print("  - ./vocabulary/vocab -> /app/vocabs")
+    print(f"  - ./models -> /app/models ({_rdm.models_dir})")
+    print(f"  - ./vocabulary/vocab -> /app/vocabs ({_rdm.vocab_dir})")
 
     # Exit code guidance
     exit_code = 0
@@ -113,7 +116,7 @@ def main():
     cfg = load_config()
     data_info = check_processed_data(cfg)
     vocab_info = check_vocab(cfg)
-    model_info = check_models()
+    model_info = check_models(cfg)
     print_summary(cfg, data_info, vocab_info, model_info)
 
 

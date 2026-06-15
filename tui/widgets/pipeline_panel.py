@@ -4,11 +4,9 @@
 from __future__ import annotations
 
 from textual.reactive import reactive
-from textual.widgets import Static, ListView, ListItem, Label
+from textual.widgets import Static
 from textual.widget import Widget
-from rich.table import Table
 from rich.text import Text
-from rich.style import Style
 from typing import Optional
 
 from tui.events import PipelineStageEvent, StageStatus
@@ -97,10 +95,9 @@ CORE_STAGES = [
 class PipelinePanel(Widget):
     """Left panel showing all pipeline stages."""
 
-    all_stages: dict[str, StageRow] = {}
-
     def __init__(self, stages: Optional[list[str]] = None) -> None:
         super().__init__(id="pipeline-panel")
+        self.all_stages: dict[str, StageRow] = {}
         self._stage_names = stages or CORE_STAGES
 
     def compose(self):
@@ -127,16 +124,16 @@ class PipelinePanel(Widget):
         self._update_summary()
 
     def _update_summary(self) -> None:
-        done = sum(
-            1 for r in self.all_stages.values() if r.status == StageStatus.DONE
-        )
+        done = running = failed = 0
+        for r in self.all_stages.values():
+            if r.status == StageStatus.DONE:
+                done += 1
+            elif r.status == StageStatus.RUNNING:
+                running += 1
+            elif r.status == StageStatus.FAILED:
+                failed += 1
         total = len(self.all_stages)
-        running = any(
-            r.status == StageStatus.RUNNING for r in self.all_stages.values()
-        )
-        failed = any(
-            r.status == StageStatus.FAILED for r in self.all_stages.values()
-        )
+        running = running > 0
         status = "RUNNING" if running else ("FAILED" if failed else "IDLE")
         self.query_one("#pipeline-summary", Static).update(
             f"  [{done}/{total}] stages complete — {status}"

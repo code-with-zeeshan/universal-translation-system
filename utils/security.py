@@ -243,4 +243,4 @@ def safe_load_model(model_name: str, model_class: Any = None, **kwargs) -> Any:
         return model_class.from_pretrained(model_name, **kwargs)
     # Fallback: try to load with torch
     import torch
-    return torch.load(model_name, **kwargs)
+    return torch.load(model_name, weights_only=True, **kwargs)

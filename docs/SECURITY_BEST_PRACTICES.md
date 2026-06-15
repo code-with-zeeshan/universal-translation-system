@@ -20,7 +20,7 @@ This document outlines security best practices for deploying and operating the U
 - Centralized bootstrap validates required secrets and fails fast
 
 ### Rotation & JWKS
-- Use rotation CLI: `tools/rotate_secrets.py` (supports HS256 and RS256)
+- Use rotation CLI: `uts tools --rotate-secrets` (or `python tools/rotate_secrets.py` directly; supports HS256 and RS256)
 - RS256: maintain multiple public keys via `JWT_PUBLIC_KEY` or `JWT_PUBLIC_KEY_PATH` with `||` separator
 
 ### JWT Secrets
@@ -68,7 +68,7 @@ data:
 ### TLS/SSL
 - Always use HTTPS for all API endpoints
 - Use TLS 1.2 or higher
-- See `udn/utils/https_middleware.py` for HTTPS enforcement
+- See `universal-decoder-node/udn/utils/https_middleware.py` for HTTPS enforcement
 
 ### Network Policies
 - Use Kubernetes Network Policies to restrict traffic

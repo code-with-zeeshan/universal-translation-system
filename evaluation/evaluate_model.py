@@ -203,18 +203,19 @@ def main(
     """
     # Default paths — try published model first, then fall back to latest checkpoint
     config_path = config or 'config/base.yaml'
+    rdm = RuntimeDirectoryManager()
     if not checkpoint:
-        published = self.runtime_dirs.production_dir / 'best_model.pt'
+        published = rdm.production_dir / 'best_model.pt'
         if published.exists():
             checkpoint = str(published)
         else:
-            candidates = sorted(self.runtime_dirs.checkpoints_dir.rglob('best_model.pt'))
+            candidates = sorted(rdm.checkpoints_dir.rglob('best_model.pt'))
             if candidates:
                 checkpoint = str(candidates[-1])
                 logger.info(f"📦 Using latest checkpoint: {checkpoint}")
             else:
-                checkpoint = str(self.runtime_dirs.production_dir / 'best_model.pt')
-    test_data = test_data or str(self.runtime_dirs.eval_data_dir)
+                checkpoint = str(rdm.production_dir / 'best_model.pt')
+    test_data = test_data or str(rdm.eval_data_dir)
 
     # ── Eval checkpoint auto-resume ──────────────────────────────────
     ckpt_mgr = PhaseCheckpoint("eval")
@@ -238,7 +239,7 @@ def main(
         logger.warning("⚠️ Training not yet complete. Run `uts train --full` first.")
 
     # Load config
-    logger.info(f"📄 Loading config from {config}")
+    logger.info(f"📄 Loading config from {config_path}")
     try:
         cfg = load_pydantic_config(config)
     except Exception as e:
@@ -323,7 +324,7 @@ def main(
         return False
 
     # Create output directory for reports
-    output_dir = self.runtime_dirs.eval_reports_dir
+    output_dir = rdm.eval_reports_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Compute test-data hash for sub-stage tracking
@@ -394,9 +395,10 @@ def main(
 
 
 __all__ = [
-    "TranslationEvaluator",
-    "TranslationPair",
-    "evaluate_translation_quality",
+    "main",
+    "build_encoder",
+    "build_decoder",
+    "wrap_with_lora",
 ]
 
 

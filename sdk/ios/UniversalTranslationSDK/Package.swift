@@ -48,7 +48,7 @@ let package = Package(
             path: "Sources/EncoderBridge",
             publicHeadersPath: "include",
             cxxSettings: [
-                .headerSearchPath("../../../../encoder_core/include"),
+                .headerSearchPath("../../../../../runtime/encoder_core/include"),
                 .define("ONNX_ML", to: "1"),
                 .define("ONNX_NAMESPACE", to: "onnx")
             ],

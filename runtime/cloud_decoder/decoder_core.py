@@ -9,6 +9,9 @@ from torch.utils.checkpoint import checkpoint
 from typing import Optional, Dict, Any, Tuple, List
 import asyncio
 import time
+import struct
+import numpy as np
+import lz4.frame
 
 
 class OptimizedDecoderLayer(nn.Module):
@@ -283,3 +286,42 @@ class ContinuousBatcher:
                 except Exception as e:
                     for future in futures:
                         future.set_exception(e)
+
+
+def decompress_encoder_output(compressed_data: bytes, device: Optional[torch.device] = None) -> Dict:
+    """Decompress encoder output with 16-byte header parsing."""
+    if not isinstance(compressed_data, (bytes, bytearray)):
+        raise ValueError("decompress_encoder_output expects bytes/bytearray")
+
+    header_size = 16
+    if len(compressed_data) < header_size:
+        raise ValueError("Invalid compressed data: header is too short.")
+
+    seq_len, hidden_dim, scale, _ = struct.unpack('<iifi', compressed_data[:header_size])
+
+    compressed_payload = compressed_data[header_size:]
+    decompressed_payload = lz4.frame.decompress(compressed_payload)
+
+    quantized_embeddings = np.frombuffer(decompressed_payload, dtype=np.int8)
+    dequantized_embeddings = quantized_embeddings.astype(np.float32) * (1.0 / scale)
+
+    hidden_states = torch.tensor(dequantized_embeddings.reshape(1, seq_len, hidden_dim), device=device)
+    attention_mask = torch.ones((1, seq_len), dtype=torch.long, device=device)
+
+    return {
+        'hidden_states': hidden_states,
+        'attention_mask': attention_mask,
+    }
+
+
+def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
+    id_to_token = getattr(vocab_pack, 'id_to_token', {})
+    text_tokens = []
+    for tid in tokens:
+        if tid == 2:
+            break
+        if tid == 0:
+            continue
+        text_tokens.append(id_to_token.get(tid, '<unk>'))
+    text = ' '.join(text_tokens).replace(' ##', '').replace('\u2581', ' ').strip()
+    return text

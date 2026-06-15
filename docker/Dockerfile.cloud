@@ -27,13 +27,14 @@ RUN adduser --disabled-password --gecos '' appuser
 
 WORKDIR /app
 
-COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY runtime/cloud_decoder/ runtime/cloud_decoder/
 COPY runtime/encoder/ runtime/encoder/
 COPY utils/ utils/
-COPY vocabulary/ vocabulary/
+# Data volumes (vocabulary/, models/, logs/) live under output/ — not baked into image
+COPY runtime/vocabulary/ runtime/vocabulary/
 COPY monitoring/ monitoring/
 COPY config/ config/
 COPY version-config.json .
@@ -44,17 +45,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     API_HOST=0.0.0.0 \
-    API_PORT=8000 \
+    API_PORT=8001 \
     API_WORKERS=1 \
     OMP_NUM_THREADS=4 \
     TOKENIZERS_PARALLELISM=false
 
-EXPOSE 8000
+EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -fsS http://localhost:${API_PORT:-8000}/health || exit 1
+    CMD curl -fsS http://localhost:${API_PORT:-8001}/health || exit 1
 
 USER appuser
 
-ENTRYPOINT ["uvicorn", "runtime.cloud_decoder.optimized_decoder:app", "--host", "0.0.0.0", "--port", "8000"]
-# Override port via API_PORT env var (default 8000)
+ENTRYPOINT ["uvicorn", "runtime.cloud_decoder.optimized_decoder:app", "--host", "0.0.0.0", "--port", "8001"]
+# Override port via API_PORT env var (default 8001)

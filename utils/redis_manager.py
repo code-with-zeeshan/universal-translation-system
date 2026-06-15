@@ -6,8 +6,12 @@ import threading
 import json
 import msgpack
 from typing import Any, Dict, List, Optional, Union, Callable
-import redis
-from redis.connection import ConnectionPool
+try:
+    import redis
+    from redis.connection import ConnectionPool
+except ImportError:
+    redis = None  # type: ignore
+    ConnectionPool = None  # type: ignore
 
 # Prefer centralized secret/config access when available
 try:

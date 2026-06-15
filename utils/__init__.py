@@ -58,9 +58,6 @@ except Exception:
     def require_user(*args, **kwargs):  # type: ignore
         def decorator(func): return func
         return decorator
-    def require_user(*args, **kwargs):  # type: ignore
-        def decorator(func): return func
-        return decorator
 
 # Import exceptions
 from .exceptions import (

@@ -1,6 +1,6 @@
 # docker/decoder.Dockerfile (standardized)
 # Base: CUDA 11.8 runtime on Ubuntu 22.04, production-oriented
-FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 # System deps and Python 3.10
 RUN apt-get update && apt-get install -y \
@@ -40,8 +40,8 @@ RUN pip install --no-cache-dir \
 # Copy decoder code and required shared modules
 COPY runtime/cloud_decoder /app/runtime/cloud_decoder
 COPY runtime/encoder /app/runtime/encoder
+COPY runtime/vocabulary /app/runtime/vocabulary
 COPY utils /app/utils
-COPY vocabulary /app/vocabulary
 COPY monitoring /app/monitoring
 
 # Runtime env tuning

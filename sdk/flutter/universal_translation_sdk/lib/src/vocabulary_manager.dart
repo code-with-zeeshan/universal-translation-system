@@ -16,26 +16,17 @@ class VocabularyManager {
   static const String cdnBase = 'https://cdn.yourdomain.com/vocabs';
   
   static const Map<String, String> _languageToPack = {
-    'en': 'latin',
-    'es': 'latin',
-    'fr': 'latin',
-    'de': 'latin',
-    'it': 'latin',
-    'pt': 'latin',
-    'nl': 'latin',
-    'sv': 'latin',
-    'zh': 'cjk',
-    'ja': 'cjk',
-    'ko': 'cjk',
-    'ar': 'arabic',
-    'hi': 'devanagari',
-    'ru': 'cyrillic',
-    'uk': 'cyrillic',
+    'en': 'latin', 'es': 'latin', 'fr': 'latin', 'de': 'latin',
+    'it': 'latin', 'pt': 'latin', 'nl': 'latin', 'sv': 'latin',
+    'pl': 'latin', 'id': 'latin', 'vi': 'latin', 'tr': 'latin',
+    'zh': 'cjk', 'ja': 'cjk', 'ko': 'cjk',
+    'ar': 'arabic', 'hi': 'devanagari',
+    'ru': 'cyrillic', 'uk': 'cyrillic',
     'th': 'thai',
   };
   
   static const Map<String, List<String>> _packLanguages = {
-    'latin': ['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv'],
+    'latin': ['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'pl', 'id', 'vi', 'tr'],
     'cjk': ['zh', 'ja', 'ko'],
     'arabic': ['ar'],
     'devanagari': ['hi'],

@@ -159,24 +159,22 @@ class SystemHealthMonitor:
         """Validate system configuration"""
         errors = []
 
-        # Check directories exist
+        cfg = self.system.config
         for dir_attr in ['data_dir', 'model_dir', 'vocab_dir']:
-            dir_path = Path(getattr(self.config, dir_attr))
+            dir_path = Path(getattr(cfg, dir_attr))
             if not dir_path.exists():
                 errors.append(f"{dir_attr} does not exist: {dir_path}")
 
-        # Check device availability
-        if self.config.device == 'cuda' and not torch.cuda.is_available():
+        if cfg.device == 'cuda' and not torch.cuda.is_available():
             errors.append("CUDA requested but not available")
 
-        # Check port availability for monitoring
-        if self.config.enable_monitoring:
+        if cfg.enable_monitoring:
             import socket
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                result = sock.connect_ex(('localhost', self.config.monitoring_port))
+                result = sock.connect_ex(('localhost', cfg.monitoring_port))
                 if result == 0:
-                    errors.append(f"Monitoring port {self.config.monitoring_port} already in use")
+                    errors.append(f"Monitoring port {cfg.monitoring_port} already in use")
                 sock.close()
             except Exception:
                 pass

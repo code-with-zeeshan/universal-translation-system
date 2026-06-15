@@ -108,6 +108,8 @@ public actor TranslationClient {
     private var translationCache: [String: String] = [:]
     private let maxCacheSize = 100
     
+    public var vocabularyManager: VocabularyManager
+    
     public init(
         decoderURL: String = "https://api.yourdomain.com/decode",
         coordinatorURL: String? = nil,
@@ -120,6 +122,7 @@ public actor TranslationClient {
         }
         
         self.encoder = try TranslationEncoder()
+        self.vocabularyManager = VocabularyManager()
         self.decoderURL = url
         self.effectiveDecoderURL = url
         self.coordinatorURL = coordinatorURL.flatMap { URL(string: $0) }

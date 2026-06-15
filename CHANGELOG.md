@@ -44,10 +44,10 @@ All notable changes to the Universal Translation System will be documented in th
 - **`--force` flags** on `uts data`, `uts train`, `uts eval` — re-run any stage from scratch, invalidating downstream
 - **Knowledge distillation** (`training/distillation_trainer.py`): KL-divergence loss from NLLB-200-3.3B teacher, configurable alpha/temperature, `uts train --distill`
 - **Evaluation per-file checkpointing**: tracks individual test file completion, auto-resumes mid-eval
-- **Coordinator batcher** (`coordinator/advanced_coordinator.py`): 50ms accumulation window per endpoint, concurrent forward to LitServe
+- **Coordinator batcher** (`runtime/coordinator/advanced_coordinator.py`): 50ms accumulation window per endpoint, concurrent forward to LitServe
 - **Coordinator `/api/status` endpoint**: returns `single_decoder: bool` — SDKs use this for routing decisions
 - **mDNS broadcast**: decoders advertise as `_universal-translate._tcp.local.`, SDKs auto-scan localhost ports
-- **Local decoder GPU detection** (`udn/cli.py`): detects CUDA/MPS, prompts user, saves to `decoder_config.yaml`
+- **Local decoder GPU detection** (`universal-decoder-node/udn/cli.py`): detects CUDA/MPS, prompts user, saves to `decoder_config.yaml`
 - **Circuit breaker** integrated in coordinator (CLOSED/OPEN/HALF-OPEN states)
 - All 5 SDKs: coordinator-aware routing, local decoder preference, port auto-scan, configurable `hfRepo`
 - Flutter SDK: `translate()` uses `sourceLang`/`targetLang` (was `from`/`to`)
@@ -79,7 +79,7 @@ All notable changes to the Universal Translation System will be documented in th
 - **`.env.example`**: added `UTS_ROLE`, `UTS_VOCAB_SIGNING_KEY`, `UTS_JWT_DEFAULT_ALG`, `JWT_SECRET`, `DECODER_CONFIG`, `EVOLVE_ANALYTICS_JSON`; removed dead `ENCODER_HOST`
 - `docs/environment-variables.md` rewritten from 54 vars to 150+ var complete reference
 - `README.md`: CLI groups (8→10), training timings (6h→3h budget), component status refreshed, doc section expanded, features list updated
-- `udn/__init__.py`: `__version__` 0.1.0 → 1.0.0 (was mismatched with pyproject.toml/setup.py/version-config.json)
+- `universal-decoder-node/__init__.py`: `__version__` 0.1.0 → 1.0.0 (was mismatched with pyproject.toml/setup.py/version-config.json)
 - **Config: Full model training** — `use_lora: false`, `num_epochs: 10`, `lr: 3e-4`, `warmup_steps: 1000`
 - **Vocabulary size**: 32K tokens per pack (was 25K), matching embedding table
 - `UnifiedVocabConfig.vocab_size` default: 25000 → 32000

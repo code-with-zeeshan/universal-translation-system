@@ -18,6 +18,7 @@ class VocabularyPack:
     subwords: Dict[str, int] 
     special_tokens: Dict[str, int]
     _id_to_token: Optional[Dict[int, str]] = field(default=None, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     
     @property
     def size(self) -> int:
@@ -33,6 +34,16 @@ class VocabularyPack:
         return self._id_to_token
 
 
+LANGUAGE_TOKEN_IDS = {
+    'en': 21, 'es': 22, 'fr': 23, 'de': 24, 'it': 25, 'pt': 26,
+    'nl': 27, 'sv': 28, 'pl': 29, 'id': 30, 'vi': 31, 'tr': 32,
+    'zh': 33, 'ja': 34, 'ko': 35,
+    'ar': 36, 'hi': 37, 'ru': 38, 'uk': 39, 'th': 40,
+}
+
+UNK_TOKEN_ID = 3
+
+
 class VocabularyManager:
     """Minimal vocabulary manager for decoder"""
     
@@ -42,6 +53,11 @@ class VocabularyManager:
         self._lock = threading.RLock()
         self.language_to_pack = self._build_language_mapping()
         
+    @staticmethod
+    def get_token_id_for_lang(lang: str) -> int:
+        """Map a language code to a stable token ID for decoder initialization."""
+        return LANGUAGE_TOKEN_IDS.get(lang, UNK_TOKEN_ID)
+
     def _build_language_mapping(self) -> Dict[str, str]:
         """Map languages to their vocabulary packs"""
         return {

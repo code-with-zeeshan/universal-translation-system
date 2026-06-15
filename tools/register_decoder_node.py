@@ -107,6 +107,8 @@ def register_with_file(node_entry, pool_path):
         os.makedirs(os.path.dirname(pool_path), exist_ok=True)
         
         # Load existing pool or create new one
+        pool_data = None
+        nodes = []
         if os.path.exists(pool_path):
             with open(pool_path, "r") as f:
                 try:
@@ -115,14 +117,9 @@ def register_with_file(node_entry, pool_path):
                         nodes = pool_data["nodes"]
                     elif isinstance(pool_data, list):
                         nodes = pool_data
-                    else:
-                        nodes = []
                 except json.JSONDecodeError:
                     logger.warning(f"Invalid JSON in {pool_path}, creating new file")
-                    nodes = []
-        else:
-            nodes = []
-            
+                    
         # Add new node
         nodes.append(node_entry)
         
@@ -145,13 +142,13 @@ def main():
     
     parser = argparse.ArgumentParser(description="Register a decoder node.")
     parser.add_argument("--endpoint", type=str, help="Decoder endpoint (e.g., https://your-decoder.com)")
-    parser.add_argument("--region", type=str, default="us-east-1", help="Region (e.g., us-east-1)")
-    parser.add_argument("--gpu_type", type=str, default="T4", help="GPU type (e.g., T4, A100)")
-    parser.add_argument("--capacity", type=int, default=100, help="Capacity (requests/sec)")
+    parser.add_argument("--region", type=str, default=None, help="Region (e.g., us-east-1)")
+    parser.add_argument("--gpu_type", type=str, default=None, help="GPU type (e.g., T4, A100)")
+    parser.add_argument("--capacity", type=int, default=None, help="Capacity (requests/sec)")
     parser.add_argument("--redis-url", type=str, help="Redis URL (e.g., redis://localhost:6379/0)")
     parser.add_argument("--coordinator-url", type=str, help="Coordinator API URL (e.g., https://coordinator.example.com)")
     parser.add_argument("--api-key", type=str, help="API key for coordinator authentication")
-    parser.add_argument("--tags", type=str, help="Comma-separated tags for this node (e.g., 'production,high-memory')")
+    parser.add_argument("--tags", type=str, default=None, help="Comma-separated tags for this node (e.g., 'production,high-memory')")
     args = parser.parse_args()
 
     # Get URLs/tokens from centralized accessor if available, with env fallback
@@ -161,7 +158,8 @@ def main():
         redis_url = args.redis_url or get_secret("REDIS_URL") or os.environ.get("REDIS_URL")
         coordinator_url = args.coordinator_url or get_secret("COORDINATOR_URL") or os.environ.get("COORDINATOR_URL")
         api_key = args.api_key or get_secret("COORDINATOR_API_KEY") or os.environ.get("COORDINATOR_API_KEY")
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Secrets bootstrap failed: {e}")
         redis_url = args.redis_url or os.environ.get("REDIS_URL")
         coordinator_url = args.coordinator_url or os.environ.get("COORDINATOR_URL")
         api_key = args.api_key or os.environ.get("COORDINATOR_API_KEY")

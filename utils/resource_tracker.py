@@ -14,7 +14,6 @@ import time
 import weakref
 from typing import Dict, Set, Any, Optional, List, Tuple, Callable
 import os
-import psutil
 import tracemalloc
 
 logger = logging.getLogger(__name__)
@@ -33,7 +32,7 @@ class ResourceTracker:
             enabled: Whether tracking is enabled
         """
         self.enabled = enabled
-        self._tracked_objects: Dict[int, Tuple[weakref.ref, str, int]] = {}
+        self._tracked_objects: Dict[int, Tuple[weakref.ref, str, int, float]] = {}
         self._lock = threading.RLock()
         self._tracemalloc_started = False
         self._stop_event = threading.Event()
@@ -58,7 +57,8 @@ class ResourceTracker:
             self._tracked_objects[obj_id] = (
                 weakref.ref(obj, lambda ref: self._object_finalized(obj_id)),
                 description or type(obj).__name__,
-                len(gc.get_referrers(obj))
+                len(gc.get_referrers(obj)),
+                time.time(),
             )
             
     def untrack(self, obj: Any) -> None:
@@ -143,6 +143,7 @@ class ResourceTracker:
         Returns:
             Dictionary with memory usage information
         """
+        import psutil
         process = psutil.Process(os.getpid())
         memory_info = process.memory_info()
         
@@ -265,7 +266,7 @@ class ResourceTracker:
                         "age": time.time() - self._tracked_objects[id(obj)][3],
                         "refs": len(gc.get_referrers(obj))
                     }
-                    for obj, description, _ in sorted(
+                    for obj, description, _, _ in sorted(
                         self.get_tracked_objects(),
                         key=lambda x: self._tracked_objects[id(x[0])][3]
                     )[:10]
@@ -276,7 +277,7 @@ class ResourceTracker:
         """Count tracked objects by type."""
         with self._lock:
             counts = {}
-            for obj_id, (ref, description, _, _) in self._tracked_objects.items():
+            for obj_id, (ref, description, _) in self._tracked_objects.items():
                 obj = ref()
                 if obj is not None:
                     type_name = type(obj).__name__

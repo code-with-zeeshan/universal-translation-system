@@ -34,6 +34,7 @@ export interface VocabularyPack {
 export interface EncoderConfig {
   modelUrl?: string;
   vocabUrl?: string;
+  hfVocabUrl?: string;
   wasmPaths?: string;
   executionProviders?: Array<'webgl' | 'wasm' | 'webgpu'>;
   graphOptimizationLevel?: 'disabled' | 'basic' | 'extended' | 'all';
@@ -65,6 +66,7 @@ export class TranslationEncoder {
     this.config = {
       modelUrl: userConfig.modelUrl || config.modelUrl,
       vocabUrl: userConfig.vocabUrl || config.vocabUrl,
+      hfVocabUrl: userConfig.hfVocabUrl || config.hfVocabUrl,
       wasmPaths: userConfig.wasmPaths || '/wasm/',
       executionProviders: userConfig.executionProviders || ['wasm', 'webgl'],
       graphOptimizationLevel: userConfig.graphOptimizationLevel || 'all',
@@ -492,25 +494,33 @@ export class TranslationEncoder {
   }
 }
 
+export interface TranslationClientOptions {
+  modelUrl?: string;
+  decoderUrl?: string;
+  maxCacheSize?: number;
+  headers?: Record<string, string>;
+  timeout?: number;
+  retryCount?: number;
+}
+
 export class TranslationClient {
   private encoder: TranslationEncoder;
   private decoderUrl: string;
   private cache = new Map<string, TranslationResult>();
   private maxCacheSize: number;
   private headers: Record<string, string>;
+  private timeout: number;
+  private retryCount: number;
   
-  constructor(options: {
-    modelUrl?: string;
-    decoderUrl?: string;
-    maxCacheSize?: number;
-    headers?: Record<string, string>;
-  } = {}) {
+  constructor(options: TranslationClientOptions = {}) {
     this.encoder = new TranslationEncoder({
       modelUrl: options.modelUrl
     });
     this.decoderUrl = options.decoderUrl || config.decoderApiUrl;
     this.maxCacheSize = options.maxCacheSize || 100;
     this.headers = options.headers || {};
+    this.timeout = options.timeout || 30000;
+    this.retryCount = options.retryCount || 2;
   }
   
   async initialize(): Promise<void> {
@@ -518,89 +528,61 @@ export class TranslationClient {
   }
   
   async translate(options: TranslationOptions): Promise<TranslationResult> {
-    // Validate input
     if (!options.text?.trim()) {
       throw new Error('Text cannot be empty');
     }
     
-    // Check cache
     const cacheKey = `${options.sourceLang}-${options.targetLang}:${options.text}`;
     const cached = this.cache.get(cacheKey);
     if (cached) {
-      console.log('📦 Returning cached translation');
       return cached;
     }
     
-    try {
-      console.log(`🔄 Translating: "${options.text.substring(0, 50)}..." (${options.sourceLang} → ${options.targetLang})`);
-      
-      // Encode locally
-      const encoded = await this.encoder.encode(
-        options.text,
-        options.sourceLang,
-        options.targetLang
-      );
-      
-      // Send to decoder
-      const response = await fetch(this.decoderUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-Target-Language': options.targetLang,
-          'X-Source-Language': options.sourceLang,
-          ...this.headers
-        },
-        body: encoded,
-      });
-      
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= this.retryCount; attempt++) {
+      try {
+        const encoded = await this.encoder.encode(
+          options.text,
+          options.sourceLang,
+          options.targetLang
+        );
         
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.message || errorMessage;
-        } catch {
-          // If response is not JSON, try text
-          try {
-            errorMessage = await response.text();
-          } catch {
-            // Use default error message
-          }
+        const response = await this.fetchWithTimeout(this.decoderUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-Target-Language': options.targetLang,
+            'X-Source-Language': options.sourceLang,
+            ...this.headers
+          },
+          body: encoded,
+        });
+        
+        if (!response.ok) {
+          throw await this.createHttpError(response);
         }
         
-        if (response.status === 429) {
-          throw new Error('Rate limit exceeded. Please try again later.');
-        } else if (response.status >= 500) {
-          throw new Error('Translation service is temporarily unavailable.');
-        } else {
-          throw new Error(`Translation failed: ${errorMessage}`);
+        const result = await response.json();
+        
+        const translationResult: TranslationResult = {
+          translation: result.translation,
+          targetLang: result.target_lang || options.targetLang,
+          confidence: result.confidence
+        };
+        
+        this.addToCache(cacheKey, translationResult);
+        return translationResult;
+        
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < this.retryCount) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
-      }
-      
-      const result = await response.json();
-      
-      const translationResult: TranslationResult = {
-        translation: result.translation,
-        targetLang: result.target_lang || options.targetLang,
-        confidence: result.confidence
-      };
-      
-      // Add to cache
-      this.addToCache(cacheKey, translationResult);
-      
-      console.log('✅ Translation complete');
-      
-      return translationResult;
-      
-    } catch (error) {
-      console.error('❌ Translation error:', error);
-      
-      if (error instanceof Error) {
-        throw error;
-      } else {
-        throw new Error('An unexpected error occurred during translation');
       }
     }
+    
+    throw lastError || new Error('Translation failed');
   }
   
   async translateBatch(texts: string[], sourceLang: string, targetLang: string): Promise<TranslationResult[]> {
@@ -611,8 +593,41 @@ export class TranslationClient {
     return Promise.all(promises);
   }
   
+  private async fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  
+  private async createHttpError(response: Response): Promise<Error> {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.message || errorMessage;
+    } catch {
+      try {
+        errorMessage = await response.text();
+      } catch {}
+    }
+    
+    if (response.status === 429) {
+      return new Error('Rate limit exceeded. Please try again later.');
+    } else if (response.status >= 500) {
+      return new Error('Translation service is temporarily unavailable.');
+    }
+    return new Error(`Translation failed: ${errorMessage}`);
+  }
+  
   private addToCache(key: string, result: TranslationResult): void {
-    // Implement LRU cache
     if (this.cache.size >= this.maxCacheSize) {
       const firstKey = this.cache.keys().next().value;
       this.cache.delete(firstKey);

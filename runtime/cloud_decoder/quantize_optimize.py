@@ -85,13 +85,8 @@ class DecoderOptimizer:
         return self.model
     
     def _fuse_batch_norm(self) -> None:
-        """Fuse batch normalization layers."""
-        logger.info("Fusing batch normalization layers")
-        
-        # This is a placeholder for actual implementation
-        # In a real implementation, you would iterate through the model
-        # and fuse Conv2d+BatchNorm2d or Linear+BatchNorm1d layers
-        pass
+        """Fuse batch normalization layers — no-op for transformer decoder models."""
+        logger.info("Batch norm fusion skipped: transformer decoder has no conv layers to fuse")
     
     def _convert_to_torchscript(self) -> None:
         """Convert model to TorchScript."""
@@ -166,8 +161,10 @@ class DecoderOptimizer:
     
     def _static_quantization(self) -> None:
         """Apply static quantization."""
-        logger.info("Static quantization requires calibration data")
-        logger.warning("Static quantization not implemented")
+        raise NotImplementedError(
+            "Static quantization requires calibration data and is not yet implemented. "
+            "Use _dynamic_quantization() instead."
+        )
     
     def benchmark(self, 
                  batch_sizes: List[int] = None, 

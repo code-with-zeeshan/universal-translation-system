@@ -1,6 +1,6 @@
 include README.md
 include LICENSE
-recursive-include universal_decoder_node *.yaml *.yml
+recursive-include udn *.yaml *.yml
 exclude tests/*
 exclude docs/*
 exclude .github/*

@@ -1,1 +1,11 @@
-{}
+# decoder_config.yaml — Runtime settings for the decoder service.
+# Used by DecoderConfig (config/schemas.py) with env-var overrides.
+# An empty file means all settings use their defaults/env-var values.
+
+model_path: null
+vocab_dir: null
+device: "auto"
+batch_size: 32
+beam_size: 5
+max_batch_tokens: 8192
+max_sequence_length: 512

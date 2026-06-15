@@ -14,7 +14,7 @@ groups:
 
       # High error rate alerts
       - alert: HighErrorRate
-        expr: rate(translation_error_total[5m]) > 0.05
+        expr: rate(encoder_errors_total[5m]) > 0.05
         for: 2m
         labels:
           severity: warning
@@ -52,32 +52,32 @@ groups:
           description: "{{ $labels.instance }} is using more than 14GB of memory."
 
       - alert: HighGPUUsage
-        expr: gpu_utilization_percent > 90
+        expr: system_gpu_utilization_percent{gpu_id=~".+"} > 90
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High GPU usage on {{ $labels.instance }}"
-          description: "{{ $labels.instance }} has high GPU usage (> 90%)."
+          summary: "High GPU usage on {{ $labels.gpu_id }}"
+          description: "GPU {{ $labels.gpu_id }} has high utilization (> 90%)."
 
       - alert: HighGPUMemoryUsage
-        expr: gpu_memory_used_bytes / gpu_memory_total_bytes > 0.9
+        expr: system_gpu_memory_usage_bytes > 7.5e9
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "High GPU memory usage on {{ $labels.instance }}"
-          description: "{{ $labels.instance }} is using more than 90% of GPU memory."
+          summary: "High GPU memory usage on {{ $labels.gpu_id }}"
+          description: "GPU {{ $labels.gpu_id }} is using more than 7.5GB of memory."
 
       # Circuit breaker alerts
       - alert: CircuitBreakerOpen
-        expr: circuit_breaker_state{state="open"} > 0
+        expr: circuit_breaker_state == 2
         for: 1m
         labels:
           severity: warning
         annotations:
-          summary: "Circuit breaker open for {{ $labels.decoder }}"
-          description: "Circuit breaker for decoder {{ $labels.decoder }} is in open state."
+          summary: "Circuit breaker open for {{ $labels.name }}"
+          description: "Circuit breaker {{ $labels.name }} is in open state."
 
       # Request rate alerts
       - alert: HighRequestRate
@@ -91,10 +91,10 @@ groups:
 
       # Vocabulary alerts
       - alert: VocabularyLoadFailure
-        expr: vocabulary_load_failures_total > 0
+        expr: vocabulary_pack_info{status="error"} == 0
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "Vocabulary load failures on {{ $labels.instance }}"
-          description: "{{ $labels.instance }} has vocabulary load failures for language {{ $labels.language }}."
+          summary: "Vocabulary pack error on {{ $labels.pack_name }}"
+          description: "Vocabulary pack {{ $labels.pack_name }} is in error state."

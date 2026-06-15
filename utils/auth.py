@@ -1,6 +1,7 @@
 # utils/auth.py
 import secrets
 import hashlib
+import hmac
 import json
 import threading
 from pathlib import Path
@@ -60,10 +61,14 @@ class APIKeyManager:
     def generate_api_key(self, client_name: str, permissions: List[str]) -> str:
         """Generate and store a new API key (returns the plaintext once)."""
         api_key = secrets.token_urlsafe(32)
-        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
+        lookup = hashlib.sha256(api_key.encode()).hexdigest()
+        salt = secrets.token_bytes(16)
+        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=salt, iterations=600000).hex()
         now = datetime.now().isoformat()
         with self._lock:
-            self.keys[key_hash] = {
+            self.keys[lookup] = {
+                'salt': salt.hex(),
+                'hash': key_hash,
                 'client_name': client_name,
                 'permissions': permissions,
                 'created_at': now,
@@ -77,22 +82,27 @@ class APIKeyManager:
 
     def validate_api_key(self, api_key: str) -> Optional[Dict[str, any]]:
         """Validate API key and return metadata."""
-        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
+        lookup = hashlib.sha256(api_key.encode()).hexdigest()
         with self._lock:
-            if key_hash in self.keys:
-                self.keys[key_hash]['last_used'] = datetime.now().isoformat()
-                self.keys[key_hash]['request_count'] += 1
+            if lookup in self.keys:
+                meta = self.keys[lookup]
+                salt = bytes.fromhex(meta.get("salt", ""))
+                key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=salt, iterations=600000).hex()
+                if not hmac.compare_digest(key_hash, meta["hash"]):
+                    return None
+                meta['last_used'] = datetime.now().isoformat()
+                meta['request_count'] += 1
                 self._save_keys()
-                return dict(self.keys[key_hash])
+                return dict(meta)
         return None
 
     def revoke_api_key(self, api_key: str) -> bool:
         """Revoke an API key; returns True if revoked."""
-        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
+        lookup = hashlib.sha256(api_key.encode()).hexdigest()
         with self._lock:
-            if key_hash in self.keys:
-                client = self.keys[key_hash]['client_name']
-                del self.keys[key_hash]
+            if lookup in self.keys:
+                client = self.keys[lookup]['client_name']
+                del self.keys[lookup]
                 self._save_keys()
                 logger.info(f"Revoked API key for {client}")
                 return True
@@ -103,15 +113,15 @@ class APIKeyManager:
         Rotate an existing API key: revoke old, issue new for same client/permissions.
         Returns (success, new_api_key_or_none).
         """
-        key_hash = hashlib.pbkdf2_hmac('sha256', api_key.encode(), salt=b'keyhash', iterations=600000).hex()
+        lookup = hashlib.sha256(api_key.encode()).hexdigest()
         with self._lock:
-            meta = self.keys.get(key_hash)
+            meta = self.keys.get(lookup)
             if not meta:
                 return False, None
             client = meta['client_name']
             perms = meta['permissions']
             meta['rotated_at'] = datetime.now().isoformat()
             self._save_keys()
-            del self.keys[key_hash]
+            del self.keys[lookup]
             new_key = self.generate_api_key(client, perms)
         return True, new_key

@@ -14,7 +14,7 @@ find_library(android-lib android)
 # Include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/../../../encoder_core/include
+    ${CMAKE_SOURCE_DIR}/../../../../../../runtime/encoder_core/include
 )
 
 # Add ONNX Runtime
@@ -27,8 +27,8 @@ link_directories(${ONNXRUNTIME_ROOT_PATH}/${ANDROID_ABI})
 # Create JNI wrapper library
 add_library(universal_encoder SHARED
     jni_wrapper.cpp
-    ${CMAKE_SOURCE_DIR}/../../../encoder_core/src/universal_encoder.cpp
-    ${CMAKE_SOURCE_DIR}/../../../encoder_core/src/vocabulary_pack.cpp
+    ${CMAKE_SOURCE_DIR}/../../../../../../runtime/encoder_core/src/universal_encoder.cpp
+    ${CMAKE_SOURCE_DIR}/../../../../../../runtime/encoder_core/src/vocabulary_pack.cpp
 )
 
 # Link libraries

@@ -47,7 +47,7 @@ setup_cloud() {
 
     check_python_deps || true
 
-    local app_path="cloud_decoder.optimized_decoder:app"
+    local app_path="runtime.cloud_decoder.optimized_decoder:app"
 
     echo ""
     echo "=== Cloud Decoder — Starting Instructions ==="

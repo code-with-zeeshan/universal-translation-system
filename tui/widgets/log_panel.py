@@ -7,8 +7,6 @@ from textual.widgets import RichLog
 from textual.widget import Widget
 from rich.text import Text
 from rich.style import Style
-from collections import deque
-from typing import Optional
 
 from tui.events import PipelineLogEvent, TrainingLogEvent
 

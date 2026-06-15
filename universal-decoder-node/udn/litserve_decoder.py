@@ -116,7 +116,7 @@ class DecoderLitAPI(ls.LitAPI):
         except Exception:
             return False
 
-    def decode_request(self, request) -> Tuple[np.ndarray, np.ndarray, str]:
+    async def decode_request(self, request) -> Tuple[np.ndarray, np.ndarray, str]:
         """Convert raw HTTP request → (hidden_states, attention_mask, target_lang).
 
         Handles: binary LZ4+int8 compressed body, auth via Authorization header,
@@ -131,7 +131,7 @@ class DecoderLitAPI(ls.LitAPI):
             raise HTTPException(status_code=401, detail="Invalid token")
 
         target_lang = request.headers.get("x-target-language", "en")
-        compressed_data = request.body()
+        compressed_data = await request.body()
 
         if isinstance(compressed_data, bytes):
             if len(compressed_data) < 12:
@@ -167,13 +167,13 @@ class DecoderLitAPI(ls.LitAPI):
         the batched output from `batch()` and must return a list.
         """
         hidden, mask, target_langs = batched_input
-        target_lang_ids = [
-            self.vocabulary_manager.language_to_pack.get(lang, 3)
+        target_lang_ids = torch.tensor([
+            self.vocabulary_manager.get_token_id_for_lang(lang)
             for lang in target_langs
-        ]
+        ], device=self.device)
         with torch.no_grad():
             output_ids, _ = self.model.generate(
-                hidden, mask, target_lang_ids[0],
+                hidden, mask, target_lang_ids,
                 max_length=128, temperature=0.7, top_k=50, top_p=0.9,
             )
         texts = []

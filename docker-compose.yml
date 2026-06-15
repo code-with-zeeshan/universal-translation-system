@@ -12,8 +12,8 @@ services:
       - API_PORT=${ENCODER_PORT:-8000}
       - API_WORKERS=${API_WORKERS:-1}
     volumes:
-      - ./models:/app/models
-      - ./vocabulary/vocab:/app/vocabs
+      - ./output/models:/app/models
+      - ./output/vocabulary/vocab:/app/vocabs
     ports:
       - "${ENCODER_PORT:-8000}:8000"
     healthcheck:
@@ -48,9 +48,9 @@ services:
       - PREFETCH_ADAPTERS=${PREFETCH_ADAPTERS}
       - PREFETCH_MODELS=${PREFETCH_MODELS}
     volumes:
-      - ./models:/app/models
+      - ./output/models:/app/models
       - ./config:/app/config
-      - ./vocabulary/vocab:/app/vocabs
+      - ./output/vocabulary/vocab:/app/vocabs
     ports:
       - "${DECODER_PORT:-8001}:8001"
     deploy:
@@ -116,8 +116,8 @@ services:
       - PREFETCH_MODELS=${PREFETCH_MODELS}
     volumes:
       - ./config:/app/config
-      - ./models:/app/models
-      - ./vocabulary/vocab:/app/vocabs
+      - ./output/models:/app/models
+      - ./output/vocabulary/vocab:/app/vocabs
     ports:
       - "${COORDINATOR_PORT:-5100}:5100"
     depends_on:

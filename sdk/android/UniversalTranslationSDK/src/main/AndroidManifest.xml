@@ -3,34 +3,8 @@
     package="com.universaltranslation.sdk">
 
     <!-- Required Permissions -->
-    <!-- Internet permission for downloading vocabularies and calling decoder API -->
     <uses-permission android:name="android.permission.INTERNET" />
-    
-    <!-- Network state permission to check connectivity before downloads -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    
-    <!-- WiFi state permission to check if on WiFi for large downloads -->
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    
-    <!-- Storage permissions for caching vocabulary files -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="29" />
-    
-    <!-- For Android 13+ granular media permissions -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    
-    <!-- Wake lock for background downloads -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    
-    <!-- Foreground service permission for Android 9+ -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    
-    <!-- Battery optimization exemption request -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application>
         <!-- SDK Components -->

@@ -19,7 +19,7 @@ def _write_pack(dir_path: Path, name: str, version: str = "1.0", languages=None,
         "subwords": subwords or {"##ing": 1001, "##ed": 1002},
         "special_tokens": special_tokens or {"<pad>": 0, "<unk>": 1, "<s>": 2, "</s>": 3},
     }
-    pack_path.write_bytes(msgpack.packb(payload, use_bin_type=True))
+    pack_path.write_bytes(msgpack.packb(payload))
     return pack_path
 
 

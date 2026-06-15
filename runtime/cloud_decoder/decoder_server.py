@@ -14,7 +14,6 @@ import time
 import json
 import logging
 import numpy as np
-import lz4.frame
 import torch
 import torch.nn as nn
 from pathlib import Path
@@ -49,34 +48,8 @@ from runtime.cloud_decoder.decoder_core import (
 )
 
 
-# ── Decompression helpers ────────────────────────────────────────────
-
-def decompress_encoder_output(compressed_data: bytes) -> Dict:
-    if isinstance(compressed_data, bytes):
-        if len(compressed_data) < 12:
-            raise ValueError("Invalid compressed data")
-        shape1 = int.from_bytes(compressed_data[0:4], 'little')
-        shape2 = int.from_bytes(compressed_data[4:8], 'little')
-        scale = np.frombuffer(compressed_data[8:12], dtype=np.float32)[0]
-        compressed = compressed_data[12:]
-        deq = lz4.frame.decompress(compressed)
-        hidden = np.frombuffer(deq, dtype=np.int8).astype(np.float32) / scale
-        hidden = hidden.reshape(1, shape1, shape2).astype(np.float32)
-        return {'hidden_states': hidden, 'attention_mask': np.ones((1, shape1), dtype=np.int32)}
-    return compressed_data
-
-
-def decode_tokens_to_text(tokens: np.ndarray, vocab_pack) -> str:
-    id_to_token = vocab_pack.id_to_token
-    text_tokens = []
-    for tid in tokens:
-        if tid == 2:
-            break
-        if tid == 0:
-            continue
-        text_tokens.append(id_to_token.get(tid, '<unk>'))
-    text = ' '.join(text_tokens).replace(' ##', '').replace('\u2581', ' ').strip()
-    return text
+# Import shared helpers from canonical source
+from runtime.cloud_decoder.decoder_core import decompress_encoder_output, decode_tokens_to_text
 
 
 # ── Verification helpers (shim for old dependency imports) ────────────
@@ -134,7 +107,7 @@ class CloudDecoderLitAPI(ls.LitAPI):
         except Exception:
             return False
 
-    def decode_request(self, request) -> Tuple[np.ndarray, np.ndarray, str]:
+    async def decode_request(self, request) -> Tuple[np.ndarray, np.ndarray, str]:
         client_id = request.headers.get("x-client-id", request.client.host if request.client else "unknown")
         if not rate_limiter.is_allowed(client_id):
             raise HTTPException(status_code=429, detail="Rate limit exceeded")
@@ -142,7 +115,7 @@ class CloudDecoderLitAPI(ls.LitAPI):
         if auth and not self._verify_jwt(auth.replace("Bearer ", "")):
             raise HTTPException(status_code=401, detail="Invalid token")
         target_lang = request.headers.get("x-target-language", "en")
-        data = decompress_encoder_output(request.body())
+        data = decompress_encoder_output(await request.body())
         return data['hidden_states'].astype(np.float32), data['attention_mask'].astype(np.int32), target_lang
 
     def batch(self, inputs):

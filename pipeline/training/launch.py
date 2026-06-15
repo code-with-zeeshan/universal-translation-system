@@ -394,14 +394,13 @@ def launch_evaluation(args: argparse.Namespace):
     )
     
     # Run evaluation
-    from evaluation.evaluate_model import evaluate_model
+    from evaluation.evaluator import evaluate_translation_quality
     
-    results = evaluate_model(
-        encoder=encoder,
-        decoder=decoder,
-        test_dataset=test_dataset,
-        config=config,
-        batch_size=args.batch_size or config.training.batch_size
+    results = evaluate_translation_quality(
+        encoder_model=encoder,
+        decoder_model=decoder,
+        vocab_manager=test_dataset.vocab_manager if hasattr(test_dataset, 'vocab_manager') else None,
+        test_data_path=args.test_data or str(RuntimeDirectoryManager(config=config).processed_dir / TEST_FINAL_FILENAME),
     )
     
     logger.info(f"📊 Evaluation results: {results}")

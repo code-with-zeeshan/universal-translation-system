@@ -1,4 +1,4 @@
-# training/visualization.py
+# tools/visualization.py
 """
 Training visualization and dashboard utilities
 Extracted from train_universal_system.py
@@ -335,9 +335,3 @@ class TrainingDashboard:
         
         logger.info(f"📊 Saved training summary to {summary_path}")
     
-    def _has_matplotlib(self) -> bool:
-        """Check if matplotlib is available"""
-        try:
-            return True
-        except ImportError:
-            return False

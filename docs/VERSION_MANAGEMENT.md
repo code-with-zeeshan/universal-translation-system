@@ -24,7 +24,7 @@ Defines versions for 10 components with compatibility constraints:
 | `coordinator` | — |
 | `android-sdk` | `build.gradle` (versionName/versionCode) |
 | `ios-sdk` | `.podspec` (s.version), `Package.swift` |
-| `python-package` | `setup.py`, `pyproject.toml`, `udn/__init__.py` |
+| `python-package` | `setup.py`, `pyproject.toml`, `universal-decoder-node/__init__.py` |
 | `web-sdk` | `package.json` |
 | `react-native-sdk` | `package.json` |
 | `root-python` | `setup.py`, `__init__.py` |

@@ -261,42 +261,54 @@ def safe_deserialize_msgpack(data: bytes) -> Any:
     return obj
 
 
+DEFAULT_ALLOWED_PICKLE_MODULES = [
+    "builtins",
+    "collections",
+    "datetime",
+    "typing",
+    "enum",
+    "decimal",
+    "fractions",
+]
+
+
 def safe_deserialize_pickle(data: bytes, allowed_modules: Optional[List[str]] = None) -> Any:
-    """
-    Safely deserialize pickle data with restricted globals.
-    
+    """Safely deserialize pickle data with restricted globals.
+
     WARNING: Pickle deserialization is inherently unsafe. Use only with trusted data.
-    
+
     Args:
         data: Pickle bytes
-        allowed_modules: List of allowed modules
-        
+        allowed_modules: List of allowed modules (defaults to a safe subset)
+
     Returns:
         Deserialized data
-        
+
     Raises:
         SecurityError: If deserialization fails or uses disallowed modules
     """
     # Check size
     if len(data) > MAX_SIZE:
         raise SecurityError(f"Data too large: {len(data)} bytes")
-        
+
+    if allowed_modules is None:
+        allowed_modules = DEFAULT_ALLOWED_PICKLE_MODULES
+
     # Create restricted unpickler
     class RestrictedUnpickler(pickle.Unpickler):
         def find_class(self, module, name):
             # Check if module is allowed
-            if allowed_modules and module not in allowed_modules:
+            if module not in allowed_modules:
                 raise SecurityError(f"Disallowed module: {module}")
-                
+
             # Only allow safe builtins
             if module == "builtins" and name in (
                 "range", "complex", "set", "frozenset", "slice"
             ):
                 return getattr(builtins, name)
-                
-            # Disallow all other imports
+
             raise SecurityError(f"Disallowed import: {module}.{name}")
-            
+
     # Deserialize data
     try:
         return RestrictedUnpickler(io.BytesIO(data)).load()

@@ -11,13 +11,19 @@ import torch
 import time
 from concurrent.futures import ThreadPoolExecutor
 import threading
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import Gauge, Counter, Histogram, start_http_server
 
 from .system_config import SystemConfig
 from .system_health import SystemHealthMonitor
 from monitoring.health_service import start_health_service
 from pipeline.training.datasets import ModernParallelDataset
 from utils.common_utils import RuntimeDirectoryManager
+from utils.unified_validation import InputValidator
+from utils.translation_quality import TranslationQualityPipeline
+
+# Translation metrics
+translation_counter = Counter('translations_total', 'Total translations', ['source_lang', 'target_lang'])
+translation_duration = Histogram('translation_duration_seconds', 'Translation duration')
 
 logger = logging.getLogger(__name__)
 
@@ -55,24 +61,23 @@ class UniversalTranslationSystem:
         self._model_lock = threading.RLock()
 
         # Start monitoring if enabled
+        self.monitoring_started = False
         if self.config.enable_monitoring:
             self._start_monitoring()
             self._start_health_service()
+            self.monitoring_started = True
 
         logger.info(f"🔧 Initializing Universal Translation System on {self.device}")
 
     def _start_health_service(self):
         """Starts the FastAPI health service in a background thread."""
-        # Use a different port from Prometheus to avoid conflicts
         health_service_port = self.config.monitoring_port + 1
-
-        health_thread = threading.Thread(
+        self._health_thread = threading.Thread(
             target=start_health_service,
-            # Pass the 'self' instance of UniversalTranslationSystem
             args=(self, "0.0.0.0", health_service_port),
-            daemon=True  # Daemon thread will exit when the main program exits
+            daemon=True
         )
-        health_thread.start()
+        self._health_thread.start()
         self.logger.info(f"✅ Health check service started on port {health_service_port}")
 
     def _start_monitoring(self):
@@ -203,6 +208,9 @@ class UniversalTranslationSystem:
         # Shutdown thread pool
         self.executor.shutdown(wait=True)
 
+        if self.monitoring_started:
+            logger.info("📊 Stopping monitoring services...")
+
         # Clear GPU cache
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -318,7 +326,8 @@ class UniversalTranslationSystem:
 
             # Import training components
             from pipeline.training.progressive import ProgressiveTrainingStrategy
-            from pipeline.training.memory import MemoryOptimizedTrainer, MemoryConfig
+            from pipeline.training.memory.trainer import MemoryOptimizedTrainer
+            from pipeline.training.memory.config import MemoryConfig
 
             # Create datasets
             from pipeline.training.datasets import ModernParallelDataset
@@ -580,22 +589,96 @@ class UniversalTranslationSystem:
         logger.info(f"Best hyperparameters: {study.best_params}")
         return study.best_params
 
+    def _get_quality_pipeline(self) -> TranslationQualityPipeline:
+        if not hasattr(self, '_quality_pipeline') or self._quality_pipeline is None:
+            self._quality_pipeline = TranslationQualityPipeline()
+        return self._quality_pipeline
+
+    def translate(self, text: str, source_lang: str, target_lang: str, domain: Optional[str] = None) -> str:
+        text = InputValidator.validate_text_input(text, max_length=5000)
+        if not InputValidator.validate_language_code(source_lang):
+            raise ValueError(f"Invalid source language: {source_lang}")
+        if not InputValidator.validate_language_code(target_lang):
+            raise ValueError(f"Invalid target language: {target_lang}")
+        if not self.encoder or not self.decoder:
+            raise RuntimeError("Models not initialized")
+
+        quality = self._get_quality_pipeline()
+        processed_text, tone, effective_domain = quality.prepare_input(text, source_lang, target_lang, domain)
+
+        if effective_domain and effective_domain != "general":
+            adapter_name = f"{source_lang}_{effective_domain}"
+        else:
+            adapter_name = source_lang
+
+        try:
+            vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
+        except Exception:
+            if effective_domain and effective_domain != "general":
+                logger.warning(f"Domain vocab not found. Falling back to general vocab.")
+                vocab_pack = self.vocab_manager.get_vocab_for_pair(source_lang, target_lang)
+                adapter_name = source_lang
+            else:
+                raise
+
+        with self._model_lock:
+            adapter_path = RuntimeDirectoryManager().adapters_dir / f"best_{adapter_name}_adapter.pt"
+            if adapter_path.exists():
+                self.encoder.load_language_adapter(adapter_name, str(adapter_path))
+
+            lora_path = RuntimeDirectoryManager().production_dir / f"lora_{adapter_name}.pt"
+            if lora_path.exists():
+                from pipeline.training.peft import load_lora_adapters
+                self.encoder = load_lora_adapters(self.encoder, str(lora_path), self.device)
+                self.decoder = load_lora_adapters(self.decoder, str(lora_path), self.device)
+
+            if not self.evaluator:
+                raise RuntimeError("Translation system not fully initialized")
+            translation = self.evaluator.translate(processed_text, source_lang, target_lang)
+
+        translation = quality.postprocess(translation, target_lang, tone)
+        return translation
+
+    async def translate_async(self, text: str, source_lang: str, target_lang: str, domain: Optional[str] = None) -> str:
+        start_time = time.time()
+        translation_counter.labels(source_lang=source_lang, target_lang=target_lang).inc()
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            self.executor, self.translate, text, source_lang, target_lang, domain,
+        )
+        translation_duration.observe(time.time() - start_time)
+        return result
+
+    async def translate_batch_async(self, texts: List[str], source_lang: str, target_lang: str, max_concurrent: int = 10) -> List[str]:
+        semaphore = asyncio.Semaphore(max_concurrent)
+        async def translate_one(text: str) -> str:
+            async with semaphore:
+                return await self.translate_async(text, source_lang, target_lang)
+        tasks = [translate_one(text) for text in texts]
+        return await asyncio.gather(*tasks)
+
+    def evaluate(self, test_file: str, output_file: Optional[str] = None):
+        if not self.evaluator:
+            logger.error("Evaluation system not initialized")
+            return
+        logger.info(f"Evaluating on {test_file}...")
+        metrics = self.evaluator.evaluate_file(test_file)
+        if output_file:
+            self.evaluator.create_evaluation_report(metrics, output_file)
+        return metrics
+
+    async def evaluate_async(self, validation_data: str) -> Dict[str, float]:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self.executor, self.evaluate, validation_data)
+
     def validate_exported_model(self, model_path: str, test_samples: List[Tuple[str, str, str]]) -> bool:
         """Validate exported model works correctly"""
         try:
-            # Load exported model
             import onnx
             import onnxruntime as ort
-
-            # Create inference session
             session = ort.InferenceSession(model_path)
-
-            # Test on samples
             for source_text, source_lang, target_lang in test_samples:
-                # Run inference
-                # ... implementation ...
                pass
-
             return True
         except Exception as e:
             logger.error(f"Model validation failed: {e}")

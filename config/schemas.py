@@ -263,7 +263,7 @@ class RootConfig(BaseModel):
 class EncoderConfig(BaseModel):
     """Configuration for the encoder component. Supports env-var overrides."""
     model_path: str = Field(
-        default=os.environ.get("ENCODER_MODEL_PATH", f"{RuntimeDirectoryManager().production_dir}/{ENCODER_MODEL_FILENAME}"),
+        default_factory=lambda: os.environ.get("ENCODER_MODEL_PATH", f"{RuntimeDirectoryManager().production_dir}/{ENCODER_MODEL_FILENAME}"),
         description="Path to encoder model"
     )
     embedding_dim: int = Field(
@@ -297,11 +297,11 @@ class EncoderConfig(BaseModel):
 class DecoderConfig(BaseModel):
     """Configuration for the decoder component. Supports env-var overrides."""
     model_path: str = Field(
-        default=os.environ.get("DECODER_MODEL_PATH", f"{RuntimeDirectoryManager().production_dir}/{DECODER_MODEL_FILENAME}"),
+        default_factory=lambda: os.environ.get("DECODER_MODEL_PATH", f"{RuntimeDirectoryManager().production_dir}/{DECODER_MODEL_FILENAME}"),
         description="Path to decoder model"
     )
     vocab_dir: str = Field(
-        default=os.environ.get("VOCAB_DIR", str(RuntimeDirectoryManager().vocab_dir)),
+        default_factory=lambda: os.environ.get("VOCAB_DIR", str(RuntimeDirectoryManager().vocab_dir)),
         description="Directory containing vocabulary files"
     )
     max_sequence_length: int = Field(
@@ -437,9 +437,7 @@ def load_config(config_path: str = "config/base.yaml", base_config: Optional[Roo
 
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
-            config_data = yaml.safe_load(f)
-
-        if 'data' not in config_data:
+            config_data = yaml.safe_load(f) or {}
             config_data['data'] = {}
         if 'training_distribution' not in config_data['data']:
             config_data['data']['training_distribution'] = {}

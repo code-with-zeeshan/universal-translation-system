@@ -4,12 +4,9 @@
 from __future__ import annotations
 
 from textual.reactive import reactive
-from textual.widgets import Static, RichLog
+from textual.widgets import Static
 from textual.widget import Widget
-from rich.table import Table
 from rich.text import Text
-from rich.panel import Panel
-from rich.layout import Layout
 from typing import Optional
 
 from tui.events import (

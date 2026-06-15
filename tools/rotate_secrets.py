@@ -84,12 +84,12 @@ def main():
     if args.type == "hs256":
         if not args.key:
             ap.error("--key is required for hs256 rotation")
-        rotate_hs256(args.key, expiry_days=args.expiry_days)
+        new_secret = rotate_hs256(args.key, expiry_days=args.expiry_days)
         env_var = _cred_key_to_env(args.key)
         print(f"HS256 secret rotated. Key={args.key}, env={env_var}")
         print(f"Set {env_var}_EXPIRY (printed above) to enable expiry monitoring.")
         if args.set_env:
-            os.environ["UTS_" + args.key.upper()] = rotate_hs256(args.key, expiry_days=args.expiry_days)
+            os.environ["UTS_" + args.key.upper()] = new_secret
     else:
         priv_pem, pub_pem = generate_rs256_pair()
         kid = args.kid or f"key-{secrets.token_hex(4)}"

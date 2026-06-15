@@ -40,7 +40,7 @@ payload = {
     "tokens": [101, 202, 303],
     "metadata": {"source_language": "en", "text_hash": "sha1:...."}
 }
-bin_msgpack = msgpack.packb(payload, use_bin_type=True)
+bin_msgpack = msgpack.packb(payload)
 compressed = lz4.frame.compress(bin_msgpack)
 # POST compressed to /decode with Content-Type: application/octet-stream
 ```

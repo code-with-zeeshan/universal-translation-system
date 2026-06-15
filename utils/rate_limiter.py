@@ -23,16 +23,15 @@ except Exception:
 class RateLimiter:
     """Rate limiter wrapping slowapi with backward-compatible is_allowed() interface."""
 
-    def __init__(self, requests_per_minute: int = 60, requests_per_hour: int = 1000,
+    def __init__(self, requests_per_minute: int = 60,
                  redis_url: Optional[str] = None):
         self.requests_per_minute = requests_per_minute
-        self.requests_per_hour = requests_per_hour
         self._slots: Dict[str, list] = {}
         self._lock = threading.RLock()
         if _slowapi_available:
             self._limiter = SlowapiLimiter(
                 key_func=get_remote_address,
-                default_limits=[f"{requests_per_minute}/minute", f"{requests_per_hour}/hour"],
+                default_limits=[f"{requests_per_minute}/minute"],
                 storage_uri=redis_url or os.getenv("REDIS_URL"),
             )
         else:

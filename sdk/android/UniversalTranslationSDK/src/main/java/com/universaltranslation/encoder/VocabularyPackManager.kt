@@ -154,11 +154,12 @@ class EnhancedVocabularyPackManager(private val context: Context) {
     
     private fun getLanguagesForPack(packName: String): List<String> {
         return when (packName) {
-            "latin" -> listOf("en", "es", "fr", "de", "it", "pt")
+            "latin" -> listOf("en", "es", "fr", "de", "it", "pt", "nl", "sv", "pl", "id", "vi", "tr")
             "cjk" -> listOf("zh", "ja", "ko")
             "arabic" -> listOf("ar")
             "devanagari" -> listOf("hi")
             "cyrillic" -> listOf("ru", "uk")
+            "thai" -> listOf("th")
             else -> listOf()
         }
     }

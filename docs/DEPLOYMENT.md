@@ -135,6 +135,10 @@ Notes:
 ### Secret rotation rollout (Docker Compose)
 1. Generate new secrets/keys:
    ```bash
+   # Via the unified CLI (preferred):
+   uts tools --rotate-secrets
+
+   # Or directly:
    python tools/rotate_secrets.py --type hs256 --key coordinator_jwt_secret --set-env
    python tools/rotate_secrets.py --type hs256 --key decoder_jwt_secret --set-env
    python tools/rotate_secrets.py --type rs256 --kid roll-$(date +%Y%m%d) --set-env

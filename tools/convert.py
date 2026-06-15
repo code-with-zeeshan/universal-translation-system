@@ -1,4 +1,4 @@
-# training/convert_models.py 
+# tools/convert.py
 import torch
 import warnings
 from pathlib import Path
@@ -24,6 +24,10 @@ class ModelConverter:
         try:
             # Load model
             model = torch.load(model_path, map_location='cpu')
+            if isinstance(model, dict):
+                from runtime.cloud_decoder import OptimizedUniversalDecoder
+                model = OptimizedUniversalDecoder()
+                model.load_state_dict(torch.load(model_path, map_location='cpu'))
             model.eval()
             
             # Check PyTorch version and use appropriate export
@@ -156,6 +160,7 @@ class ModelConverter:
             
             # Use tf2onnx for better conversion
             try:
+                import onnx
                 import tf2onnx
                 
                 onnx_model = onnx.load(onnx_path)
@@ -169,7 +174,9 @@ class ModelConverter:
                 )
                 
                 # Save as SavedModel first
-                temp_saved_model = "temp_saved_model"
+                import tempfile
+                temp_dir = tempfile.TemporaryDirectory()
+                temp_saved_model = temp_dir.name
                 tf.saved_model.save(tf_model, temp_saved_model)
                 
                 # Convert to TFLite
@@ -201,8 +208,7 @@ class ModelConverter:
                 logger.info(f"TFLite model saved to {output_path}")
                 
                 # Cleanup
-                import shutil
-                shutil.rmtree(temp_saved_model, ignore_errors=True)
+                temp_dir.cleanup()
                 
                 return True
                 
@@ -233,11 +239,13 @@ class ModelConverter:
             
             logger.info("Converting PyTorch to TensorRT...")
             
-            model = torch.load(model_path)
+            model = torch.load(model_path, map_location='cpu')
             model.eval()
             
             # Trace the model
-            example_input = torch.randn(*input_shape).cuda()
+            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            model = model.to(device)
+            example_input = torch.randn(*input_shape).to(device)
             traced_model = torch.jit.trace(model, example_input)
             
             # Convert to TensorRT

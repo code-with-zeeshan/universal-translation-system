@@ -122,7 +122,7 @@ def safe_load_model(model_path: Optional[str], device: torch.device) -> Tuple[Op
         
         try:
             # Load model with safety measures
-            model = torch.load(model_path, map_location=device)
+            model = torch.load(model_path, map_location=device, weights_only=True)
             metadata["source"] = "file"
             return model, metadata
         except Exception as e:
