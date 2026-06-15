@@ -1,6 +1,6 @@
 # docker/decoder.Dockerfile (standardized)
 # Base: CUDA 11.8 runtime on Ubuntu 22.04, production-oriented
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
 
 # System deps and Python 3.10
 RUN apt-get update && apt-get install -y \
@@ -32,10 +32,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # Install PyTorch with CUDA 11.8 explicitly (pinned for stability)
 RUN pip install --no-cache-dir \
-    torch==2.1.0+cu118 \
-    torchvision==0.16.0+cu118 \
-    torchaudio==2.1.0+cu118 \
-    --index-url https://download.pytorch.org/whl/cu118
+    torch==2.1.0+cu121 \
+    torchvision==0.16.0+cu121 \
+    torchaudio==2.1.0+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
 
 # Copy decoder code and required shared modules
 COPY runtime/cloud_decoder /app/runtime/cloud_decoder
