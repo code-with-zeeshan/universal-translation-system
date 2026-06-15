@@ -36,25 +36,47 @@ Run `./uts <group> --help` for full options.
 
 ### Quick Decision Guide
 
-| When you want to... | Run this first | Then... |
-|---|---|---|
-| Set up a new machine/studio | `./uts setup --check` | See [SETUP_COMMANDS.md](../SETUP_COMMANDS.md) by GPU tier |
-| Download & process training data | `./uts data --pipeline` | Add `--scale 5` for more data, `--force` to restart |
-| Build vocabulary packs | `./uts vocab --build` | Only needed for custom builds (pipeline auto-builds) |
-| Train a full model | `./uts train --full` | Add `--num-epochs N`, `--batch-size N`, or `--distill` |
-| Resume interrupted training | `./uts train --full` (same command, auto-detects checkpoint) | Add `--force` to restart from scratch |
-| Evaluate a trained model | `./uts eval --model --checkpoint <path>` | Add `--benchmark` for latency/throughput |
-| Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
-| Deploy decoder server | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
-| Publish model to HF Hub | `./uts publish --repo-id your-org/model` | First run `--preflight`, then `--optimize-decoder`, then publish with `--repo-id` |
-| Monitor pipeline/training live | `./uts tui` | Or `--pipeline` / `--train` for focused views |
-| Add a new language (#21+) | Edit `config/base.yaml` → `use_lora: true`, add language code | Then `./uts train --full --experiment-name "lang-21-adapter"` |
-| Fix CUDA out-of-memory | Reduce `batch_size` or increase `accumulation_steps` | Check GPU tier in SETUP_COMMANDS.md |
-| Validate config file | `./uts tools --validate-config <path>` | Also `--check-references` and `--check-consistency` |
-| Rotate API secrets | `./uts tools --rotate-secrets` | Updates `.secret_config.yaml` |
-| Check component versions | `./uts tools --version` | Or `--version-config <path>` for a specific config |
-| Browse docs by topic | `./uts docs --list` | Then `./uts docs --open <topic>` |
-| Verify post-deployment setup | `./uts setup --verify` | Checks all services, env vars, connectivity |
+| Role | When you want to... | Run this | Then... |
+|---|---|---|---|
+| **Any** | Get started from scratch | See [GETTING_STARTED.md](GETTING_STARTED.md) | Two paths: Builder or Consumer |
+| **Any** | Set up a new machine/studio | `./uts setup --check` | Tweak config per [SETUP_COMMANDS.md](../SETUP_COMMANDS.md) by GPU tier |
+| **Any** | Validate your config file | `./uts tools --validate-config <path>` | Add `--check-references`, `--check-consistency` |
+| **Any** | Check installed dependencies | `./uts setup --check-deps` (or `tools --check-deps`) | Run `pip install -e ".[train]"` if missing |
+| **Any** | Browse docs by topic | `./uts docs --list` | Then `./uts docs --open <topic>` |
+| **Builder** | Download & process training data | `./uts data --pipeline` | Add `--scale 5` for more data |
+| **Builder** | Build vocabulary packs (custom) | `./uts vocab --build` | Pipeline auto-builds; only run this for custom configs |
+| **Builder** | Train a full model | `./uts train --full` | Add `--num-epochs`, `--batch-size`, or `--distill` |
+| **Builder** | Resume interrupted training | `./uts train --full` (same command) | Add `--force` to restart from scratch |
+| **Builder** | Train with knowledge distillation | `./uts train --distill` | Set `--teacher`, `--distill-alpha`, `--distill-temp` |
+| **Builder** | Train progressively (curriculum) | `./uts train --progressive` | Start from a specific `--start-tier` |
+| **Builder** | Evaluate a trained model | `./uts eval --model --checkpoint <path>` | Add `--benchmark` for latency/throughput |
+| **Builder** | Benchmark model performance | `./uts eval --benchmark` | Results in `evaluation_reports/` |
+| **Builder** | Convert model to ONNX/CoreML/TFLite | `./uts tools --convert-task onnx` | Requires `--convert-model-path` |
+| **Builder** | End-to-end build + upload to HF Hub | `./uts tools --build-and-upload <repo>` | Add `--create-vocabs`, `--convert-models` |
+| **Builder** | Add a new language (#21+) | Edit config: `use_lora: true`, add language code | Then `./uts train --full --experiment-name "lang-21-adapter"` |
+| **Consumer** | Download pre-built artifacts from HF Hub | `./uts tools --prefetch --repo-id <id>` | Artifacts go to `models/production/`, `vocabs/`, `adapters/` |
+| **Consumer** | Evaluate without training | `./uts eval --model --checkpoint models/production/best_model.pt` | Eval data downloads automatically |
+| **Consumer** | Serve the decoder locally | `./uts serve --decoder` | Then `./uts serve --coordinator` for load balancing |
+| **Consumer** | Integrate via SDKs | See [SDK_INTEGRATION.md](SDK_INTEGRATION.md) | Android, iOS, Flutter, RN, Web |
+| **Publish** | Run preflight checks | `./uts publish --preflight` | Validates data, vocabs, models before publishing |
+| **Publish** | Optimize decoder for deployment | `./uts publish --optimize-decoder` | Quantize + ONNX optimize (standalone) |
+| **Publish** | Publish model to Hugging Face Hub | `./uts publish --repo-id your-org/model` | Use `--no-onnx` or `--no-quantize` to skip steps |
+| **Publish** | Upload existing artifacts only | `./uts publish --upload-only` | Skips ONNX export and quantization |
+| **Ops** | Deploy decoder server | `./uts serve --decoder` | Needs `decoder.pt` + vocab packs in place |
+| **Ops** | Deploy coordinator (load balancer) | `./uts serve --coordinator` | See [DECODER_POOL.md](DECODER_POOL.md) for pool setup |
+| **Ops** | Configure serving infrastructure | `./uts serve --setup` | Docker, dependencies |
+| **Ops** | Manage Redis | `./uts serve --redis install\|start\|stop\|status` | Required for distributed decoder pool |
+| **Ops** | Check API version compatibility | `./uts serve --check-api-versions` | Requires `--coordinator-url` + `--decoder-url` |
+| **Ops** | Rotate API secrets | `./uts tools --rotate-secrets` | Use `--key-name <name>` for specific secret |
+| **Ops** | Register a decoder node | `./uts tools --register-decoder` | Adds node to coordinator pool |
+| **Ops** | Decoder node compatibility check | `./uts tools --check-compat` | Validates API/schema/ONNX versions |
+| **Ops** | Check component versions | `./uts tools --version` | Or `--version-config <path>` for a specific config |
+| **Ops** | Update API schema hash | `./uts tools --update-schema-hash` | Recomputes and updates `version-config.json` |
+| **Ops** | Build encoder C++ core for edge | `./uts tools --build-encoder` | Targets: Linux, macOS, Android, iOS |
+| **Ops** | Verify post-deployment setup | `./uts setup --verify` | Checks services, endpoints, sample translation |
+| **Dev** | Run the TUI dashboard | `./uts tui` | Or `--pipeline` / `--train` for focused views |
+| **Dev** | Run tests | See [TESTING.md](TESTING.md) | Unit, integration, security tests |
+| **Dev** | GPU readiness check | `./uts setup --check` (or `tools --check-gpu`) | Validates CUDA, PyTorch, nvidia-smi |
 
 ### `./uts setup` — Environment & Validation
 

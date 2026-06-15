@@ -540,6 +540,7 @@ def build_tools_parser(sub: argparse.ArgumentParser):
 DOCS = {
     "start": "docs/GETTING_STARTED.md",
     "setup": "SETUP_COMMANDS.md",
+    "onboarding": "docs/ONBOARDING.md",
     "train": "docs/TRAINING.md",
     "arch": "docs/ARCHITECTURE.md",
     "vocab": "docs/Vocabulary_Guide.md",
@@ -566,6 +567,10 @@ DOCS = {
     "security": "docs/SECURITY_BEST_PRACTICES.md",
     "sdk_publish": "docs/SDK_PUBLISHING.md",
     "perf": "docs/PERFORMANCE_OPTIMIZATION.md",
+    "binary_schema": "docs/schemas/binary_payload_schema.md",
+    "wasm": "sdk/web/universal-translation-sdk/src/wasm/README.md",
+    "udn": "universal-decoder-node/README.md",
+    "readme": "README.md",
 }
 
 TOPICS = {

@@ -175,14 +175,7 @@ docker compose up -d
 
 ## Which path should I choose?
 
-| If... | Choose |
-|---|---|
-| You have a GPU and want to produce a custom model | **Path A — Builder** |
-| You want to contribute a new language | **Path A — Builder** (add language to config first) |
-| You have a trained checkpoint and want to serve it | **Path B — Consumer** (Option 3) |
-| You're an app developer integrating translation into your app | **Path B — Consumer** (Option 4) |
-| You want to evaluate a published model without any training | **Path B — Consumer** (Option 2) |
-| You want to deploy the full system to production | **Path B — Consumer** (Option 5) |
+See the [Quick Decision Guide](ONBOARDING.md#quick-decision-guide) in ONBOARDING.md for a complete role-based reference (40+ scenarios across Builder, Consumer, Publisher, Ops, and Dev workflows).
 
 ---
 

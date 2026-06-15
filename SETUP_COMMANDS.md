@@ -295,33 +295,9 @@ cp .env.example .env && \
 ./uts tui --config config/base.yaml
 ```
 
-## Quick Reference — CLI at a Glance
+## CLI Reference
 
-```bash
-uts setup --check            # Verify environment readiness
-uts setup --verify           # Validate post-deployment setup
-uts data --pipeline          # Run full data pipeline (auto-resume)
-uts data --pipeline --force  # Re-run from scratch
-uts data --pipeline --scale 5  # 5× training data
-uts vocab --build            # Build vocabulary packs
-uts train --full             # Train (auto-resume, ~6h, $9.30)
-uts train --full --force     # Re-run training from scratch
-uts train --full --distill   # Knowledge distillation
-uts train --full --num-epochs 10  # Override epochs
-uts eval --model             # Evaluate (auto-resume, per-file)
-uts eval --model --force     # Re-evaluate all files
-uts serve --decoder          # Start decoder server
-uts serve --coordinator      # Start coordinator
-uts publish --repo-id ...    # Publish to HF Hub
-uts publish --optimize-decoder  # [standalone] Quantize + ONNX optimize (no publish)
-uts publish --preflight      # [standalone] Validate before publishing (exits after check)
-uts tools --version          # Check component versions
-uts tools --check-compat     # Compatibility checks
-uts tools --rotate-secrets   # Rotate API secrets
-uts tools --build-encoder    # Build edge encoder ONNX
-uts tools --register-decoder # Register decoders
-uts docs --open layout       # View filesystem layout docs
-```
+For the complete CLI reference with all flags and 40+ role-based scenarios (Builder, Consumer, Publisher, Ops, Dev), see the [Quick Decision Guide](docs/ONBOARDING.md#quick-decision-guide) and [CLI Reference](docs/ONBOARDING.md#cli-reference) in ONBOARDING.md.
 
 ## File Locations
 
