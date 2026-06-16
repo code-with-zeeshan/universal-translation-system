@@ -26,17 +26,17 @@ except Exception:
     torch = None
 
 
-def _lazy_teacher():
+def _lazy_teacher(model_name: str = TEACHER_MODEL):
     """Lazy-load teacher model and tokenizer."""
     if AutoModelForSeq2SeqLM is None:
         raise ImportError("transformers required for distillation")
-    logger.info(f"Loading teacher model {TEACHER_MODEL} (this may take a while)...")
+    logger.info(f"Loading teacher model {model_name} (this may take a while)...")
     model = AutoModelForSeq2SeqLM.from_pretrained(
-        TEACHER_MODEL,
+        model_name,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map="auto" if torch.cuda.is_available() else None,
     )
-    tokenizer = AutoTokenizer.from_pretrained(TEACHER_MODEL)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     return model, tokenizer
 
 
@@ -47,7 +47,8 @@ def _nllb_code(lang: str) -> str:
 class KnowledgeDistillator:
     """Re-translate existing parallel data with NLLB-3.3B teacher."""
 
-    def __init__(self):
+    def __init__(self, model_name: str = TEACHER_MODEL):
+        self._model_name = model_name
         self._model = None
         self._tokenizer = None
         self._translator = None
@@ -56,7 +57,7 @@ class KnowledgeDistillator:
     @property
     def translator(self):
         if self._translator is None:
-            model, tokenizer = _lazy_teacher()
+            model, tokenizer = _lazy_teacher(self._model_name)
             use_cuda = torch is not None and torch.cuda.is_available()
             pipe_kwargs = dict(
                 task="translation",

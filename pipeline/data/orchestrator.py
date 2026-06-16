@@ -110,9 +110,18 @@ class UnifiedDataPipeline:
             # Use unified components
             self.downloader = UnifiedDataDownloader(self.config)
             self.sampler = SmartDataSampler()
+
+            # Determine which NLLB model to use for augment + distill.
+            # If both stages run in the same pipeline, use the larger 3.3B model
+            # for both (avoids loading two NLLB models, gives better augment quality).
+            enabled = self.config.pipeline.enabled_stages or []
+            augment_enabled = "augment" in enabled
+            distill_enabled = "knowledge_distillation" in enabled
+            augment_model = "facebook/nllb-200-3.3B" if (augment_enabled and distill_enabled) else "facebook/nllb-200-distilled-1.3B"
+
             # Only instantiate augmenter if heavy deps are available; otherwise, create a stub that skips
             try:
-                self.augmenter = SyntheticDataAugmenter(self.config)
+                self.augmenter = SyntheticDataAugmenter(self.config, base_model=augment_model)
             except Exception as e:
                 self.logger.warning(f"Synthetic augmenter unavailable ({e}); augmentation will be skipped in dry-run")
                 self.augmenter = None  # type: ignore
@@ -133,7 +142,7 @@ class UnifiedDataPipeline:
             
             # Strategy 3: Knowledge distillation from NLLB-3.3B
             try:
-                self.distillator = KnowledgeDistillator()
+                self.distillator = KnowledgeDistillator(model_name="facebook/nllb-200-3.3B")
             except Exception as e:
                 self.logger.warning(f"Knowledge distillator unavailable ({e})")
                 self.distillator = None
