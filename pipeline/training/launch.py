@@ -169,10 +169,19 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     _rdm = RuntimeDirectoryManager(config=config)
     train_path = _rdm.train_final_path
     val_path = _rdm.val_final_path
-    
+
+    if not train_path.exists():
+        hub_cfg = getattr(config, 'hub', None)
+        if hub_cfg and hub_cfg.dataset_repo_id and hub_cfg.auto_download:
+            from pipeline.data.hub_sync import download_processed_data
+            processed_dir = train_path.parent
+            vocab_dir = _rdm.vocab_dir
+            logger.info("Downloading data+vocab from HF Hub %s ...", hub_cfg.dataset_repo_id)
+            download_processed_data(hub_cfg.dataset_repo_id, processed_dir, vocab_dir, token=hub_cfg.token)
+
     if not train_path.exists():
         logger.error(f"Training data not found at {train_path}")
-        logger.info("Please run the data pipeline first: python -m pipeline.data.orchestrator")
+        logger.info("Run data pipeline first, or set hub.repo_id for auto-download")
         sys.exit(1)
     
     train_dataset = ModernParallelDataset(
@@ -236,6 +245,13 @@ def launch_training(args: argparse.Namespace):
         config.training.lr = args.learning_rate
     if args.num_epochs:
         config.training.num_epochs = args.num_epochs
+    if args.hub_repo_id:
+        from config.schemas import HubConfig
+        config.hub = config.hub or HubConfig()
+        config.hub.dataset_repo_id = args.hub_repo_id
+        config.hub.auto_download = True
+    if args.no_hub_download and config.hub:
+        config.hub.auto_download = False
     
     # ── Training checkpoint auto-resume ──────────────────────────────
     ckpt_mgr = PhaseCheckpoint("training")
@@ -489,8 +505,12 @@ def main():
     train_parser.add_argument('--log-dir', type=str, default=str(RuntimeDirectoryManager().logs_dir),
                             help='Directory for logs')
     train_parser.add_argument('--log-level', type=str, default='info',
-                            choices=['debug', 'info', 'warning', 'error'],
-                            help='Logging level')
+                             choices=['debug', 'info', 'warning', 'error'],
+                             help='Logging level')
+    train_parser.add_argument('--hub-repo-id', type=str, default=None,
+                             help='HF Hub repo ID to download data+vocab if missing locally')
+    train_parser.add_argument('--no-hub-download', action='store_true',
+                             help='Disable auto-download from HF Hub even if configured')
     
     # Evaluation command
     eval_parser = subparsers.add_parser('evaluate', help='Evaluate a model')

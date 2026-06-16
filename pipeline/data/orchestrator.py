@@ -29,6 +29,21 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
+def _maybe_upload_to_hub(config, runtime_dirs):
+    """Upload processed data+vocab to HF Hub if configured."""
+    hub_cfg = getattr(config, 'hub', None)
+    if not hub_cfg or not hub_cfg.dataset_repo_id or not hub_cfg.auto_upload:
+        return
+    try:
+        from pipeline.data.hub_sync import upload_processed_data
+        processed_dir = Path(runtime_dirs.processed_dir) if hasattr(runtime_dirs, 'processed_dir') else Path(config.data.processed_dir)
+        vocab_dir = Path(runtime_dirs.vocab_dir) if hasattr(runtime_dirs, 'vocab_dir') else Path(config.data.output_dir).parent / "vocabulary" / "vocab"
+        n = upload_processed_data(hub_cfg.dataset_repo_id, processed_dir, vocab_dir, token=hub_cfg.token)
+        logger.info("Uploaded %d files to HF Hub dataset %s", n, hub_cfg.dataset_repo_id)
+    except Exception as e:
+        logger.warning("HF Hub upload failed (non-fatal): %s", e)
+
+
 CORE_STAGES = [
     PipelineStage.DOWNLOAD_TRAIN,
     PipelineStage.SAMPLE_FILTER,
@@ -1026,6 +1041,8 @@ def main():
                         help='Enable parallel batch downloads')
     parser.add_argument('--datasets-cache-dir', type=str, default=None,
                         help='HuggingFace datasets cache directory (default: HF default cache)')
+    parser.add_argument('--hub-repo-id', type=str, default=None,
+                        help='HF Hub repo ID to upload processed data+vocab after pipeline')
 
     args = parser.parse_args()
 
@@ -1043,6 +1060,11 @@ def main():
         config.data.download_parallel_batches = True
     if args.datasets_cache_dir is not None:
         config.data.datasets_cache_dir = args.datasets_cache_dir
+    if args.hub_repo_id is not None:
+        from config.schemas import HubConfig
+        config.hub = config.hub or HubConfig()
+        config.hub.dataset_repo_id = args.hub_repo_id
+        config.hub.auto_upload = True
     
     # Create pipeline
     pipeline = UnifiedDataPipeline(config)
@@ -1069,6 +1091,7 @@ def main():
         if summary['execution_time_hours'] > 0:
             logger.info(f"Pipeline completed in {summary['execution_time_hours']:.2f} hours — "
                         f"{summary['total_sentences']:,} sentences ({summary['total_size_gb']:.2f} GB)")
+        _maybe_upload_to_hub(pipeline.config, pipeline.runtime_dirs)
 
 
 if __name__ == "__main__":

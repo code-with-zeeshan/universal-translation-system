@@ -169,7 +169,8 @@ def cmd_data(args: argparse.Namespace):
              stage=args.stage, reset=args.reset,
              download_max_workers=args.download_max_workers,
              download_parallel_batches=args.download_parallel_batches,
-             datasets_cache_dir=args.datasets_cache_dir)
+             datasets_cache_dir=args.datasets_cache_dir,
+             hub_repo_id=getattr(args, 'hub_repo_id', None))
         # Mark data pipeline complete in global state
         try:
             with open(config_path) as f:
@@ -218,6 +219,8 @@ def build_data_parser(sub: argparse.ArgumentParser):
                      help="Enable parallel batch downloads")
     sub.add_argument("--datasets-cache-dir", type=str, default=None,
                      help="HuggingFace datasets cache directory (default: HF default cache)")
+    sub.add_argument("--hub-repo-id", type=str, default=None,
+                     help="HF Hub repo ID to upload processed data+vocab after pipeline")
 
 
 # ── vocab ────────────────────────────────────────────────────────────
@@ -305,7 +308,9 @@ def cmd_train(args: argparse.Namespace):
              learning_rate=args.lr,
              experiment_name=args.experiment_name,
              checkpoint=checkpoint,
-             force=args.force if hasattr(args, 'force') else False)
+             force=args.force if hasattr(args, 'force') else False,
+             hub_repo_id=getattr(args, 'hub_repo_id', None),
+             no_hub_download=getattr(args, 'no_hub_download', False))
     elif args.distill:
         _run_module("pipeline/training/distillation.py",
                      config=args.config,
@@ -347,6 +352,10 @@ def build_train_parser(sub: argparse.ArgumentParser):
                      help="Progressive: start from a specific tier")
     sub.add_argument("--validate-final", action="store_true",
                      help="Progressive: validate final model")
+    sub.add_argument("--hub-repo-id", type=str, default=None,
+                     help="HF Hub repo ID to download data+vocab if missing locally")
+    sub.add_argument("--no-hub-download", action="store_true",
+                     help="Disable auto-download from HF Hub even if configured")
 
 
 # ── eval ─────────────────────────────────────────────────────────────

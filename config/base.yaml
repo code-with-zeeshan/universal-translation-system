@@ -228,4 +228,10 @@ security:
     - google/
     - Helsinki-NLP/
   enable_path_validation: true
-  max_file_size_gb: 10   
+  max_file_size_gb: 10
+
+hub:
+  dataset_repo_id: code-with-zeeshan/UTS-Datasets
+  model_repo_id: code-with-zeeshan/Universal-Translation-System
+  auto_upload: false
+  auto_download: true   

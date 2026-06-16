@@ -242,6 +242,15 @@ class PipelineConfig(BaseModel):
         extra = "allow"
 
 
+class HubConfig(BaseModel):
+    """Configuration for syncing data/vocab to/from Hugging Face Hub."""
+    dataset_repo_id: Optional[str] = Field(None, description="HF Dataset repo ID for data+vocab sync (e.g., code-with-zeeshan/UTS-Datasets)")
+    model_repo_id: Optional[str] = Field(None, description="HF Model repo ID for publish (e.g., code-with-zeeshan/Universal-Translation-System)")
+    token: Optional[str] = Field(None, description="HF token (defaults to HF_TOKEN env or cached login)")
+    auto_upload: bool = Field(False, description="Upload data+vocab to dataset repo after pipeline completes")
+    auto_download: bool = Field(True, description="Download data+vocab from dataset repo before training if missing locally")
+
+
 class RootConfig(BaseModel):
     """The root configuration model loaded from base.yaml for the training pipeline."""
     data: DataConfig
@@ -254,6 +263,7 @@ class RootConfig(BaseModel):
     data_strategy: Optional[DataStrategyConfig] = None
     security: Optional[SecurityConfig] = None
     distributed: Optional[DistributedConfig] = None
+    hub: Optional[HubConfig] = None
     tier_metadata: Optional[dict] = None
 
     class Config:
