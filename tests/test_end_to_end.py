@@ -9,22 +9,27 @@ Run: python -m pytest tests/test_end_to_end.py -x -v
 import os
 import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
 
 
-def _unmock_torch():
-    """Remove conftest's mock torch so the real one can be imported."""
-    mock_keys = [k for k in sys.modules if k.startswith("torch")]
-    for k in mock_keys:
-        if hasattr(sys.modules[k], "__name__") and "mock" in str(type(sys.modules[k])).lower():
-            del sys.modules[k]
+def _unmock_all():
+    """Remove ALL conftest mocks from sys.modules so real imports are used."""
+    _CONFTEST_MOCK_PREFIXES = (
+        "torch", "numpy", "pydantic", "yaml", "wandb", "psutil",
+        "prometheus_client", "safetensors", "sacrebleu", "nvidia_ml_py3",
+        "jwt", "cryptography", "keyring", "msgpack", "fastapi",
+        "starlette", "litserve", "opentelemetry", "urllib3", "requests",
+        "tracemalloc",
+    )
+    for prefix in _CONFTEST_MOCK_PREFIXES:
+        for k in list(sys.modules.keys()):
+            if k == prefix or k.startswith(prefix + "."):
+                del sys.modules[k]
 
 
 # Undo conftest mocks before importing project modules
-_unmock_torch()
+_unmock_all()
 
 try:
     import torch
@@ -54,12 +59,18 @@ class TestEndToEndSmoke(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # Remove conftest's mock stubs that would shadow real imports
-        for mod_name in list(sys.modules.keys()):
-            mod = sys.modules[mod_name]
-            if isinstance(mod, types.ModuleType) and not mod_name.startswith("_"):
-                if getattr(mod, "__file__", None) is None and getattr(mod, "__path__", None) == []:
-                    del sys.modules[mod_name]
+        # Remove conftest project stubs that shadow real modules
+        _STUB_PREFIXES = ("config", "utils", "integration", "evaluation",
+                          "monitoring", "tools", "runtime", "encoder",
+                          "decoder", "pipeline")
+        for prefix in _STUB_PREFIXES:
+            for k in list(sys.modules.keys()):
+                if k == prefix or k.startswith(prefix + "."):
+                    # Skip submodules that were legitimately imported by real code
+                    if hasattr(sys.modules.get(k, None), "__file__"):
+                        continue
+                    if k in sys.modules:
+                        del sys.modules[k]
 
     def setUp(self):
         self.tmpdir = Path(tempfile.mkdtemp())
