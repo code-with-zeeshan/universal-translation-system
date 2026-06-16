@@ -157,3 +157,6 @@ profiling/
 *.bak
 *.backup
 *~
+
+# Living weakness tracker (dev-only, never committed)
+weaknesses.md

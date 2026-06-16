@@ -58,8 +58,13 @@ setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.envi
 # Use structured logger adapter to encourage structured fields usage
 logger = get_logger("coordinator", context={"component": "coordinator"})
 
-# Configuration paths
-POOL_PATH = os.environ.get("POOL_CONFIG_PATH", str(RuntimeDirectoryManager().generated_config_dir / "decoder_pool.json"))
+# Configuration paths (lazy — RuntimeDirectoryManager() not called at import time)
+_POOL_PATH: Optional[str] = None
+def get_pool_path() -> str:
+    global _POOL_PATH
+    if _POOL_PATH is None:
+        _POOL_PATH = os.environ.get("POOL_CONFIG_PATH") or str(RuntimeDirectoryManager().generated_config_dir / "decoder_pool.json")
+    return _POOL_PATH
 
 # Version information
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
@@ -465,15 +470,15 @@ CONFIG_NEEDS_RELOAD = threading.Event()
 class PoolReloadHandler(FileSystemEventHandler):
     """Handles file system events for the decoder pool configuration."""
     def on_modified(self, event):
-        if event.src_path.endswith(Path(POOL_PATH).name):
+        if event.src_path.endswith(Path(get_pool_path()).name):
             logger.info(f"Configuration file {event.src_path} changed. Scheduling reload.")
             # Set the event to signal the main loop to reload
             CONFIG_NEEDS_RELOAD.set()
 
 # --- Decoder Pool Management ---
 class DecoderPool:
-    def __init__(self, pool_path=POOL_PATH, redis_url=None):
-        self.pool_path = pool_path
+    def __init__(self, pool_path=None, redis_url=None):
+        self.pool_path = pool_path if pool_path is not None else get_pool_path()
         self.lock = asyncio.Lock()
         self.nodes: List[Dict] = [] # Renamed from 'pool' for clarity
         self.ab_tests: List[Dict] = []
@@ -1202,7 +1207,7 @@ async def startup_event():
     # Start the watchdog observer to monitor the config file
     global FILE_OBSERVER
     FILE_OBSERVER = Observer()
-    pool_dir = Path(POOL_PATH).parent
+    pool_dir = Path(get_pool_path()).parent
     if not pool_dir.exists():
         pool_dir.mkdir(parents=True)
     FILE_OBSERVER.schedule(PoolReloadHandler(), pool_dir, recursive=False)

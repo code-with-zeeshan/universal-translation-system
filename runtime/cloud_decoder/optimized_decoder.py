@@ -143,9 +143,9 @@ class AdapterManager:
     """
     Manages dynamic loading and LRU caching of language adapters on a decoder node.
     """
-    def __init__(self, model: nn.Module, repo_id: str, max_cache_size: int = 5, adapter_dir: str = str(RuntimeDirectoryManager().adapters_dir)):
+    def __init__(self, model: nn.Module, repo_id: str, max_cache_size: int = 5, adapter_dir: Optional[str] = None):
         self.model = model  # The AdapterUniversalEncoder instance
-        self.adapter_dir = Path(adapter_dir)
+        self.adapter_dir = Path(adapter_dir) if adapter_dir is not None else RuntimeDirectoryManager().adapters_dir
         self.max_cache_size = max_cache_size
         self.repo_id = repo_id
         

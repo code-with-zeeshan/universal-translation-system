@@ -271,7 +271,7 @@ class EncoderConfig(BaseModel):
         description="Dimension of embeddings"
     )
     vocab_dir: str = Field(
-        default=os.environ.get("VOCAB_DIR", str(RuntimeDirectoryManager().vocab_dir)),
+        default_factory=lambda: os.environ.get("VOCAB_DIR", str(RuntimeDirectoryManager().vocab_dir)),
         description="Directory containing vocabulary files"
     )
     max_sequence_length: int = Field(

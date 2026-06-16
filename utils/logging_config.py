@@ -5,6 +5,7 @@ import logging.config
 import os
 from pathlib import Path
 import sys
+from typing import Optional
 
 # Ensure standard logs folder structure exists
 try:
@@ -136,12 +137,14 @@ def _is_worker_process() -> bool:
         return True
     return False
 
-def setup_logging(log_dir: str = str(RuntimeDirectoryManager().logs_dir), log_level: str = "INFO"):
+def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
     """Setup comprehensive logging configuration (idempotent, skips DataLoader workers)"""
     global _logging_initialized
     if _logging_initialized or _is_worker_process():
         return
     _logging_initialized = True
+    if log_dir is None:
+        log_dir = str(RuntimeDirectoryManager().logs_dir)
     # Create log directory and standard sections
     Path(log_dir).mkdir(parents=True, exist_ok=True)
     try:

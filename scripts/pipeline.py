@@ -150,7 +150,7 @@ def run_training(
     batch_size: Optional[int] = None,
     learning_rate: Optional[float] = None,
     num_epochs: Optional[int] = None,
-    log_dir: str = str(RuntimeDirectoryManager().logs_dir),
+    log_dir: Optional[str] = None,
     log_level: str = 'info',
 ) -> None:
     """Delegate to training.launch.launch_training with a constructed namespace."""
