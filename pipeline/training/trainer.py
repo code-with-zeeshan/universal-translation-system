@@ -57,7 +57,7 @@ from utils.constants import EMERGENCY_CHECKPOINT_FILENAME, BEST_MODEL_FILENAME, 
 from pipeline.training.health_monitor import TrainingHealthMonitor
 
 # Dataset imports
-from pipeline.training.samplers import TemperatureSampler  # If you have this file
+# TemperatureSampler imported lazily inside _create_data_loader
 
 # Profiling (optional - use when needed)
 from pipeline.training.profiling import ProfileGuidedTrainer
@@ -106,7 +106,7 @@ class IntelligentTrainer(BaseTrainer):
         self.val_dataset = val_dataset
         self.config = config
         self.experiment_name = experiment_name
-        self.runtime_dirs = RuntimeDirectoryManager()
+        self.runtime_dirs = RuntimeDirectoryManager(config=config)
 
         # Training state (set BEFORE checkpoint load so loaded values persist)
         self.global_step = 0
@@ -742,7 +742,7 @@ class IntelligentTrainer(BaseTrainer):
         # probe size to leave headroom.
         if self.strategy.memory_config.compile_model:
             safe_sizes = [4, 8, 12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256]
-            idx = safe_sizes.index(found)
+            idx = max(i for i, s in enumerate(safe_sizes) if s <= found)
             if idx > 3:  # don't go below a minimum of ~12
                 found = safe_sizes[idx - 1]
                 self.strategy.batch_size = found
@@ -1211,6 +1211,7 @@ class IntelligentTrainer(BaseTrainer):
         
         # Create sampler
         if self.config.training.use_temperature_sampling:
+            from pipeline.training.samplers import TemperatureSampler
             sampler = TemperatureSampler(
                 self.train_dataset,
                 batch_size=self.batch_sizer.current_batch_size,
@@ -1286,7 +1287,7 @@ class IntelligentTrainer(BaseTrainer):
             
             if memory_used > 0.95:
                 # Critical memory usage
-                new_batch_size = self.batch_sizer.decrease_batch_size()
+                new_batch_size = self.batch_sizer.adjust_batch_size()
                 logger.warning(f"⚠️ Critical memory usage ({memory_used:.1%}), reducing batch size to {new_batch_size}")
                 
                 # Enable more aggressive memory saving
@@ -1300,7 +1301,7 @@ class IntelligentTrainer(BaseTrainer):
                 recent_losses = self.training_history['val_loss'][-3:]
                 if all(recent_losses[i] > recent_losses[i+1] for i in range(len(recent_losses)-1)):
                     # Model is improving, try larger batch
-                    new_batch_size = self.batch_sizer.increase_batch_size()
+                    new_batch_size = self.batch_sizer.adjust_batch_size()
                     logger.info(f"📈 Memory usage low ({memory_used:.1%}) and model improving, increasing batch size to {new_batch_size}")
         
         # Check for convergence

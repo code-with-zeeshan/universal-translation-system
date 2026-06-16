@@ -182,7 +182,9 @@ vocabulary/vocab/
 config/
 ├── decoder_pool.json                          Pool membership state
 ├── generated_config.yaml                       Config wizard output
-└── generated_config.json
+├── generated_config.json
+├── override/                                   Interactive config overrides (uts config --interactive)
+│   └── my_config.yaml
 
 profiles/                                       UDN profiler
 └── profile-{timestamp}.{format}
@@ -190,7 +192,7 @@ profiles/                                       UDN profiler
 streaming_evaluation_cache.json                Streaming eval cache
 ```
 
-**Created by:** `runtime/coordinator/advanced_coordinator.py`, `tools/register_decoder_node.py`, `scripts/config_wizard.py`, `evaluation/evaluator.py`, `universal-decoder-node/udn/utils/profiler.py`
+**Created by:** `runtime/coordinator/advanced_coordinator.py`, `tools/register_decoder_node.py`, `scripts/config_wizard.py`, `scripts/config_interactive.py`, `evaluation/evaluator.py`, `universal-decoder-node/udn/utils/profiler.py`
 
 ---
 

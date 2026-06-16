@@ -85,6 +85,7 @@ All tools are organized into 10 workflow groups. Run `./uts <group> --help` for 
 | `./uts setup` | Environment check, config wizard, validate config, verify deployment |
 | `./uts data` | Download, sample, augment, validate pipeline (auto-resume, `--force`, `--scale`) |
 | `./uts vocab` | Build or evolve vocabulary packs |
+| `./uts config` | Interactive config builder: override base.yaml settings, save to `config/override/` |
 | `./uts train` | Full model / distillation / progressive / LoRA training (auto-resume, `--force`) |
 | `./uts eval` | Evaluate model, benchmark, download test data (per-file checkpoint, `--force`) |
 | `./uts publish` | Publish model to HF Hub (split, ONNX, quantize, upload) |

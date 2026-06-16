@@ -83,7 +83,7 @@ Run `./uts <group> --help` for full options.
 | Flag | Description |
 |---|---|
 | `--check` | Run GPU/environment readiness check |
-| `--config-wizard` | Interactive config file creator |
+| `--config-wizard` | Interactive config file creator (legacy; prefer `uts config --interactive`) |
 | `--validate CONFIG` | Validate a config YAML file |
 | `--verify` | Verify post-deployment setup (all services reachable, env vars set) |
 | `--check-deps` | Check installed dependencies against requirements files |
@@ -133,6 +133,32 @@ Run `./uts <group> --help` for full options.
 | `--mode MODE` | Creation mode: `production`, `research`, `hybrid` |
 | `--groups [list]` | Specific packs to build: `latin`, `cjk`, `arabic`, etc. |
 | `--pack NAME` | Specific pack to evolve |
+
+### `./uts config` — Config Builder & Override Manager
+
+Build a custom config interactively or via CLI overrides. Loads `config/base.yaml` as the base — any setting you don't override keeps its base.yaml default. Saves the complete merged config to `config/override/<name>.yaml`.
+
+| Flag | Description |
+|---|---|
+| `--interactive` | Launch interactive TUI config builder (pipeline stages, training, model, data, review & save) |
+| `--set KEY=VALUE` | Override a setting via dot notation (e.g., `--set training.num_epochs=20`). Repeatable. |
+| `--name NAME` | Output config name (default: `custom`, used with `--set`) |
+| `--list` | List existing override configs in `config/override/` |
+| `--diff NAME` | Show diff between an override config and `base.yaml` |
+
+**Examples:**
+```bash
+uts config --interactive                                    # TUI wizard
+uts config --set training.num_epochs=20 --name my_config    # CLI override, saves instantly
+uts config --list                                           # List saved overrides
+uts config --diff my_config                                 # Diff vs base.yaml
+```
+
+Then use your override:
+```bash
+uts data --pipeline --config config/override/my_config.yaml
+uts train --full --config config/override/my_config.yaml
+```
 
 ### `./uts train` — Model Training
 

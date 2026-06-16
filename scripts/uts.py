@@ -665,6 +665,37 @@ def build_tui_parser(sub: argparse.ArgumentParser):
     sub.add_argument("--train", action="store_true", help="Training only")
 
 
+# ── config ───────────────────────────────────────────────────────────
+
+def cmd_config(args: argparse.Namespace):
+    if args.interactive:
+        _run_script("scripts/config_interactive.py")
+    elif args.list:
+        _run_script("scripts/config_interactive.py", "--list")
+    elif args.diff:
+        _run_script("scripts/config_interactive.py", "--diff", args.diff)
+    elif args.set:
+        cmd = ["scripts/config_interactive.py", "--non-interactive", "--name", args.name or "custom"]
+        for s in args.set:
+            cmd.extend(["--set", s])
+        _run_script(*cmd)
+    else:
+        _run_script("scripts/config_interactive.py")
+
+
+def build_config_parser(sub: argparse.ArgumentParser):
+    sub.add_argument("--interactive", "-i", action="store_true",
+                     help="Launch interactive TUI config builder")
+    sub.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                     help="Override a setting via dot notation (e.g. training.num_epochs=20)")
+    sub.add_argument("--name", default="custom",
+                     help="Output config name (default: custom, used with --set)")
+    sub.add_argument("--list", action="store_true",
+                     help="List existing override configs in config/override/")
+    sub.add_argument("--diff", metavar="NAME",
+                     help="Show diff between an override config and base.yaml")
+
+
 # ── main parser ──────────────────────────────────────────────────────
 
 BANNER = """
@@ -683,11 +714,12 @@ Workflows (run `uts <group> --help` for details):
   setup          Environment setup, validation, config wizard, dep checker
   data           Data pipeline: download, augment, validate, domain data
   vocab          Vocabulary pack: build or evolve
+  config         Interactive config builder: override base.yaml settings, save to config/override/
   train          Training: full model / progressive / distillation / LoRA
   eval           Evaluation: model eval, benchmark, data download
   publish        Publish model to Hugging Face Hub, preflight, optimize
   serve          Services: decoder server, coordinator, Redis, API version check
-  tools          Utilities: config, GPU, secrets, upload, prefetch, convert, compat
+  tools          Utilities: GPU, secrets, upload, prefetch, convert, compat
   tui            Terminal UI dashboard for pipeline/training
   docs           Open documentation by topic
 
@@ -761,6 +793,11 @@ p_docs = subparsers.add_parser("docs", help="Documentation browser")
 build_docs_parser(p_docs)
 p_docs.set_defaults(func=cmd_docs)
 
+# config
+p_config = subparsers.add_parser("config", help="Interactive config builder & override manager")
+build_config_parser(p_config)
+p_config.set_defaults(func=cmd_config)
+
 
 def main():
     args = parser.parse_args()
@@ -771,16 +808,16 @@ def main():
             print()
         print(GROUP_HELP)
         print("Quick start on Lightning AI:\n")
-        print("  1. uts setup --config-wizard")
-        print("  2. uts data --pipeline")
-        print("  3. uts train --full")
+        print("  1. uts config --interactive                  # Build your config interactively")
+        print("  2. uts data --pipeline --config config/override/my.yaml")
+        print("  3. uts train --full --config config/override/my.yaml")
         print("  4. uts eval --model --checkpoint checkpoints/*/best_model.pt")
         print("  5. uts publish --preflight && uts publish --optimize-decoder")
         print("  6. uts publish --repo-id your-org/universal-translation-system")
-        print("  Dashboard: uts tui --config config/base.yaml")
+        print("  Dashboard: uts tui --config config/override/my.yaml")
         print()
-        print("  uts docs --open setup     Full setup guide")
-        print("  uts docs --open train     Training guide")
+        print("  uts config --help      Config builder options")
+        print("  uts docs --open train  Training guide")
         return
     args.func(args)
 

@@ -438,7 +438,7 @@ def load_config(config_path: str = "config/base.yaml", base_config: Optional[Roo
     try:
         with open(config_file, 'r', encoding='utf-8') as f:
             config_data = yaml.safe_load(f) or {}
-            config_data['data'] = {}
+            config_data.setdefault('data', {})
         if 'training_distribution' not in config_data['data']:
             config_data['data']['training_distribution'] = {}
 

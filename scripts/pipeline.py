@@ -303,8 +303,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser('bootstrap', help='Bootstrap encoder/decoder from pretrained models')
     sp.add_argument('--encoder-model', type=str, default='xlm-roberta-base')
     sp.add_argument('--decoder-model', type=str, default='facebook/mbart-large-50')
-    sp.add_argument('--encoder-out', type=str, default='self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"')
-    sp.add_argument('--decoder-out', type=str, default='self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"')
+    sp.add_argument('--encoder-out', type=str, default=None,
+                     help='Output path for bootstrapped encoder (default: computed from RuntimeDirectoryManager)')
+    sp.add_argument('--decoder-out', type=str, default=None,
+                     help='Output path for bootstrapped decoder (default: computed from RuntimeDirectoryManager)')
     sp.add_argument('--target-hidden-dim', type=int, default=1024)
     sp.add_argument('--device', type=str, default='auto')
 
