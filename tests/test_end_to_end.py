@@ -109,6 +109,7 @@ class TestEndToEndSmoke(unittest.TestCase):
         """Model can do a forward/backward pass and loss decreases."""
         from torch import optim
         encoder, decoder = self._make_tiny_models()
+        encoder.train()
         params = list(encoder.parameters()) + list(decoder.parameters())
         optimiser = optim.AdamW(params, lr=0.001)
 
@@ -157,9 +158,13 @@ class TestEndToEndSmoke(unittest.TestCase):
         checkpoint_dir.mkdir()
         checkpoint_path = checkpoint_dir / "test_checkpoint.pt"
 
+        encoder.eval()
+        decoder.eval()
+
         dummy_src = torch.randint(0, 100, (2, 16))
         dummy_mask = torch.ones(2, 16, dtype=torch.bool)
-        encoder_out = encoder(dummy_src, dummy_mask)
+        with torch.no_grad():
+            encoder_out = encoder(dummy_src, dummy_mask)
 
         checkpoint = {
             "epoch": 5,
@@ -177,7 +182,8 @@ class TestEndToEndSmoke(unittest.TestCase):
         self.assertEqual(loaded["epoch"], 5)
         encoder.load_state_dict(loaded["encoder_state_dict"])
         decoder.load_state_dict(loaded["decoder_state_dict"])
-        encoder_out2 = encoder(dummy_src, dummy_mask)
+        with torch.no_grad():
+            encoder_out2 = encoder(dummy_src, dummy_mask)
         self.assertTrue(torch.equal(encoder_out, encoder_out2),
                         msg="Model output changed after save/load")
 
