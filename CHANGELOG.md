@@ -5,9 +5,30 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
-- **Interactive data pipeline wizard** (`scripts/data_pipeline_wizard.py`): TUI with arrow-key navigation, spacebar toggle, dynamic time estimation, and config YAML generation. Invoked via `uts data --interactive`
-- **Config schemas for data_strategy, security, distributed** — `DataStrategyConfig`, `SecurityConfig`, `DistributedConfig` Pydantic models added to `config/schemas.py`, wired into `RootConfig` (was `extra = "allow"`, now validated)
-- **`cache_dir` field** to `DataConfig` schema (was used by `RuntimeDirectoryManager._cfg()` but not validated)
+- **HF Hub data sync** (`pipeline/data/hub_sync.py`): `upload_processed_data()` and `download_processed_data()` for syncing train/val data + vocab packs to/from HF Hub dataset repos. Auto-upload after data pipeline completes if `hub.auto_upload: true`; auto-download before training if data missing locally and `hub.auto_download: true`.
+- **Dual HF repo support** — `HubConfig.dataset_repo_id` (defaults to `code-with-zeeshan/UTS-Datasets`) for data+vocab sync, `HubConfig.model_repo_id` (defaults to `code-with-zeeshan/Universal-Translation-System`) for model publish. `hub:` section added to `config/base.yaml` with both defaults and `auto_upload`/`auto_download` flags.
+- **`--hub-repo-id` CLI flag** on `uts data --pipeline` and `uts train --full` (overrides config `hub.dataset_repo_id`)
+- **`--no-hub-download` CLI flag** on `uts train --full` (disables auto-download for offline/disconnected runs)
+- **Interactive config builder** (`uts config` subcommand in `scripts/uts.py`, `scripts/config_interactive.py`): TUI with stage selector (time estimates), training/model/data overrides, review & save. `uts config --set key=value` for batch, `uts config --list`/`--diff` for management. Saves complete merged YAML to `config/override/<name>.yaml`.
+- **`_wizard_shared.py`** (`scripts/_wizard_shared.py`): Single source of truth for stage definitions (names, descriptions, time estimates, group membership, default states). Shared by both `config_interactive.py` and `data_pipeline_wizard.py`, eliminating code duplication.
+- **HF Hub card files** at `/home/user/hf_upload/`: `model_readme.md` + `model_gitattributes` for model repo, `dataset_readme.md` + `dataset_gitattributes` for dataset repo.
+
+### Changed
+- **`scripts/data_pipeline_wizard.py`**: Refactored from standalone TUI implementation to thin CLI wrapper that imports stage definitions from `_wizard_shared.py`.
+- **`scripts/config_interactive.py`**: Stage definitions sourced from `_wizard_shared.py` instead of local tuple (was drifting from data pipeline wizard).
+- **`docs/ONBOARDING.md`**: Added `uts config` section between vocab and train workflow steps; marked `setup --config-wizard` as legacy; added `--hub-repo-id` flags to data/train command tables.
+- **`docs/RUNTIME_LAYOUT.md`**: Added `config/override/` directory to project layout; listed `config_interactive.py` in "Created by" section.
+- **`README.md`**: Added `uts config` row to workflow table (1 config topic); CLI topics count updated from 28→33.
+- **`pipeline/training/launch.py`**: `load_datasets()` checks `hub.dataset_repo_id` + `hub.auto_download` before failing with "data not found" — auto-downloads from HF if configured.
+- **`config/base.yaml`**: Added `hub:` section with `dataset_repo_id: code-with-zeeshan/UTS-Datasets`, `model_repo_id: code-with-zeeshan/Universal-Translation-System`, `token: ""`, `auto_upload: false`, `auto_download: true`.
+
+### Fixed
+- **C1 — Data config erased on load**: `config/schemas.py:441` — `config_data['data'] = {}` overwrote all YAML data config (languages, training_distribution, augmentation_pairs). Changed to `config_data.setdefault('data', {})`.
+- **C3 — Batch probe crashes on GPU**: `pipeline/training/trainer.py:745` — `safe_sizes.index(found)` crashed when batch probe returned non-standard size (most GPUs). Changed to `max(i for i, s in enumerate(safe_sizes) if s <= found)`.
+- **C6 — String literal defaults in pipeline CLI**: `scripts/pipeline.py:306-307` — `--encoder-out`/`--decoder-out` defaults were literal Python expression strings, not evaluated paths. Changed to `default=None` with path resolution at call time.
+- **H1 — RuntimeDirectoryManager ignores config**: `pipeline/training/trainer.py:109` — `RuntimeDirectoryManager()` created with default `root="output"`, ignoring user config. Changed to `RuntimeDirectoryManager(config=config)`.
+- **H7 — Eager import crashes training module**: `pipeline/training/trainer.py:60` — `from pipeline.training.samplers import TemperatureSampler` at module top-level. Moved to lazy import inside conditional block.
+- **Dead batch-size methods**: `pipeline/training/trainer.py:1289,1303` — `decrease_batch_size()`/`increase_batch_size()` called non-existent methods on `DynamicBatchSizer` (runtime crash). Changed to `adjust_batch_size(delta=-1)`/`adjust_batch_size(delta=1)`.
 
 ### Changed
 - **All runtime paths now managed by `RuntimeDirectoryManager`** — 16 files with hardcoded paths + 20 files importing path constants from `utils.constants` migrated to RDM. `utils/constants.py` path constants deprecated in favor of `RuntimeDirectoryManager` (kept for backward compat and env-override)
