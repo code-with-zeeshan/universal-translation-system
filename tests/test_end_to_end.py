@@ -73,23 +73,24 @@ class TestEndToEndSmoke(unittest.TestCase):
 
     def _make_tiny_models(self):
         """Create minimal encoder and decoder for smoke test."""
-        from encoder.universal_encoder import UniversalEncoder
-        from decoder.universal_decoder import UniversalDecoder
+        from runtime.encoder.universal_encoder import UniversalEncoder
+        from runtime.cloud_decoder.decoder_core import OptimizedUniversalDecoder
         encoder = UniversalEncoder(
-            vocab_size=100,
-            d_model=32,
-            nhead=4,
-            num_encoder_layers=2,
-            dim_feedforward=64,
-            max_seq_length=64,
+            max_vocab_size=100,
+            hidden_dim=32,
+            num_layers=2,
+            num_heads=4,
+            max_positions=64,
+            dropout=0.1,
         )
-        decoder = UniversalDecoder(
+        decoder = OptimizedUniversalDecoder(
+            encoder_dim=32,
+            decoder_dim=32,
+            num_layers=2,
+            num_heads=4,
             vocab_size=100,
-            d_model=32,
-            nhead=4,
-            num_decoder_layers=2,
-            dim_feedforward=64,
-            max_seq_length=64,
+            max_length=64,
+            dropout=0.1,
         )
         return encoder, decoder
 
@@ -230,15 +231,17 @@ class TestEndToEndPipelineRun(unittest.TestCase):
     def test_tiny_training_loop(self):
         """Runs 1 training step and verifies loss decreases."""
         from torch import nn, optim
-        from encoder.universal_encoder import UniversalEncoder
-        from decoder.universal_decoder import UniversalDecoder
+        from runtime.encoder.universal_encoder import UniversalEncoder
+        from runtime.cloud_decoder.decoder_core import OptimizedUniversalDecoder
 
-        encoder = UniversalEncoder(vocab_size=100, d_model=32, nhead=4,
-                                   num_encoder_layers=1, dim_feedforward=64,
-                                   max_seq_length=32)
-        decoder = UniversalDecoder(vocab_size=100, d_model=32, nhead=4,
-                                   num_decoder_layers=1, dim_feedforward=64,
-                                   max_seq_length=32)
+        encoder = UniversalEncoder(
+            max_vocab_size=100, hidden_dim=32, num_layers=1,
+            num_heads=4, max_positions=32, dropout=0.1,
+        )
+        decoder = OptimizedUniversalDecoder(
+            encoder_dim=32, decoder_dim=32, num_layers=1,
+            num_heads=4, vocab_size=100, max_length=32, dropout=0.1,
+        )
 
         params = list(encoder.parameters()) + list(decoder.parameters())
         optimiser = optim.AdamW(params, lr=0.01)
