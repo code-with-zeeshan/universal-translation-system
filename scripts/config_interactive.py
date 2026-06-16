@@ -39,7 +39,7 @@ def load_yaml(path: Path) -> dict:
 
 def deep_merge(base: dict, override: dict) -> dict:
     result = {}
-    for key in set(base) | set(override):
+    for key in list(base) + [k for k in override if k not in base]:
         if key in override and key in base:
             if isinstance(base[key], dict) and isinstance(override[key], dict):
                 result[key] = deep_merge(base[key], override[key])
@@ -210,6 +210,96 @@ def section_data(config: dict) -> dict:
     return {"data": overrides} if overrides else {}
 
 
+# ── Section: Advanced Data Quality Settings ──────────────────────────
+
+def section_data_quality(config: dict) -> dict:
+    print("\n\u2500\u2500 Advanced Data Quality (ENTER = keep current) \u2500\u2500\n")
+    overrides = {}
+
+    td = config.get("data", {}).get("training_distribution", {})
+    print(f"  Current training_distribution: {len(td)} language pairs")
+    if get_bool("Adjust per-pair sentence counts?", False):
+        new_td = {}
+        print("  Enter count for each pair (blank = keep current, 0 = remove):")
+        for pair in sorted(td.keys()):
+            cur = td[pair]
+            val = get_input(f"    {pair}", str(cur))
+            if val:
+                try:
+                    n = int(val)
+                    if n > 0:
+                        new_td[pair] = n
+                except ValueError:
+                    new_td[pair] = cur
+        if new_td != td:
+            overrides.setdefault("data", {})["training_distribution"] = new_td
+
+    ap = config.get("data", {}).get("augmentation_pairs", [])
+    print(f"\n  Current augmentation_pairs: {len(ap)} pairs")
+    if get_bool("Change augmentation pairs?", False):
+        ap_str = get_input("Augmentation pairs (comma-sep, e.g. en-es,fr-de)", ",".join(ap))
+        new_ap = [p.strip() for p in ap_str.split(",") if p.strip()]
+        if new_ap != ap:
+            overrides.setdefault("data", {})["augmentation_pairs"] = new_ap
+
+    vs = config.get("data", {}).get("vocabulary_strategy", {})
+    print(f"\n  Vocab approach: {vs.get('approach', 'production')}")
+    if get_bool("Change vocab strategy?", False):
+        approach = get_input("  Vocab approach (production/research)", vs.get("approach", "production"))
+        if approach.lower() in ("production", "research"):
+            overrides.setdefault("data", {}).setdefault("vocabulary_strategy", {})["approach"] = approach.lower()
+        groups = vs.get("groups", {})
+        print(f"  Current vocab groups: {len(groups)} (latin, cjk, arabic, ...)")
+        if get_bool("Edit vocab groups?", False):
+            print("  Enter groups as: group_name: lang1,lang2,...  (blank line to finish):")
+            new_groups = {}
+            while True:
+                line = input("    ").strip()
+                if not line:
+                    break
+                if ":" in line:
+                    gname, langs = line.split(":", 1)
+                    new_groups[gname.strip()] = [l.strip() for l in langs.split(",") if l.strip()]
+            if new_groups:
+                overrides.setdefault("data", {}).setdefault("vocabulary_strategy", {})["groups"] = new_groups
+
+    ds = config.get("data_strategy", {})
+    print(f"\n  Current data_strategy priority_rules: high={len(ds.get('priority_rules', {}).get('high', []))} pairs")
+    if get_bool("Change data strategy priority rules?", False):
+        ds_override = {}
+        for tier in ("high", "medium", "low"):
+            cur = ds.get("priority_rules", {}).get(tier, [])
+            if get_bool(f"  Edit {tier} priority pairs?", False):
+                new_list = get_input(f"  {tier} pairs (comma-sep)", ",".join(cur))
+                ds_override.setdefault("priority_rules", {})[tier] = [p.strip() for p in new_list.split(",") if p.strip()]
+        ds_config = config.get("data_strategy", {})
+        sp = ds_config.get("source_preferences", {})
+        print("  Source preferences control which datasets are used per language group.")
+        if get_bool("Change source preferences?", False):
+            pref_override = {}
+            for group, sources in sp.items():
+                cur_str = ",".join(sources)
+                new_str = get_input(f"  {group} sources (comma-sep)", cur_str)
+                if new_str != cur_str:
+                    pref_override[group] = [s.strip() for s in new_str.split(",") if s.strip()]
+            if pref_override:
+                ds_override["source_preferences"] = pref_override
+        if ds_override:
+            overrides["data_strategy"] = ds_override
+
+    ct = config.get("pipeline", {}).get("comet_quality_threshold", 0.7)
+    new_ct = get_float("Comet quality threshold (0.0-1.0)", ct)
+    if abs(new_ct - ct) > 1e-10 and 0 <= new_ct <= 1:
+        overrides.setdefault("pipeline", {})["comet_quality_threshold"] = new_ct
+
+    ff = config.get("pipeline", {}).get("max_dynamic_ff_per_pair", 25000)
+    new_ff = get_int("Max false friends per pair", ff, 0)
+    if new_ff != ff:
+        overrides.setdefault("pipeline", {})["max_dynamic_ff_per_pair"] = new_ff
+
+    return overrides
+
+
 # ── Section: Review & Save ──────────────────────────────────────────
 
 def section_review(base: dict, merged: dict) -> Path | None:
@@ -345,20 +435,23 @@ def main():
     print()
     print("  This wizard helps you create a config based on base.yaml.")
     print("  Each section shows defaults; press ENTER to keep.")
-    print("  Sections: 1) Pipeline Stages  2) Training  3) Model  4) Data  5) Review")
+    print("  Sections: 1) Pipeline Stages  2) Training  3) Model  4) Data  5) Advanced Quality  6) Review")
     wait_enter()
 
     # Section 1: Pipeline Stages
+    clear_screen()
+    print("Section 1/6: Pipeline Stages\n")
     current_stages = merged.get("pipeline", {}).get("enabled_stages", [])
     enabled = run_stage_selector(current_stages)
     if enabled is None:
         print("Cancelled.")
         return 1
     merged.setdefault("pipeline", {})["enabled_stages"] = enabled
+    wait_enter()
 
     # Section 2: Training
     clear_screen()
-    print("Section 2/5: Training Settings\n")
+    print("Section 2/6: Training Settings\n")
     tr = section_training(merged)
     if tr:
         merged = deep_merge(merged, tr)
@@ -366,7 +459,7 @@ def main():
 
     # Section 3: Model
     clear_screen()
-    print("Section 3/5: Model Architecture\n")
+    print("Section 3/6: Model Architecture\n")
     mo = section_model(merged)
     if mo:
         merged = deep_merge(merged, mo)
@@ -374,13 +467,25 @@ def main():
 
     # Section 4: Data
     clear_screen()
-    print("Section 4/5: Data Settings\n")
+    print("Section 4/6: Data Settings\n")
     da = section_data(merged)
     if da:
         merged = deep_merge(merged, da)
     wait_enter()
 
-    # Section 5: Review & Save
+    # Section 4b: Advanced Data Quality (optional)
+    clear_screen()
+    print("Section 5/6: Advanced Data Quality Settings\n")
+    print("  This section controls data quality levers: training_distribution,")
+    print("  augmentation_pairs, vocab strategy groups, data strategy priorities,")
+    print("  comet threshold, and false friend limits.")
+    if get_bool("Configure advanced data quality settings?", True):
+        dq = section_data_quality(merged)
+        if dq:
+            merged = deep_merge(merged, dq)
+    wait_enter()
+
+    # Section 6: Review & Save
     result = section_review(base, merged)
     if result is None:
         print("Cancelled.")

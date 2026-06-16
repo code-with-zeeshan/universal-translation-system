@@ -214,6 +214,7 @@ pipeline:
   enabled_stages:
     - download_training
     - sample_filter
+    - augment
     - create_ready
     - validate
     - vocabulary
