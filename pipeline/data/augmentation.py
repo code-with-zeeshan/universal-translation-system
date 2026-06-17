@@ -37,14 +37,12 @@ except Exception:
         float16 = None
         float32 = None
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Set
+from typing import Dict, List, Tuple, Optional
 
 from tqdm import tqdm
 import numpy as np
-import json
 import logging
 import gc
-import random
 
 try:
     from sentence_transformers import SentenceTransformer, util

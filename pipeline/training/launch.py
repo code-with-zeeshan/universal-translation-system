@@ -19,8 +19,7 @@ import torch.multiprocessing as mp
 from pathlib import Path
 import logging
 import json
-import yaml
-from typing import Optional, Dict, Any, Tuple
+from typing import Any, Tuple
 import time
 from datetime import datetime
 
@@ -33,8 +32,8 @@ from utils.model_versioning import ModelVersion
 from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
 from config.schemas import RootConfig, load_config as load_pydantic_config
-from utils.constants import TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, BEST_MODEL_FILENAME, TEST_FINAL_FILENAME, EVALUATION_REPORT_FILENAME
-from utils.pipeline_checkpoint import PhaseCheckpoint, mark_stage_complete, is_stage_complete, invalidate_downstream, hash_config
+from utils.constants import BEST_MODEL_FILENAME, TEST_FINAL_FILENAME, EVALUATION_REPORT_FILENAME
+from utils.pipeline_checkpoint import PhaseCheckpoint, mark_stage_complete, invalidate_downstream, hash_config
 
 # Centralized logging for training
 setup_logging(log_dir=str(RuntimeDirectoryManager().logs_dir), log_level=os.environ.get("LOG_LEVEL", "INFO"))

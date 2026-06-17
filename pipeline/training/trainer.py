@@ -16,7 +16,6 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
 )
 
 import os
-import sys
 import time
 from datetime import timedelta
 import json
@@ -26,7 +25,6 @@ try:
 except ImportError:
     wandb = None
 from collections import defaultdict
-import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, Callable, List
 
@@ -47,8 +45,10 @@ from pipeline.training.memory import (
 from pipeline.training.utils import (
     BaseTrainer,
     check_convergence,
+    create_optimizer_with_param_groups,
+    calculate_gradient_norm,
+    get_training_diagnostics,
 )
-from utils.gpu_utils import optimize_gpu_memory
 from utils.resource_monitor import resource_monitor
 from utils.shutdown_handler import GracefulShutdown
 from config.schemas import RootConfig
@@ -56,20 +56,8 @@ from pipeline.training.quantization.pipeline import fake_quantize_tensor
 from utils.constants import EMERGENCY_CHECKPOINT_FILENAME, BEST_MODEL_FILENAME, TRAINING_REPORT_FILENAME
 from pipeline.training.health_monitor import TrainingHealthMonitor
 
-# Dataset imports
 # TemperatureSampler imported lazily inside _create_data_loader
-
-# Profiling (optional - use when needed)
 from pipeline.training.profiling import ProfileGuidedTrainer
-
-# Enhanced utilities
-from pipeline.training.utils import (
-    create_optimizer_with_param_groups,
-    calculate_gradient_norm,
-    get_training_diagnostics,
-    get_adaptive_gradient_clipping_value,
-    # ... other utilities as needed
-)
 
 # Import split modules
 from pipeline.training.hardware import HardwareProfile, find_free_port

@@ -36,6 +36,18 @@ All notable changes to the Universal Translation System will be documented in th
 - **`docs/ONBOARDING.md`**: Added data auto-resolve note to training section.
 
 ### Fixed
+- **R1 — RuntimeDirectoryManager(config) missing at 4 sites**: `pipeline/data/orchestrator.py:145`, `pipeline/data/augmentation.py:1369,2092`, `pipeline/data/downloader.py:710` — `RuntimeDirectoryManager()` called without `config`, ignoring user settings. Changed to `RuntimeDirectoryManager(config=config)`.
+- **R2 — high_resource_threshold too low for NLLB**: `config/base.yaml` — threshold set to 100k (100 KB), preventing NLLB backtranslation from being selected. Changed to 100M (100 MB).
+- **R3 — HF auto-upload uses deprecated HfFolder**: `pipeline/data/hub_sync.py:50` — `HfFolder.get_token()` removed in huggingface_hub >= 0.26. Changed to `huggingface_hub.get_token()`.
+- **R4 — Error log filenames reversed**: Section error log files named `errors_<section>.log` instead of `<section>_errors.log`. Renamed to match convention across all sections.
+- **R5 — Data logger name mismatch**: `pipeline/data/augmentation.py` — logger named `pipeline.data_augmentation` but code references `pipeline.data`. Changed to `pipeline.data`.
+- **H2 — BaseTrainer missing self.runtime_dirs**: `pipeline/training/trainer.py` — `BaseTrainer.__init__` didn't define `self.runtime_dirs`, causing AttributeError. Added `self.runtime_dirs = RuntimeDirectoryManager(config=config)`.
+- **L10 — semver import crashes in vocab validation**: `vocabulary/vocab_validation.py` — module-level `import semver` crashes if package not installed. Changed to lazy import inside the validation function with try/except fallback.
+- **C4 — _build_strategy hardcodes memory config**: `pipeline/training/trainer.py` — `_build_strategy` read `self.config.get('target_memory_gb', 24)` instead of `config.memory`. Changed to `self.config.memory.target_memory_gb`.
+- **C5 — Duplicate init_process_group in distributed path**: `pipeline/training/trainer.py` — `init_process_group` called both in `setup_environment` and `train_distributed_wrapper`. Removed duplicate from wrapper.
+- **M1 — TemperatureSampler incompatible with DistributedSampler**: `pipeline/training/trainer.py` — `TemperatureSampler` doesn't support distributed sharding. Falls back to `DistributedSampler` when world_size > 1.
+- **M4 — QAT runs every step instead of every 100**: `pipeline/training/trainer.py` — `fake_quantize_tensor` triggered on every forward pass. Changed to every 100th step.
+- **Dead code import cleanup**: Removed ~20 unused imports across `trainer.py` (sys, numpy, optimize_gpu_memory, get_adaptive_gradient_clipping_value), `launch.py` (yaml, Optional, Dict, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, is_stage_complete), `orchestrator.py` (DirectoryManager, STAGE_ORDER, TRAIN_FINAL_FILENAME), `augmentation.py` (Set, json, random). Merged duplicate `pipeline.training.utils` import in trainer.py.
 - **C1 — Data config erased on load**: `config/schemas.py:441` — `config_data['data'] = {}` overwrote all YAML data config (languages, training_distribution, augmentation_pairs). Changed to `config_data.setdefault('data', {})`.
 - **C3 — Batch probe crashes on GPU**: `pipeline/training/trainer.py:745` — `safe_sizes.index(found)` crashed when batch probe returned non-standard size (most GPUs). Changed to `max(i for i, s in enumerate(safe_sizes) if s <= found)`.
 - **C6 — String literal defaults in pipeline CLI**: `scripts/pipeline.py:306-307` — `--encoder-out`/`--decoder-out` defaults were literal Python expression strings, not evaluated paths. Changed to `default=None` with path resolution at call time.
