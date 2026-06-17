@@ -330,11 +330,11 @@ if __name__ == "__main__":
             dropout=0.1,
         )
         decoder = OptimizedUniversalDecoder(
-            encoder_dim=384,
-            decoder_dim=768,
+            encoder_dim=512,
+            decoder_dim=512,
             vocab_size=50000,
             num_layers=8,
-            num_heads=12,
+            num_heads=8,
             dropout=0.1,
         )
 

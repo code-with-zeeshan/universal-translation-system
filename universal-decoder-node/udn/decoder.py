@@ -51,7 +51,7 @@ class OptimizedUniversalDecoder(nn.Module):
     
     def __init__(
         self,
-        encoder_dim: int = 1024,
+        encoder_dim: int = 512,
         decoder_dim: int = 512,
         num_layers: int = 6,
         num_heads: int = 8,
@@ -758,7 +758,7 @@ class DecoderService:
                 # Create new model with parameters from config
                 logger.info("Creating new model")
                 self.model = OptimizedUniversalDecoder(
-                    encoder_dim=getattr(self.config.model, 'encoder_dim', 1024),
+                    encoder_dim=getattr(self.config.model, 'encoder_dim', 512),
                     decoder_dim=getattr(self.config.model, 'decoder_dim', 512),
                     num_layers=getattr(self.config.model, 'num_layers', 6),
                     num_heads=getattr(self.config.model, 'num_heads', 8),

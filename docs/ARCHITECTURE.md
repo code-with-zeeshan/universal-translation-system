@@ -34,16 +34,17 @@
 ## Model Specs
 
 | Property | Encoder | Decoder |
-|---|---|---|
+|---|---|---|---|
 | Parameters | 42.7M | 108.1M |
-| Hidden dim | 512 | 768 |
+| Hidden dim | 512 | 512 (unified) |
 | Layers | 6 | 8 |
-| Attention heads | 8 | 12 |
-| FFN | 2048 (SwiGLU) | 3072 (ReLU) |
+| Attention heads | 8 | 8 |
+| FFN | 2048 (SwiGLU) | 2048 (ReLU) |
 | Positional encoding | RoPE | Learned |
 | Normalization | Pre-LN | Pre-LN |
 | Vocab size | 32K (dynamic) | 32K (dynamic) |
 | Inference | On-device (CPU/GPU) | Cloud (GPU) |
+| Language ID | 20-lang embedding added per-token | — |
 
 ## Vocabulary System
 
@@ -71,7 +72,7 @@ Only needed packs are downloaded to the edge device. The embedding table dynamic
 ### Phase 2: LoRA Adapters (future languages)
 - Backbone frozen
 - LoRA adapters (r=16 encoder, r=64 decoder)
-- Target language adapters (768→96→768 per language)
+- Target language adapters (512→64→512 per language)
 - ~2-3 hours on L4
 
 ## Data Flow

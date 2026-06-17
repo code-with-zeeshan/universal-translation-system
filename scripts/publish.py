@@ -119,13 +119,14 @@ def export_onnx(encoder_path: Path, output_dir: Path, hidden_dim: int = 512):
         encoder.load_state_dict(torch.load(encoder_path, map_location=device))
         encoder.eval()
 
-        # Export
+        # Export with language ID input
         dummy_input = torch.randint(0, 100, (1, 64), device=device)
+        dummy_lang = "en"
         torch.onnx.export(
             encoder,
-            dummy_input,
+            (dummy_input, None, dummy_lang),
             onnx_path,
-            input_names=["input_ids"],
+            input_names=["input_ids", "attention_mask", "language"],
             output_names=["hidden_states"],
             dynamic_axes={"input_ids": {0: "batch", 1: "seq"}, "hidden_states": {0: "batch", 1: "seq"}},
             opset_version=17,

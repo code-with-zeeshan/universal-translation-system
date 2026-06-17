@@ -5,6 +5,9 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
+- **Language ID token** (`runtime/encoder/universal_encoder.py`): `nn.Embedding(20, hidden_dim)` prepends a per-language bias to all input token positions via `language` parameter in `forward()`. List of 20 supported languages (`en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, pl, uk, nl, id, sv, vi`). ONNX export updated with `language` input alongside `input_ids`/`attention_mask`.
+- **Early BLEU validation** (`pipeline/training/trainer.py`): `_evaluate_bleu()` method generates on a subset of the validation set and computes corpus BLEU using `sacrebleu`. Runs after epoch 1 in the training loop; score logged and stored in `training_history['bleu_scores']`.
+- **Auto-evolve vocab for low-resource pairs** (`pipeline/data/orchestrator.py`): After `_sample_and_filter_data`, pairs with <50% of `target_size` trigger `VocabularyEvolver.evolve_all_packs()` to expand the relevant script-group vocab packs with new subwords.
 - **HF Hub data sync** (`pipeline/data/hub_sync.py`): `upload_processed_data()` and `download_processed_data()` for syncing train/val data + vocab packs to/from HF Hub dataset repos. Auto-upload after data pipeline completes if `hub.auto_upload: true`; auto-download before training if data missing locally and `hub.auto_download: true`.
 - **Dual HF repo support** — `HubConfig.dataset_repo_id` (defaults to `code-with-zeeshan/UTS-Datasets`) for data+vocab sync, `HubConfig.model_repo_id` (defaults to `code-with-zeeshan/Universal-Translation-System`) for model publish. `hub:` section added to `config/base.yaml` with both defaults and `auto_upload`/`auto_download` flags.
 - **`--hub-repo-id` CLI flag** on `uts data --pipeline` and `uts train --full` (overrides config `hub.dataset_repo_id`)
@@ -14,6 +17,7 @@ All notable changes to the Universal Translation System will be documented in th
 - **HF Hub card files** at `/home/user/hf_upload/`: `model_readme.md` + `model_gitattributes` for model repo, `dataset_readme.md` + `dataset_gitattributes` for dataset repo.
 
 ### Changed
+- **Encoder/decoder dimension unified to 512** (`config/base.yaml`): `decoder_dim: 768→512`, `decoder_heads: 12→8` (head_dim stays 64). All runtime defaults (`decoder_core.py`, `decoder_server.py`, `udn/decoder.py`, `udn/config.py`) updated from `encoder_dim=1024`/`decoder_dim=512` to both 512. Bootstrap defaults (`bootstrap.py`, `scripts/pipeline.py`) updated. `encoder_adapter` becomes identity `512→512` — fewer params, no quality loss.
 - **`scripts/data_pipeline_wizard.py`**: Refactored from standalone TUI implementation to thin CLI wrapper that imports stage definitions from `_wizard_shared.py`.
 - **`scripts/config_interactive.py`**: Stage definitions sourced from `_wizard_shared.py` instead of local tuple (was drifting from data pipeline wizard).
 - **`docs/ONBOARDING.md`**: Added `uts config` section between vocab and train workflow steps; marked `setup --config-wizard` as legacy; added `--hub-repo-id` flags to data/train command tables.

@@ -28,7 +28,7 @@ except ImportError:
 from collections import defaultdict
 import numpy as np
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple, Callable
+from typing import Optional, Dict, Any, Tuple, Callable, List
 
 
 def _worker_init_fn(worker_id):
@@ -973,6 +973,15 @@ class IntelligentTrainer(BaseTrainer):
             # Log metrics
             self._log_metrics(epoch, train_metrics, val_metrics)
             
+            # Early BLEU validation after first epoch
+            if epoch == 0:
+                try:
+                    bleu_metrics = self._evaluate_bleu(num_batches=3)
+                    if bleu_metrics.get('bleu', 0) > 0:
+                        self.training_history.setdefault('bleu_scores', []).append(bleu_metrics['bleu'])
+                except Exception as e:
+                    logger.warning(f"⚠️ Early BLEU evaluation skipped: {e}")
+
             # Save checkpoint
             if val_metrics['loss'] < self.best_val_loss:
                 self.best_val_loss = val_metrics['loss']
@@ -1172,6 +1181,77 @@ class IntelligentTrainer(BaseTrainer):
             'batches': num_batches
         }
     
+    def _evaluate_bleu(self, num_batches: int = 5) -> Dict[str, float]:
+        """Compute BLEU on a subset of validation data after epoch 1."""
+        import sacrebleu
+        from runtime.cloud_decoder.decoder_core import decode_tokens_to_text
+        from runtime.vocabulary.manager import UnifiedVocabularyManager, VocabularyMode
+
+        if not hasattr(self, '_bleu_vocab_mgr'):
+            self._bleu_vocab_mgr = UnifiedVocabularyManager(
+                config=self.config,
+                vocab_dir=str(self.runtime_dirs.vocab_dir),
+                mode=VocabularyMode.OPTIMIZED
+            )
+        vocab_mgr = self._bleu_vocab_mgr
+
+        self.encoder.eval()
+        self.decoder.eval()
+
+        val_loader = self._create_val_loader()
+        references: List[str] = []
+        hypotheses: List[str] = []
+
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(val_loader):
+                if batch_idx >= num_batches:
+                    break
+                batch = self._prepare_batch(batch)
+                source_ids = batch['source_ids']
+                source_mask = batch['source_mask']
+                target_ids = batch['target_ids']
+
+                encoder_out = self.encoder(
+                    source_ids,
+                    attention_mask=source_mask,
+                )
+
+                for i in range(source_ids.size(0)):
+                    meta = batch.get('metadata', [{}])[i] if isinstance(batch.get('metadata'), list) else {}
+                    src_lang = meta.get('source_lang', 'en') if isinstance(meta, dict) else 'en'
+                    tgt_lang = meta.get('target_lang', 'en') if isinstance(meta, dict) else 'en'
+
+                    enc_hidden = encoder_out[i:i+1]
+                    enc_mask = source_mask[i:i+1]
+
+                    try:
+                        vocab_pack = vocab_mgr.get_vocab_for_pair(src_lang, tgt_lang)
+                        target_lang_id = vocab_pack.getTokenId(f"<{tgt_lang}>")
+                    except Exception:
+                        target_lang_id = 3
+
+                    output_ids, _ = self.decoder.generate(
+                        encoder_hidden_states=enc_hidden,
+                        encoder_attention_mask=enc_mask,
+                        target_lang_id=target_lang_id,
+                        max_length=64,
+                        temperature=0.0,
+                        top_k=1,
+                    )
+
+                    ref_ids = target_ids[i].cpu().numpy()
+                    hyp_ids = output_ids[0].cpu().numpy()
+
+                    references.append(decode_tokens_to_text(ref_ids, vocab_pack))
+                    hypotheses.append(decode_tokens_to_text(hyp_ids, vocab_pack))
+
+        if len(references) < 2:
+            return {'bleu': 0.0}
+
+        bleu = sacrebleu.corpus_bleu(hypotheses, [references]).score
+        logger.info(f"📊 Early BLEU (epoch {self.current_epoch}): {bleu:.2f} on {len(references)} samples")
+        return {'bleu': bleu}
+
     def _compute_loss(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """Compute loss for a batch using shared BaseTrainer forward pass"""
         return self._forward_pass(batch)

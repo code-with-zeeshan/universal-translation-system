@@ -23,6 +23,7 @@ from pipeline.data.backtranslation import WikipediaBacktranslator
 from pipeline.data.distillation import KnowledgeDistillator
 from pipeline.connectors.data import PipelineConnector
 from pipeline.connectors.vocabulary import VocabularyConnector
+from pipeline.vocabulary.evolve import VocabularyEvolver
 from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME, TRAIN_FINAL_FILENAME
 
 logger = logging.getLogger(__name__)
@@ -632,7 +633,33 @@ class UnifiedDataPipeline:
             
             self.state.total_sentences += total_sampled
             span.set_attribute("sampled.total", total_sampled)
-    
+
+            # Auto-evolve vocab for low-resource pairs (<50% of target size)
+            low_resource_pairs = []
+            for pair_str, target_size in distribution.items():
+                sampled_file = self.dirs['sampled'] / f"{pair_str}_sampled.txt"
+                if sampled_file.exists():
+                    line_count = 0
+                    with open(sampled_file) as _f:
+                        for _ in _f:
+                            line_count += 1
+                    if line_count < target_size * 0.5:
+                        low_resource_pairs.append((pair_str, line_count, target_size))
+
+            if low_resource_pairs:
+                for pair_str, actual, target in low_resource_pairs:
+                    self.logger.warning(
+                        f"⚠️ Low-resource pair {pair_str}: {actual:,}/{target:,} "
+                        f"({actual/target*100:.0f}% of target) — triggering vocab evolution"
+                    )
+                try:
+                    evolver = VocabularyEvolver(vocab_dir=str(self.dirs.get('vocab', self.dirs['base'] / 'vocab')))
+                    results = evolver.evolve_all_packs()
+                    if results:
+                        self.logger.info(f"✅ Evolved {len(results)} vocab packs with new subwords: {results}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Vocab evolution skipped (no existing packs yet): {e}")
+
     async def _augment_data(self):
         """Augment with synthetic data — false friends, idioms, tone, backtranslation"""
         with tracer.start_as_current_span("augment_data") as span:

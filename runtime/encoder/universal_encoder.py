@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import os
 import logging
 from opentelemetry import trace
@@ -15,6 +15,13 @@ from .custom_layers import RotaryEmbedding, CustomTransformerEncoderLayer
 tracer = trace.get_tracer(__name__)
 logger = logging.getLogger(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
+
+LANGUAGE_CODES: List[str] = [
+    "en", "es", "fr", "de", "zh",
+    "ja", "ko", "ar", "hi", "ru",
+    "pt", "it", "tr", "th", "pl",
+    "uk", "nl", "id", "sv", "vi",
+]
 
 class UniversalEncoder(nn.Module):
     """
@@ -34,7 +41,8 @@ class UniversalEncoder(nn.Module):
         num_heads: int = 16,
         max_positions: int = 2048, # Increased for better RoPE generalization (eg. from 128 to 2024) 
         dropout: float = 0.1,
-        device: torch.device = None
+        device: torch.device = None,
+        num_languages: int = 20,
     ):
         with tracer.start_as_current_span("UniversalEncoder.__init__") as span:
             span.set_attribute("model_version", MODEL_VERSION)
@@ -47,6 +55,10 @@ class UniversalEncoder(nn.Module):
             
             # Embeddings 
             self.embedding_layer = nn.Embedding(max_vocab_size, hidden_dim)
+
+            # Language ID embedding: added to all token positions as a per-language bias
+            self.language_embedding = nn.Embedding(num_languages, hidden_dim)
+            self._lang_to_idx = {code: i for i, code in enumerate(LANGUAGE_CODES[:num_languages])}
 
             # --- REMOVED ---
             # self.position_embedding = nn.Embedding(max_positions, hidden_dim)
@@ -126,6 +138,19 @@ class UniversalEncoder(nn.Module):
                 batch_size, seq_len = input_ids.shape
                 hidden_states = self.embedding_layer(input_ids)
                 hidden_states = self.dropout(hidden_states)
+
+            # Add per-token language ID bias so the encoder knows the source language
+            if language is not None:
+                if isinstance(language, str):
+                    lang_ids = torch.full((batch_size,), self._lang_to_idx.get(language, 0),
+                                         device=hidden_states.device, dtype=torch.long)
+                else:
+                    lang_ids = torch.tensor(
+                        [self._lang_to_idx.get(l, 0) for l in language],
+                        device=hidden_states.device, dtype=torch.long
+                    )
+                lang_bias = self.language_embedding(lang_ids).unsqueeze(1)  # [B, 1, H]
+                hidden_states = hidden_states + lang_bias
             
             # Get the rotary frequencies for the current sequence length
             freqs_cis = self.rotary_embeddings(seq_len)

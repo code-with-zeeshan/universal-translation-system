@@ -8,7 +8,7 @@ import os
 @dataclass
 class ModelConfig:
     """Model configuration"""
-    encoder_dim: int = 1024
+    encoder_dim: int = 512
     decoder_dim: int = 512
     num_layers: int = 6
     num_heads: int = 8
@@ -73,7 +73,7 @@ def load_config(config_path: str) -> DecoderConfig:
     
     # Create model config
     model_config = ModelConfig(
-        encoder_dim=model_cfg.get('encoder_dim', 1024),
+        encoder_dim=model_cfg.get('encoder_dim', 512),
         decoder_dim=model_cfg.get('decoder_dim', 512),
         num_layers=model_cfg.get('num_layers', 6),
         num_heads=model_cfg.get('num_heads', 8),

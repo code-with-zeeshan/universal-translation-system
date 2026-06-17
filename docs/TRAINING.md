@@ -120,9 +120,9 @@ model:
   hidden_dim: 512
   num_layers: 6
   num_heads: 8
-  decoder_dim: 768
+  decoder_dim: 512
   decoder_layers: 8
-  decoder_heads: 12
+  decoder_heads: 8
 
 training:
   use_lora: false

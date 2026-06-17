@@ -23,7 +23,7 @@ If you haven't yet, run `./uts` — it organizes every tool into workflow groups
 | Component | Description | Location |
 |---|---|---|
 | **Edge Encoder** | 42.7M params, 512d/6L/8H, on-device | `runtime/encoder/` |
-| **Cloud Decoder** | 108.1M params, 768d/8L/12H, cloud | `runtime/cloud_decoder/` |
+| **Cloud Decoder** | 108.1M params, 512d/8L/8H, cloud | `runtime/cloud_decoder/` |
 | **Vocabulary** | 6 per-script SentencePiece packs | `vocabulary/` |
 | **Data Pipeline** | Multi-stage download → process | `pipeline/data/` |
 | **Coordinator** | Load-balances decoder pool | `runtime/coordinator/` |
@@ -189,7 +189,7 @@ model:
   max_vocab_size: 32000          # Embedding table size
   hidden_dim: 512                 # Encoder dimension
   num_layers: 6                   # Encoder layers
-  decoder_dim: 768                # Decoder dimension
+  decoder_dim: 512                # Decoder dimension (unified with encoder)
   decoder_layers: 8               # Decoder layers
 
 training:

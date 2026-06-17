@@ -175,9 +175,9 @@ def section_model(config: dict) -> dict:
         ("hidden_dim", "Hidden dimension", 512, lambda d: get_int(label, d, 64)),
         ("num_layers", "Encoder layers", 6, lambda d: get_int(label, d, 1)),
         ("num_heads", "Encoder heads", 8, lambda d: get_int(label, d, 1)),
-        ("decoder_dim", "Decoder dimension", 768, lambda d: get_int(label, d, 64)),
+        ("decoder_dim", "Decoder dimension", 512, lambda d: get_int(label, d, 64)),
         ("decoder_layers", "Decoder layers", 8, lambda d: get_int(label, d, 1)),
-        ("decoder_heads", "Decoder heads", 12, lambda d: get_int(label, d, 1)),
+        ("decoder_heads", "Decoder heads", 8, lambda d: get_int(label, d, 1)),
     ]:
         val = getter(m.get(field, default))
         if val != m.get(field, default):

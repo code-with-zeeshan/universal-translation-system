@@ -74,7 +74,7 @@ class OptimizedUniversalDecoder(nn.Module):
 
     def __init__(
         self,
-        encoder_dim: int = 1024,
+        encoder_dim: int = 512,
         decoder_dim: int = 512,
         num_layers: int = 6,
         num_heads: int = 8,

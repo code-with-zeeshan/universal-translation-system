@@ -83,7 +83,7 @@ class CloudDecoderLitAPI(ls.LitAPI):
         if self.model_path and os.path.exists(self.model_path):
             ckpt = torch.load(self.model_path, map_location=self.device)
             self.model = OptimizedUniversalDecoder(
-                encoder_dim=ckpt.get("encoder_dim", 1024),
+                encoder_dim=ckpt.get("encoder_dim", 512),
                 decoder_dim=ckpt.get("decoder_dim", 512),
                 num_layers=ckpt.get("num_layers", 6),
                 num_heads=ckpt.get("num_heads", 8),

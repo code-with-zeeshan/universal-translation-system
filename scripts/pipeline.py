@@ -123,7 +123,7 @@ def run_bootstrap(
     decoder_model: str = 'facebook/mbart-large-50',
     encoder_out: str | None = None,
     decoder_out: str | None = None,
-    target_hidden_dim: int = 1024,
+    target_hidden_dim: int = 512,
     device: str = 'auto',
 ) -> None:
     """Bootstrap encoder and decoder from pretrained sources."""

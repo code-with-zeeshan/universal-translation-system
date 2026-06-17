@@ -73,7 +73,7 @@ class DecoderLitAPI(ls.LitAPI):
             logger.info(f"Model loaded from {self.model_path}")
         else:
             self.model = OptimizedUniversalDecoder(
-                encoder_dim=getattr(config.model, 'encoder_dim', 1024),
+                encoder_dim=getattr(config.model, 'encoder_dim', 512),
                 decoder_dim=getattr(config.model, 'decoder_dim', 512),
                 num_layers=getattr(config.model, 'num_layers', 6),
                 num_heads=getattr(config.model, 'num_heads', 8),
@@ -95,7 +95,7 @@ class DecoderLitAPI(ls.LitAPI):
     def _safe_load(self, path: str):
         ckpt = torch.load(path, map_location=self.device)
         model = OptimizedUniversalDecoder(
-            encoder_dim=ckpt.get("encoder_dim", 1024),
+            encoder_dim=ckpt.get("encoder_dim", 512),
             decoder_dim=ckpt.get("decoder_dim", 512),
             num_layers=ckpt.get("num_layers", 6),
             num_heads=ckpt.get("num_heads", 8),

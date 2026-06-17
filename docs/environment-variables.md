@@ -154,7 +154,7 @@ All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms:
 
 | Variable | Default | Description |
 |---|---|---|
-| `EMBEDDING_DIM` | `768` | Embedding dimension |
+| `EMBEDDING_DIM` | `512` | Embedding dimension (unified encoder/decoder) |
 | `MAX_SEQUENCE_LENGTH` | `512` | Max input sequence length |
 | `ENCODER_DEVICE` | `auto` | Encoder device (`cpu`, `cuda`, `mps`, `auto`) |
 | `DECODER_DEVICE` | `auto` | Decoder device (`cpu`, `cuda`, `auto`) |

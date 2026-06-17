@@ -20,7 +20,7 @@ def test_decoder_forward():
     
     batch_size = 2
     seq_len = 10
-    encoder_dim = 1024
+    encoder_dim = 512
     
     # Create dummy inputs
     decoder_input_ids = torch.randint(0, 1000, (batch_size, seq_len))
