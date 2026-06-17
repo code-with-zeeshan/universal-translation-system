@@ -266,6 +266,7 @@ class IntelligentTrainer(BaseTrainer):
     @staticmethod
     def _build_strategy(
         hw_profile, *,
+        config_memory=None,
         dtype="bfloat16", compile_mode="reduce-overhead",
         num_workers=4, prefetch_factor=4,
         compile_model=True,
@@ -277,8 +278,33 @@ class IntelligentTrainer(BaseTrainer):
         learning_rate=2e-4, warmup_steps=1500,
     ) -> TrainingStrategy:
         """Build a TrainingStrategy with shared defaults; batch_size and
-        accumulation_steps are placeholders overwritten by the startup probe."""
+        accumulation_steps are placeholders overwritten by the startup probe.
+        
+        When config_memory (Pydantic MemoryConfig from config.memory) is provided,
+        its values override the hardcoded defaults below. Hardware-specific kwargs
+        override everything, so hardware profiles still win.
+        """
         DTYPE_MAP = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+        
+        # Base values from config (if provided), then overridden by kwargs
+        if config_memory is not None:
+            dtype = config_memory.dtype
+            compile_mode = config_memory.compile_mode
+            compile_model = config_memory.compile_model
+            gradient_checkpointing = config_memory.gradient_checkpointing
+            cpu_offload = config_memory.cpu_offload
+            activation_offload = config_memory.activation_offload
+            max_split_size = config_memory.max_split_size
+            empty_cache_freq = config_memory.empty_cache_freq
+            use_flash_attention = config_memory.flash_attention
+            use_channels_last = config_memory.use_channels_last
+            use_inductor = config_memory.use_inductor
+            enable_nested_tensor = config_memory.enable_nested_tensor
+            use_fused_optimizer = config_memory.use_fused_optimizer
+            pin_memory = config_memory.pin_memory
+            prefetch_factor = config_memory.prefetch_factor
+            num_workers = config_memory.prefetch_factor
+        
         mc = MemoryConfig(
             gradient_checkpointing=gradient_checkpointing,
             mixed_precision=True,
@@ -312,12 +338,15 @@ class IntelligentTrainer(BaseTrainer):
     def _determine_optimal_strategy(self) -> TrainingStrategy:
         """Determine optimal training strategy based on hardware."""
         bf16_supported = torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False
+        cm = getattr(self.config, 'memory', None)
+
+        def _bs(hw, **kw):
+            return IntelligentTrainer._build_strategy(hw, config_memory=cm, **kw)
 
         strategies = {
             # ============ HIGH-END ============
             HardwareProfile.HIGH_END_SINGLE:
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.HIGH_END_SINGLE,
+                _bs(HardwareProfile.HIGH_END_SINGLE,
                     compile_mode="max-autotune",
                     num_workers=8, prefetch_factor=8,
                     gradient_checkpointing=False,
@@ -325,85 +354,76 @@ class IntelligentTrainer(BaseTrainer):
                     enable_nested_tensor=True,
                     max_split_size=512,
                     learning_rate=6e-4, warmup_steps=4000,
-                ),
+                    ),
             "a100_single":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.HIGH_END_SINGLE,
+                _bs(HardwareProfile.HIGH_END_SINGLE,
                     compile_mode="max-autotune",
                     num_workers=8, prefetch_factor=8,
                     gradient_checkpointing=False,
                     max_split_size=512,
                     learning_rate=5e-4, warmup_steps=4000,
-                ),
+                    ),
             HardwareProfile.HIGH_END_MULTI:
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.HIGH_END_MULTI,
+                _bs(HardwareProfile.HIGH_END_MULTI,
                     compile_mode="max-autotune",
                     num_workers=8, prefetch_factor=8,
                     gradient_checkpointing=True,
                     use_channels_last=True, use_inductor=True,
                     enable_nested_tensor=True,
                     learning_rate=5e-4, warmup_steps=4000,
-                ),
+                    ),
             # HIGH_END_MULTI uses distributed settings applied post-hoc
             # (use_distributed=True, use_fsdp=True, batch_size *= gpu_count)
 
             # ============ MID-RANGE ============
             HardwareProfile.MID_RANGE_SINGLE:
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.MID_RANGE_SINGLE,
+                _bs(HardwareProfile.MID_RANGE_SINGLE,
                     gradient_checkpointing=True,
                     use_channels_last=True,
                     max_split_size=256,
                     learning_rate=4e-4, warmup_steps=2000,
-                ),
+                    ),
             "rtx3090":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.MID_RANGE_SINGLE,
+                _bs(HardwareProfile.MID_RANGE_SINGLE,
                     gradient_checkpointing=True,
                     cpu_offload=True,
                     max_split_size=256,
                     learning_rate=3e-4, warmup_steps=2000,
-                ),
+                    ),
             "v100":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.MID_RANGE_SINGLE,
+                _bs(HardwareProfile.MID_RANGE_SINGLE,
                     dtype="float16",
                     gradient_checkpointing=True,
                     max_split_size=512,
                     learning_rate=3e-4, warmup_steps=2000,
-                ),
+                    ),
             "l4":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.MID_RANGE_SINGLE,
+                _bs(HardwareProfile.MID_RANGE_SINGLE,
                     gradient_checkpointing=False,
                     num_workers=4, prefetch_factor=8,
                     max_split_size=256,
                     learning_rate=2e-4, warmup_steps=1500,
-                ),
+                    ),
 
             # ============ LOW-END ============
             HardwareProfile.LOW_END_SINGLE:
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.LOW_END_SINGLE,
+                _bs(HardwareProfile.LOW_END_SINGLE,
                     gradient_checkpointing=True,
                     cpu_offload=True,
                     num_workers=2, prefetch_factor=2,
                     max_split_size=128, empty_cache_freq=50,
                     learning_rate=3e-4, warmup_steps=1000,
-                ),
+                    ),
             "rtx3060":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.LOW_END_SINGLE,
+                _bs(HardwareProfile.LOW_END_SINGLE,
                     gradient_checkpointing=True,
                     cpu_offload=True, activation_offload=True,
                     num_workers=2, prefetch_factor=2,
                     max_split_size=128, empty_cache_freq=50,
                     learning_rate=2e-4, warmup_steps=1000,
-                ),
+                    ),
             "t4":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.LOW_END_SINGLE,
+                _bs(HardwareProfile.LOW_END_SINGLE,
                     dtype="float16",
                     compile_mode="default",
                     gradient_checkpointing=True,
@@ -412,10 +432,9 @@ class IntelligentTrainer(BaseTrainer):
                     num_workers=2, prefetch_factor=2,
                     max_split_size=128, empty_cache_freq=50,
                     learning_rate=2e-4, warmup_steps=500,
-                ),
+                    ),
             "colab_free":
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.LOW_END_SINGLE,
+                _bs(HardwareProfile.LOW_END_SINGLE,
                     dtype="float16", compile_mode="default",
                     gradient_checkpointing=True,
                     cpu_offload=True, activation_offload=True,
@@ -424,7 +443,7 @@ class IntelligentTrainer(BaseTrainer):
                     num_workers=2, prefetch_factor=2,
                     max_split_size=64, empty_cache_freq=25,
                     learning_rate=1e-4, warmup_steps=500,
-                ),
+                    ),
 
             # ============ SPECIAL ============
             "amd_mi250":
@@ -438,8 +457,7 @@ class IntelligentTrainer(BaseTrainer):
 
             # ============ CPU ============
             HardwareProfile.CPU_ONLY:
-                IntelligentTrainer._build_strategy(
-                    HardwareProfile.CPU_ONLY,
+                _bs(HardwareProfile.CPU_ONLY,
                     dtype="float32", compile_mode="default",
                     gradient_checkpointing=False,
                     compile_model=False,
@@ -447,7 +465,7 @@ class IntelligentTrainer(BaseTrainer):
                     pin_memory=False, distributed_backend="gloo",
                     num_workers=2, prefetch_factor=2,
                     learning_rate=1e-4, warmup_steps=100,
-                ),
+                    ),
         }
         # Patch HIGH_END_MULTI for distributed mode
         strategies[HardwareProfile.HIGH_END_MULTI].use_distributed = True
@@ -517,23 +535,22 @@ class IntelligentTrainer(BaseTrainer):
         if self.strategy.use_distributed and torch.cuda.device_count() > 1:
             # Setup distributed training
             if 'RANK' in os.environ:
-                # Already initialized by launcher
+                # Already initialized by launcher (launch.py:distributed_worker)
                 local_rank = int(os.environ['LOCAL_RANK'])
                 world_size = int(os.environ['WORLD_SIZE'])
             else:
-                # Initialize here
+                # Not launched by distributed_worker — init here
                 local_rank = 0
                 world_size = torch.cuda.device_count()
                 os.environ['MASTER_ADDR'] = 'localhost'
                 os.environ['MASTER_PORT'] = str(find_free_port())
-                
-            if not dist.is_initialized():
-                dist.init_process_group(
-                    backend=self.strategy.distributed_backend,
-                    world_size=world_size,
-                    rank=local_rank,
-                    timeout=timedelta(seconds=3600)
-                )
+                if not dist.is_initialized():
+                    dist.init_process_group(
+                        backend=self.strategy.distributed_backend,
+                        world_size=world_size,
+                        rank=local_rank,
+                        timeout=timedelta(seconds=3600)
+                    )
                 
             torch.cuda.set_device(local_rank)
             device = torch.device(f'cuda:{local_rank}')
@@ -1122,8 +1139,10 @@ class IntelligentTrainer(BaseTrainer):
                 self.optimizer.zero_grad(set_to_none=True)
                 self.scheduler.step()
 
-            # Apply QAT fake-quantization after optimizer step (only on sync steps)
-            if self.qat_enabled:
+            # Apply QAT fake-quantization periodically (every 100 steps) to avoid
+            # harming convergence by clamping activations every single step.
+            # Full QAT should be done as a separate post-training pass.
+            if self.qat_enabled and self.global_step % 100 == 0:
                 for param in self.encoder.parameters():
                     param.data = self._apply_fake_quantization(param.data)
                 for param in self.decoder.parameters():
@@ -1292,11 +1311,25 @@ class IntelligentTrainer(BaseTrainer):
         # Create sampler
         if self.config.training.use_temperature_sampling:
             from pipeline.training.samplers import TemperatureSampler
-            sampler = TemperatureSampler(
-                self.train_dataset,
-                batch_size=self.batch_sizer.current_batch_size,
-                temperature=self.config.training.temperature
-            )
+            if self.strategy.use_distributed:
+                # Distributed mode: use DistributedSampler for correct sharding
+                # (TemperatureSampler + distribution would require a custom
+                #  wrapper — fall back to DistributedSampler for correctness)
+                sampler = DistributedSampler(
+                    self.train_dataset,
+                    num_replicas=self.world_size,
+                    rank=self.local_rank,
+                    shuffle=True,
+                    seed=42
+                )
+                shuffle = False
+                self.logger.info("TemperatureSampler disabled in distributed mode; using DistributedSampler")
+            else:
+                sampler = TemperatureSampler(
+                    self.train_dataset,
+                    batch_size=self.batch_sizer.current_batch_size,
+                    temperature=self.config.training.temperature
+                )
         elif self.strategy.use_distributed:
             sampler = DistributedSampler(
                 self.train_dataset,

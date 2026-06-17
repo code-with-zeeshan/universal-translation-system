@@ -51,11 +51,12 @@ class ModelConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    """Schema for memory optimization settings."""
+    """Schema for memory optimization settings (source of truth for trainer)."""
     mixed_precision: bool = True
     gradient_checkpointing: bool = True
     cpu_offload: bool = False
     activation_checkpointing: bool = True
+    activation_offload: bool = False
     compile_model: bool = True
     compile_mode: str = "reduce-overhead"
     flash_attention: bool = True
@@ -63,6 +64,15 @@ class MemoryConfig(BaseModel):
     use_channels_last: bool = False
     max_split_size: int = 512
     empty_cache_freq: int = 100
+    dynamic_batch_size: bool = True
+    pin_memory: bool = True
+    persistent_workers: bool = True
+    prefetch_factor: int = 4
+    use_fused_optimizer: bool = True
+    enable_nested_tensor: bool = True
+    use_inductor: bool = True
+    profile_memory: bool = False
+    use_safetensors: bool = True
 
     class Config:
         extra = "allow"
