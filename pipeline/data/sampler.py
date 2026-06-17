@@ -339,16 +339,44 @@ class SmartDataSampler:
         return written_count
     
     @staticmethod
-    def _has_cjk(text: str) -> bool:
-        """Check if text contains CJK or Thai characters."""
-        return bool(re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u0e00-\u0e7f]', text))
+    def _has_no_word_boundaries(text: str) -> bool:
+        """Check if text uses a script without word-boundary spaces (CJK, Thai, Lao, etc.)."""
+        return bool(re.search(
+            r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff'  # CJK Unified
+            r'\uac00-\ud7af'                              # Korean Hangul
+            r'\u0e00-\u0e7f'                              # Thai
+            r'\u0e80-\u0eff'                              # Lao
+            r'\u1000-\u109f'                              # Myanmar (Burmese)
+            r'\u1780-\u17ff'                              # Khmer
+            r'\u0f00-\u0fff'                              # Tibetan
+            r'\u1200-\u137f'                              # Ethiopic (Amharic, Ge'ez)
+            r'\u1c00-\u1c4f'                              # Lepcha
+            r'\ua000-\ua4cf'                              # Yi
+            r'\u1400-\u167f'                              # Unified Canadian Aboriginal
+            r'\u2c00-\u2c5f'                              # Glagolitic
+            r'\u0370-\u03ff\u1f00-\u1fff'                 # Greek (polytonic, no spaces)
+            r'\u0590-\u05ff'                              # Hebrew
+            r'\u0600-\u06ff'                              # Arabic (cursive, variable width)
+            r'\u0900-\u097f'                              # Devanagari (Hindi, Sanskrit)
+            r'\u0980-\u09ff'                              # Bengali
+            r'\u0a00-\u0a7f'                              # Gurmukhi
+            r'\u0a80-\u0aff'                              # Gujarati
+            r'\u0b00-\u0b7f'                              # Oriya
+            r'\u0b80-\u0bff'                              # Tamil
+            r'\u0c00-\u0c7f'                              # Telugu
+            r'\u0c80-\u0cff'                              # Kannada
+            r'\u0d00-\u0d7f'                              # Malayalam
+            r'\u0d80-\u0dff'                              # Sinhala
+            r'\u0e00-\u0e7f'                              # Thai (dup for clarity)
+            r']', text))
 
     @staticmethod
     def _script_aware_len(text: str) -> int:
-        """Word count for Latin text, character count for CJK/Thai (which lacks word boundaries)."""
-        if SmartDataSampler._has_cjk(text):
+        """Word count for Latin-like scripts, character count for scripts lacking word boundaries."""
+        if SmartDataSampler._has_no_word_boundaries(text):
             return len(text)
-        return len(text.split())
+        words = text.split()
+        return len(words) if words else len(text)
 
     def is_high_quality(self, source: str, target: str) -> bool:
         """Check if sentence pair meets all quality criteria"""
@@ -364,11 +392,11 @@ class SmartDataSampler:
         return 5 <= source_len <= 50 and 5 <= target_len <= 50
     
     def filter_ratio(self, source: str, target: str) -> bool:
-        """Filter by character length ratio (looser bounds for CJK/Thai pairs)."""
+        """Filter by character length ratio (looser bounds for non-Latin scripts)."""
         if len(target) == 0:
             return False
         ratio = len(source) / len(target)
-        if self._has_cjk(source) or self._has_cjk(target):
+        if self._has_no_word_boundaries(source) or self._has_no_word_boundaries(target):
             return 0.25 <= ratio <= 4.0
         return 0.5 <= ratio <= 2.0
     
