@@ -140,8 +140,9 @@ cloud_decoder/models/
 cloud_decoder/vocabs/
 cloud_decoder/logs/
 
-# opencode config
+# opencode config & context
 .opencode/
+AGENTS.md
 
 # Runtime app config directory
 .universaltranslationsystem/
