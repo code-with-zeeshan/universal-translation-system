@@ -2,10 +2,26 @@ from utils.common_utils import RuntimeDirectoryManager
 # utils/logging_config.py
 import logging
 import logging.config
+import logging.handlers
 import os
 from pathlib import Path
 import sys
 from typing import Optional
+
+
+class _LazyDirFileHandler(logging.handlers.RotatingFileHandler):
+    """RotatingFileHandler that lazily creates parent directories on first emit.
+    
+    Unlike RotatingFileHandler, this does NOT require the log directory to
+    exist at configuration time. The directory is created when the first
+    log message is written to this handler.
+    """
+    def __init__(self, filename, mode='a', maxBytes=0, backupCount=0, encoding=None):
+        super().__init__(filename, mode, maxBytes, backupCount, encoding, delay=True)
+
+    def _open(self):
+        Path(self.baseFilename).parent.mkdir(parents=True, exist_ok=True)
+        return super()._open()
 
 # Ensure standard logs folder structure exists
 try:
@@ -145,14 +161,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
     _logging_initialized = True
     if log_dir is None:
         log_dir = str(RuntimeDirectoryManager().logs_dir)
-    # Create log directory and standard sections
     Path(log_dir).mkdir(parents=True, exist_ok=True)
-    try:
-        if DirectoryManager:
-            DirectoryManager.create_logs_structure(log_dir)
-    except Exception:
-        logger = logging.getLogger(__name__)
-        logger.debug("logs_subdirectory_creation_failed", exc_info=True)
 
     # Choose formatter dynamically
     use_json = os.getenv('LOG_FORMAT', '').lower() == 'json'
@@ -189,7 +198,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
             },
             # Root/system files
             'file': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'DEBUG',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -198,7 +207,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'error_file': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -208,7 +217,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
             },
             # Section-specific files (always under logs/<section>)
             'file_training': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'DEBUG',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -217,7 +226,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_training_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -226,7 +235,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_data': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -235,7 +244,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_data_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -244,7 +253,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_monitoring': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -253,7 +262,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_monitoring_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -262,7 +271,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_coordinator': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -271,7 +280,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_coordinator_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -280,7 +289,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_decoder': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -289,7 +298,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_decoder_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -298,7 +307,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_vocabulary': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -307,7 +316,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_vocabulary_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -316,7 +325,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_evaluation': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'INFO',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
@@ -325,7 +334,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'backupCount': 5
             },
             'file_evaluation_error': {
-                'class': 'logging.handlers.RotatingFileHandler',
+                'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],

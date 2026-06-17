@@ -76,9 +76,10 @@ class UnifiedDataPipeline:
             # Initialize components
             self._initialize_components()
             
-            # Create directory structure via centralized manager
+            # Directory structure: NOT created eagerly here. Created on first
+            # call to run_pipeline() so empty dirs don't appear before operations.
             self.runtime_dirs = RuntimeDirectoryManager()
-            self.dirs = self.runtime_dirs.ensure_data_structure()
+            self.dirs = {}
             
             # If dry_run, synthesize tiny sample data so later stages can run locally
             if self.dry_run:
@@ -282,6 +283,10 @@ class UnifiedDataPipeline:
             span.set_attribute("resume", resume)
             span.set_attribute("force", force)
             span.set_attribute("dry_run", getattr(self, 'dry_run', False))
+
+            # Create data directories now — not in __init__ — so empty dirs
+            # don't appear before a pipeline is actually launched.
+            self.dirs = self.runtime_dirs.ensure_data_structure()
             
             # If pipeline fully completed and not forced, short-circuit
             if self.state.pipeline_complete and not force and resume:
