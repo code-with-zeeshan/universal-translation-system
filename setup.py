@@ -25,6 +25,7 @@ def read_reqs(rel_path: str) -> list[str]:
 base_requires = read_reqs("requirements/base.txt")
 
 extras = {
+    "data": read_reqs("requirements/data.txt"),
     "train": read_reqs("requirements/train.txt"),
     "serve": read_reqs("requirements/serve.txt"),
     "decoder": read_reqs("requirements/decoder.txt"),

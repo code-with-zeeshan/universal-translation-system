@@ -1,0 +1,6 @@
+# Data pipeline specific extras
+# (base.txt is always installed alongside)
+# Install with: pip install -e ".[data]"
+
+tqdm>=4.66.0
+unbabel-comet>=2.0.0

@@ -21,6 +21,7 @@ All notable changes to the Universal Translation System will be documented in th
 - **HF Hub card files** at `/home/user/hf_upload/`: `model_readme.md` + `model_gitattributes` for model repo, `dataset_readme.md` + `dataset_gitattributes` for dataset repo.
 
 ### Changed
+- **`setup.py`**: Added `data` pip extra (`pip install -e ".[data]"`) for data + vocabulary pipeline. Includes `tqdm` (progress bars) and `unbabel-comet` (COMET quality filter). Missing `data` extra was causing install failures in Colab.
 - **Encoder/decoder dimension unified to 512** (`config/base.yaml`): `decoder_dim: 768→512`, `decoder_heads: 12→8` (head_dim stays 64). All runtime defaults (`decoder_core.py`, `decoder_server.py`, `udn/decoder.py`, `udn/config.py`) updated from `encoder_dim=1024`/`decoder_dim=512` to both 512. Bootstrap defaults (`bootstrap.py`, `scripts/pipeline.py`) updated. `encoder_adapter` becomes identity `512→512` — fewer params, no quality loss.
 - **`scripts/data_pipeline_wizard.py`**: Refactored from standalone TUI implementation to thin CLI wrapper that imports stage definitions from `_wizard_shared.py`.
 - **`scripts/config_interactive.py`**: Stage definitions sourced from `_wizard_shared.py` instead of local tuple (was drifting from data pipeline wizard).
@@ -48,6 +49,7 @@ All notable changes to the Universal Translation System will be documented in th
 - **M1 — TemperatureSampler incompatible with DistributedSampler**: `pipeline/training/trainer.py` — `TemperatureSampler` doesn't support distributed sharding. Falls back to `DistributedSampler` when world_size > 1.
 - **M4 — QAT runs every step instead of every 100**: `pipeline/training/trainer.py` — `fake_quantize_tensor` triggered on every forward pass. Changed to every 100th step.
 - **Dead code import cleanup**: Removed ~20 unused imports across `trainer.py` (sys, numpy, optimize_gpu_memory, get_adaptive_gradient_clipping_value), `launch.py` (yaml, Optional, Dict, TRAIN_FINAL_FILENAME, VAL_FINAL_FILENAME, is_stage_complete), `orchestrator.py` (DirectoryManager, STAGE_ORDER, TRAIN_FINAL_FILENAME), `augmentation.py` (Set, json, random). Merged duplicate `pipeline.training.utils` import in trainer.py.
+- **Missing `data` pip extra**: `setup.py` had no `data` extra group, so `pip install -e ".[data]"` would fail. Added `requirements/data.txt` with `tqdm` (progress bars) and `unbabel-comet` (COMET quality filter) and wired it as `extras["data"]` in setup.py.
 - **C1 — Data config erased on load**: `config/schemas.py:441` — `config_data['data'] = {}` overwrote all YAML data config (languages, training_distribution, augmentation_pairs). Changed to `config_data.setdefault('data', {})`.
 - **C3 — Batch probe crashes on GPU**: `pipeline/training/trainer.py:745` — `safe_sizes.index(found)` crashed when batch probe returned non-standard size (most GPUs). Changed to `max(i for i, s in enumerate(safe_sizes) if s <= found)`.
 - **C6 — String literal defaults in pipeline CLI**: `scripts/pipeline.py:306-307` — `--encoder-out`/`--decoder-out` defaults were literal Python expression strings, not evaluated paths. Changed to `default=None` with path resolution at call time.
