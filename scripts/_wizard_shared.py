@@ -12,10 +12,14 @@ from typing import Dict, List, Tuple, Optional
 
 # Stage: (key, label, description, default_enabled, time_minutes, notes, category)
 # category: 'cpu' | 'gpu_light' | 'gpu_heavy'
+#
+# Quality stages (augment, wikipedia_backtranslation, knowledge_distillation)
+# all use NLLB-3.3B to create meaning-preserving parallel data — they handle
+# idioms, metaphors, and cultural equivalents rather than word-for-word swaps.
 STAGES: List[Tuple[str, str, str, bool, int, str, str]] = [
     ("download_training",         "download_training",         "OPUS-100 + extra sources",
         True, 60, "", "cpu"),
-    ("sample_filter",             "sample_filter",             "Deduplicate, filter length/content",
+    ("sample_filter",             "sample_filter",             "Deduplicate, length/content filter, quality scoring",
         True, 10, "", "cpu"),
     ("vocabulary",                "vocabulary",                "Build vocabulary packs from monolingual corpora",
         True, 10, "", "cpu"),
@@ -23,26 +27,22 @@ STAGES: List[Tuple[str, str, str, bool, int, str, str]] = [
         True,  5, "", "cpu"),
     ("validate",                  "validate",                  "Validate output data and vocabulary files",
         True,  3, "", "cpu"),
-    ("direct_opus",               "direct_opus",               "Direct OPUS fallback (redundant — auto-fallback in download_training)",
-        False, 20, "already auto", "cpu"),
-    ("download_evaluation",       "download_evaluation",       "Pre-fetch evaluation test sets",
-        False,  2, "use: uts eval --download", "cpu"),
 
-    ("comet_quality",             "comet_quality",             "Neural quality filter (Unbabel/wmt22-comet-da)",
+    ("comet_quality",             "comet_quality",             "Neural semantic quality filter (Unbabel/wmt22-comet-da)",
         False, 90, "GPU ~1-2h on T4", "gpu_light"),
 
-    ("augment",                   "augment",                   "False friends, idioms, backtranslation, pivots",
+    ("augment",                   "augment",                   "Backtranslation + pivots for meaning-preserving synthetic pairs (NLLB-3.3B)",
         True, 1440, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
-    ("wikipedia_backtranslation", "wikipedia_backtranslation", "Download Wikipedia monolingual data + backtranslate",
+    ("wikipedia_backtranslation", "wikipedia_backtranslation", "Wikipedia BT for domain coverage + cultural adaptation (NLLB-3.3B)",
         False, 1440, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
-    ("knowledge_distillation",    "knowledge_distillation",    "Distill NLLB-3.3B teacher into training data",
+    ("knowledge_distillation",    "knowledge_distillation",    "NLLB-3.3B soft targets preserving semantic nuance over literal swaps",
         False, 2880, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
 ]
 
 CATEGORY_LABELS = {
     "cpu": "CPU Stages (no GPU needed)",
     "gpu_light": "GPU-Light Stages (T4-friendly, ~1-2h)",
-    "gpu_heavy": "GPU-Heavy Stages (needs large GPU or long runtime)",
+    "gpu_heavy": "Quality Stages (meaning-preserving data via NLLB-3.3B — heavy but essential)",
 }
 
 CATEGORY_COLORS = {
