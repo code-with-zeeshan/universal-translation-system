@@ -215,7 +215,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
-            # Section-specific files (always under logs/<section>)
+            # Section-specific files: named <section>.log for info, <section>_errors.log for errors
             'file_training': {
                 'class': 'utils.logging_config._LazyDirFileHandler',
                 'level': 'DEBUG',
@@ -230,7 +230,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/training/error.log',
+                'filename': f'{log_dir}/training/training_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -248,7 +248,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/data/error.log',
+                'filename': f'{log_dir}/data/data_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -266,7 +266,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/monitoring/error.log',
+                'filename': f'{log_dir}/monitoring/monitoring_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -284,7 +284,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/coordinator/error.log',
+                'filename': f'{log_dir}/coordinator/coordinator_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -302,7 +302,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/decoder/error.log',
+                'filename': f'{log_dir}/decoder/decoder_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -320,7 +320,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/vocabulary/error.log',
+                'filename': f'{log_dir}/vocabulary/vocabulary_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -338,7 +338,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'level': 'ERROR',
                 'formatter': 'json' if use_json else 'detailed',
                 'filters': ['sensitive'],
-                'filename': f'{log_dir}/evaluation/error.log',
+                'filename': f'{log_dir}/evaluation/evaluation_errors.log',
                 'maxBytes': 10485760,
                 'backupCount': 5
             },
@@ -349,7 +349,7 @@ def setup_logging(log_dir: Optional[str] = None, log_level: str = "INFO"):
                 'handlers': ['console', 'file_training', 'file_training_error', 'error_file'],
                 'propagate': False
             },
-            'data': {
+            'pipeline.data': {
                 'level': 'INFO',
                 'handlers': ['console', 'file_data', 'file_data_error', 'error_file'],
                 'propagate': False
