@@ -12,7 +12,7 @@ from config.schemas import RootConfig
 from utils.exceptions import DataError
 from utils.resource_monitor import resource_monitor
 from utils.logging_config import setup_logging
-from utils.common_utils import RuntimeDirectoryManager,  DirectoryManager, RuntimeDirectoryManager
+from utils.common_utils import RuntimeDirectoryManager, DirectoryManager
 
 from pipeline.data.downloader import UnifiedDataDownloader, DatasetType, LanguagePair, DownloadPriority
 from pipeline.data.sampler import SmartDataSampler
@@ -142,7 +142,7 @@ class UnifiedDataPipeline:
             
             # Directory structure: NOT created eagerly here. Created on first
             # call to run_pipeline() so empty dirs don't appear before operations.
-            self.runtime_dirs = RuntimeDirectoryManager()
+            self.runtime_dirs = RuntimeDirectoryManager(config=self.config)
             self.dirs = {}
             
             # If dry_run, synthesize tiny sample data so later stages can run locally
@@ -767,7 +767,9 @@ class UnifiedDataPipeline:
 
             # 2) Backtranslation for each augmentation pair
             #    Skip high-resource pairs that already have sufficient OPUS/CCMatrix data.
-            hr_threshold = 100_000
+            # Effectively disable the threshold — run NLLB backtranslation on all pairs
+            # regardless of existing OPUS/CCMatrix data volume. Config can override.
+            hr_threshold = 100_000_000
             if hasattr(self.config, 'pipeline') and self.config.pipeline:
                 hr_threshold = self.config.pipeline.high_resource_threshold
 

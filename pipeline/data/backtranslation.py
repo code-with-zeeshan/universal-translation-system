@@ -25,7 +25,7 @@ WIKIPEDIA_LANG_CODES = {
     'vi': 'vi', 'hi': 'hi', 'sv': 'sv', 'uk': 'uk', 'id': 'id',
 }
 
-WIKIPEDIA_DATE = "20231101"
+WIKIPEDIA_DATE = "20220301"
 
 
 def _strip_wiki_markup(text: str) -> str:

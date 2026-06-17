@@ -707,7 +707,7 @@ class UnifiedDataDownloader:
     def export_strategy(self, output_file: str | None = None) -> None:
         if output_file is None:
             from utils.common_utils import RuntimeDirectoryManager
-            output_file = str(RuntimeDirectoryManager().data_dir / "download_strategy.json")
+            output_file = str(RuntimeDirectoryManager(config=self.config).data_dir / "download_strategy.json")
         """Export download strategy to JSON"""
         strategy = {
             'evaluation': {

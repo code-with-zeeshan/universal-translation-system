@@ -240,7 +240,7 @@ pipeline:
   comet_quality_threshold: 0.7
   max_dynamic_ff_per_pair: 25000
   max_idiom_per_lang: 10000
-  high_resource_threshold: 100000
+  high_resource_threshold: 100000000
 
 security:
   trusted_model_sources:
@@ -254,5 +254,5 @@ security:
 hub:
   dataset_repo_id: code-with-zeeshan/UTS-Datasets
   model_repo_id: code-with-zeeshan/Universal-Translation-System
-  auto_upload: false
+  auto_upload: true
   auto_download: true   

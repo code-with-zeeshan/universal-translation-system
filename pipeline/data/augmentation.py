@@ -43,6 +43,7 @@ from tqdm import tqdm
 import numpy as np
 import json
 import logging
+import gc
 import random
 
 try:
@@ -1365,7 +1366,7 @@ class SyntheticDataAugmenter:
         self.languages = self.config.data.active_languages
         self.quality_threshold = self.config.data.quality_threshold
         from utils.common_utils import RuntimeDirectoryManager
-        self.runtime_dirs = RuntimeDirectoryManager()
+        self.runtime_dirs = RuntimeDirectoryManager(config=self.config)
         self.output_dir = self.runtime_dirs.processed_dir
         self.pipeline_batch_size = 128
         self._initial_pipeline_batch_size = 128
@@ -1438,13 +1439,17 @@ class SyntheticDataAugmenter:
 
         self.logger.info("Probing optimal NLLB pipeline batch size...")
         total_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
-        probe_limit = min(4096, int(total_gb * 25))
+        # More conservative probe: generation uses ~3x memory of forward pass
+        probe_limit = min(2048, int(total_gb * 12))
         step = max(16, probe_limit // 48)
         step = (step // 16) * 16
+        if step < 16:
+            step = 16
         probe_sizes = list(range(16, probe_limit + 1, step))
         if probe_sizes[-1] < probe_limit:
             probe_sizes.append(probe_limit)
-        probe_text = "The quick brown fox jumps over the lazy dog."
+        # Use realistic-length text and max_length to match actual usage
+        probe_text = "The quick brown fox jumps over the lazy dog near the riverbank while the sun sets in the distance."
         max_viable = 16
         device = torch.device("cuda")
 
@@ -1454,31 +1459,39 @@ class SyntheticDataAugmenter:
 
         model.eval()
         for bs in probe_sizes:
+            outputs = None
+            inputs = None
             try:
                 texts = [probe_text] * bs
                 inputs = tokenizer(
                     texts, return_tensors="pt",
-                    padding=True, truncation=True, max_length=128,
+                    padding=True, truncation=True, max_length=512,
                 ).to(device)
                 with torch.no_grad():
-                    _ = model.generate(
+                    outputs = model.generate(
                         **inputs,
-                        max_length=128,
+                        max_length=512,
                         forced_bos_token_id=tgt_id,
                     )
                 max_viable = bs
                 self.logger.info(f"  ✅ Probe batch_size={bs}: OK")
-                torch.cuda.empty_cache()
             except Exception as e:
                 self.logger.info(f"  ❌ Probe batch_size={bs}: FAILED ({e})")
                 break
+            finally:
+                del outputs, inputs, texts
+                torch.cuda.empty_cache()
 
         torch.cuda.empty_cache()
+        gc.collect()
 
-        # Leave ~10% headroom — step back one probe size
+        # Leave ~25% headroom — step back two probe sizes to account for
+        # real-generation memory overhead (beam search cache, longer sequences)
         idx = probe_sizes.index(max_viable)
-        if idx > 0:
-            max_viable = probe_sizes[idx - 1]
+        for _ in range(2):
+            if idx > 0:
+                idx -= 1
+        max_viable = probe_sizes[idx]
 
         self.pipeline_batch_size = max_viable
         self._initial_pipeline_batch_size = max_viable
@@ -1504,9 +1517,12 @@ class SyntheticDataAugmenter:
                 new_bs = max(16, self.pipeline_batch_size // 2)
                 self.logger.warning(f"OOM at batch_size={self.pipeline_batch_size}, reducing to {new_bs} and retrying...")
                 self.pipeline_batch_size = new_bs
+                # Fully destroy pipeline AND model to recover from CUDA OOM
                 self._translator = None
+                self._model = None
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                gc.collect()
                 return self._translate_batch(texts, src, tgt, _retries + 1)
             self.logger.error(f"Batch translation failed after {_retries} retries: {e}")
             return [""] * len(texts)
@@ -1926,7 +1942,7 @@ class SyntheticDataAugmenter:
         return stats
 
     def _process_backtranslation_batch(
-        self, texts: List[str], source_lang: str, target_lang: str
+        self, texts: List[str], source_lang: str, target_lang: str, _retries: int = 0
     ) -> List[Tuple[str, str]]:
         """Forward-translate a batch (1 NLLB pass), using LaBSE for QC instead of a 2nd pass."""
         results = []
@@ -1941,7 +1957,18 @@ class SyntheticDataAugmenter:
             for original, translated in zip(texts, translated_texts):
                 results.append((original, translated))
         except Exception as e:
-            self.logger.error(f"Batch translation failed: {e}")
+            is_oom = "out of memory" in str(e).lower()
+            if is_oom and torch.cuda.is_available() and self.pipeline_batch_size > 16 and _retries < 3:
+                new_bs = max(16, self.pipeline_batch_size // 2)
+                self.logger.warning(f"OOM at batch_size={self.pipeline_batch_size}, reducing to {new_bs} and retrying...")
+                self.pipeline_batch_size = new_bs
+                self._translator = None
+                self._model = None
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+                return self._process_backtranslation_batch(texts, source_lang, target_lang, _retries + 1)
+            self.logger.error(f"Batch translation failed after {_retries} retries: {e}")
             results = [(text, None) for text in texts]
         return results
 
@@ -2062,7 +2089,7 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
 
     augmenter = SyntheticDataAugmenter(config)
     from utils.common_utils import RuntimeDirectoryManager
-    base_dir = RuntimeDirectoryManager().augment_dir
+    base_dir = RuntimeDirectoryManager(config=config).augment_dir
     results = {}
 
     total_pairs = 0
