@@ -221,7 +221,7 @@ class UnifiedDataPipeline:
     
     def _save_checkpoint(self):
         """Save pipeline state for resume capability"""
-        checkpoint_path = self.dirs['base'] / 'pipeline_checkpoint.json'
+        checkpoint_path = self.runtime_dirs.data_dir / 'pipeline_checkpoint.json'
         
         with open(checkpoint_path, 'w') as f:
             json.dump(self.state.to_dict(), f, indent=2)
@@ -230,7 +230,7 @@ class UnifiedDataPipeline:
     
     def _load_checkpoint(self):
         """Load pipeline state if checkpoint exists"""
-        checkpoint_path = self.dirs['base'] / 'pipeline_checkpoint.json'
+        checkpoint_path = self.runtime_dirs.data_dir / 'pipeline_checkpoint.json'
         
         if checkpoint_path.exists():
             try:
