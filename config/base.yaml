@@ -222,8 +222,9 @@ pipeline:
   # Stage GPU profiles (for reference; canonical list in _wizard_shared.py)
   #   cpu:       no GPU needed, runs anywhere
   #   gpu_light: <2h on T4 (comet_quality)
-  #   gpu_heavy: needs large GPU or extended runtime (NLLB-3.3B stages)
+  #   gpu_heavy: needs large GPU or extended runtime (NLLB stages)
   # Use: uts data --pipeline --gpu-level gpu_light  to filter by capability
+  # Note: Wikipedia download was merged into augment (it's CPU-only streaming).
   stage_profiles:
     cpu:
       - download_training
@@ -235,11 +236,11 @@ pipeline:
       - comet_quality
     gpu_heavy:
       - augment
-      - wikipedia_backtranslation
       - knowledge_distillation
   comet_quality_threshold: 0.7
   max_dynamic_ff_per_pair: 25000
   max_idiom_per_lang: 10000
+  high_resource_threshold: 100000
 
 security:
   trusted_model_sources:

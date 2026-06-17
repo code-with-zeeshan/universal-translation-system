@@ -43,6 +43,9 @@ except ImportError as e:
     _IMPORT_ERR = e
 
 
+from utils.common_utils import RuntimeDirectoryManager
+
+
 def _make_config(processed_dir):
     cfg = MagicMock()
     cfg.data.processed_dir = str(processed_dir)
@@ -119,13 +122,13 @@ class TestPipelineDataFlow(unittest.TestCase):
         pc.logger = logging.getLogger('test')
         pc.create_final_training_file()
 
-        train = self.processed / 'train_final.txt'
-        val = self.processed / 'val_final.txt'
+        train = pc.runtime_dirs.train_final_path
+        val = pc.runtime_dirs.val_final_path
         self.assertTrue(train.exists())
         self.assertTrue(val.exists())
 
-        for fname in ('train_final.txt', 'val_final.txt'):
-            cols = _count_cols(self.processed / fname)
+        for fname, fpath in [('train_final.txt', train), ('val_final.txt', val)]:
+            cols = _count_cols(fpath)
             self.assertIn(
                 4, cols,
                 f'{fname} should contain 4-column lines, got cols={cols}'
@@ -137,8 +140,8 @@ class TestPipelineDataFlow(unittest.TestCase):
         pc.create_final_training_file()
 
         total = 0
-        for fn in ('train_final.txt', 'val_final.txt'):
-            with open(self.processed / fn, encoding='utf-8') as f:
+        for fpath in (pc.runtime_dirs.train_final_path, pc.runtime_dirs.val_final_path):
+            with open(fpath, encoding='utf-8') as f:
                 total += sum(1 for _ in f)
         self.assertEqual(total, 10,
                          '10 rows: 2 en_es + 2 en_de + 2 augment '
@@ -226,9 +229,10 @@ class TestPipelineDataFlow(unittest.TestCase):
         orch.logger = logging.getLogger('test')
         orch.config = MagicMock()
         orch.config.data.processed_dir = str(self.processed)
-
-        _write(self.processed / 'train_final.txt', ['a\tb\ten\tes'])
-        _write(self.processed / 'val_final.txt', ['c\td\ten\tes'])
+        orch.runtime_dirs = RuntimeDirectoryManager()
+        orch.runtime_dirs.datasets_dir.mkdir(parents=True, exist_ok=True)
+        _write(orch.runtime_dirs.train_final_path, ['a\tb\ten\tes'])
+        _write(orch.runtime_dirs.val_final_path, ['c\td\ten\tes'])
 
         with (
             patch.object(orch, '_comet_filter_file') as mock_filter,
@@ -295,8 +299,8 @@ class TestPipelineDataFlow(unittest.TestCase):
         pc2.logger = logging.getLogger('test')
         pc2.create_final_training_file()
 
-        train1 = (self.processed / 'train_final.txt').read_text(encoding='utf-8')
-        train2 = (self.processed / 'train_final.txt').read_text(encoding='utf-8')
+        train1 = pc1.runtime_dirs.train_final_path.read_text(encoding='utf-8')
+        train2 = pc2.runtime_dirs.train_final_path.read_text(encoding='utf-8')
         self.assertEqual(train1, train2,
                          'Same seed must produce identical split')
 
@@ -304,34 +308,29 @@ class TestPipelineDataFlow(unittest.TestCase):
         """Different seeds must produce different train/val splits."""
         tmpdirs = []
 
-        def _run_with_seed(seed, out_dir):
-            d = out_dir / 'processed'
-            for p in [d / 'sampled', d / 'augment', d / 'augment' / 'pivot_pairs']:
+        def _run_with_seed(seed):
+            # Create sampled/augment data in the default RDM locations
+            rdm = RuntimeDirectoryManager()
+            rdm.ensure_data_structure()
+            for p in [rdm.sampled_dir, rdm.augment_dir, rdm.pivot_pairs_dir]:
                 p.mkdir(parents=True, exist_ok=True)
-            _write(d / 'sampled' / 'en_es_sampled.txt', [
+            _write(rdm.sampled_dir / 'en_es_sampled.txt', [
                 'hello world\thola mundo\ten\tes',
                 'good morning\tbuenos días\ten\tes',
             ])
-            _write(d / 'augment' / 'augmented_en_es.txt', [
+            _write(rdm.augment_dir / 'augmented_en_es.txt', [
                 'my name is\tme llamo\ten\tes',
             ])
-            cfg = _make_config(d)
+            cfg = _make_config(rdm.processed_dir)
             cfg.data.seed = seed
             pc = PipelineConnector(cfg)
             pc.logger = logging.getLogger('test')
             pc.create_final_training_file()
-            return (d / 'train_final.txt').read_text(encoding='utf-8')
+            return rdm.train_final_path.read_text(encoding='utf-8')
 
-        d1 = Path(tempfile.mkdtemp())
-        d2 = Path(tempfile.mkdtemp())
-        tmpdirs = [d1, d2]
-        try:
-            train_1 = _run_with_seed(1, d1)
-            train_2 = _run_with_seed(999, d2)
-            self.assertNotEqual(train_1, train_2)
-        finally:
-            for td in tmpdirs:
-                shutil.rmtree(td, ignore_errors=True)
+        train_1 = _run_with_seed(1)
+        train_2 = _run_with_seed(999)
+        self.assertNotEqual(train_1, train_2)
 
 
 @unittest.skipIf(not HAULING_DEPS, f'Missing dependencies: {_IMPORT_ERR}')

@@ -238,6 +238,11 @@ class PipelineConfig(BaseModel):
     comet_quality_threshold: float = Field(0.7, ge=0.0, le=1.0)
     max_dynamic_ff_per_pair: int = 5000
     max_idiom_per_lang: int = 2000
+    high_resource_threshold: int = Field(
+        100_000,
+        description="Skip NLLB backtranslation for pairs whose training_distribution target >= this threshold. "
+                    "High-resource pairs already have sufficient data from OPUS/CCMatrix/etc."
+    )
 
     class Config:
         extra = "allow"

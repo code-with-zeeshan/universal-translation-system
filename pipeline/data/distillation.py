@@ -1,9 +1,9 @@
 """
-Knowledge distillation from NLLB-200-3.3B teacher.
+Knowledge distillation from NLLB-200-1.3B teacher.
 
-Takes existing parallel data from the pipeline and re-translates
-with the larger NLLB-3.3B model to produce higher-quality targets
-that the student model can learn from.
+Retranslates existing parallel data with the 1.3B distilled model
+to produce higher-quality soft targets for training.
+Uses the same distilled model as augment to avoid loading two NLLB variants.
 """
 import logging
 from pathlib import Path
@@ -14,7 +14,7 @@ from pipeline.data.augmentation import NLLB_CODE_MAP
 
 logger = logging.getLogger(__name__)
 
-TEACHER_MODEL = "facebook/nllb-200-3.3B"
+TEACHER_MODEL = "facebook/nllb-200-distilled-1.3B"
 
 try:
     from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
@@ -45,7 +45,7 @@ def _nllb_code(lang: str) -> str:
 
 
 class KnowledgeDistillator:
-    """Re-translate existing parallel data with NLLB-3.3B teacher."""
+    """Re-translate existing parallel data with NLLB-1.3B teacher."""
 
     def __init__(self, model_name: str = TEACHER_MODEL):
         self._model_name = model_name
@@ -63,7 +63,7 @@ class KnowledgeDistillator:
                 task="translation",
                 model=model,
                 tokenizer=tokenizer,
-                batch_size=4 if use_cuda else 1,
+                batch_size=16 if use_cuda else 1,
             )
             if not use_cuda:
                 pipe_kwargs["device"] = -1
@@ -103,7 +103,7 @@ class KnowledgeDistillator:
         sources = [src for src, _ in pairs]
 
         count = 0
-        batch_size = 16
+        batch_size = 32
         with open(output_path, 'w', encoding='utf-8') as f_out:
             for i in tqdm(range(0, len(sources), batch_size), desc=f"Distill {source_lang}→{target_lang}"):
                 batch = sources[i:i + batch_size]

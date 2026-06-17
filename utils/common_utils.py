@@ -163,12 +163,16 @@ class RuntimeDirectoryManager:
         return self._resolve("data", "evaluation")
 
     @property
+    def datasets_dir(self) -> Path:
+        return self._resolve("datasets")
+
+    @property
     def train_final_path(self) -> Path:
-        return self.processed_dir / "train_final.txt"
+        return self.datasets_dir / "train_final.txt"
 
     @property
     def val_final_path(self) -> Path:
-        return self.processed_dir / "val_final.txt"
+        return self.datasets_dir / "val_final.txt"
 
     @property
     def train_temp_path(self) -> Path:
@@ -278,7 +282,7 @@ class RuntimeDirectoryManager:
             self.raw_dir, self.opus_dir, self.processed_dir,
             self.sampled_dir, self.augment_dir, self.pivot_pairs_dir,
             self.distilled_dir, self.corpus_dir, self.cache_dir,
-            self.eval_data_dir,
+            self.eval_data_dir, self.datasets_dir,
         )
         return {
             'base': self.data_dir,
@@ -289,6 +293,7 @@ class RuntimeDirectoryManager:
             'final': self.augment_dir,
             'opus': self.opus_dir,
             'pivot_pairs': self.pivot_pairs_dir,
+            'datasets': self.datasets_dir,
         }
 
     def ensure_all(self) -> None:

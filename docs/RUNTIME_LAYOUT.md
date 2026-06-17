@@ -12,7 +12,8 @@ All directories and files created by the system during end-to-end operation. Pat
 project-root/
 ├── checkpoints/              Training checkpoints
 ├── config/                   Generated config + pool state
-├── data/                     Data pipeline (raw → processed → final)
+├── data/                     Data pipeline (raw → processed → augment)
+├── datasets/                 Final training/validation splits (see Data Pipeline below)
 ├── evaluation_reports/       Evaluation results
 ├── logs/                     Rotating log files
 ├── models/                   Model artifacts + version registry
@@ -30,19 +31,32 @@ project-root/
 
 ## Data Pipeline
 
+### Pipeline stages (in order)
+
+| Stage | What it produces | Cost |
+|---|---|---|
+| `download_training` | `data/raw/{pair}.txt` — OPUS-100, CCMatrix, ParaCrawl, etc. | CPU |
+| `sample_filter` | `data/processed/sampled/{pair}_sampled.txt` — deduplicated, length-filtered, quality-scored | CPU |
+| `augment` | `data/processed/augment/*` — false friends, idioms, backtranslation, pivots. Wikipedia monolingual data downloaded to `data/raw/mono_{lang}.txt` as backtranslation source. | GPU (NLLB-1.3B) |
+| `create_ready` | `datasets/train_final.txt` + `datasets/val_final.txt` — merges sampled + augment data, shuffles, splits 90/10 | CPU |
+| `vocabulary` | `vocabulary/vocab/*.msgpack` — per-script SentencePiece packs built from `corpus/*.txt` | CPU |
+| `validate` | Validates datasets size, format, language coverage | CPU |
+| `comet_quality` | Re-scores `train_final.txt`/`val_final.txt` with COMET, drops pairs below threshold | GPU (light) |
+| `knowledge_distillation` | `data/processed/augment/distilled/{pair}_distilled.txt` — NLLB-1.3B soft targets | GPU (NLLB-1.3B) |
+
+### Directory layout
+
 ```
 data/
 ├── log/                                        Pipeline log files
 ├── raw/
 │   ├── {lang_pair}.txt                         Raw OPUS downloads
-│   ├── mono_{lang}.txt                        Wikipedia monolingual data
+│   ├── mono_{lang}.txt                        Wikipedia monolingual data (downloaded inside augment stage)
 │   └── opus/{pair}.txt                        Direct OPUS download
 ├── processed/
-│   ├── corpus/{lang}_corpus.txt                 Monolingual corpora
+│   ├── corpus/{lang}_corpus.txt                 Monolingual corpora for vocab training
 │   ├── {pair}.txt                             Tiny dry-run samples
-│   ├── train_final.txt                        Final training data
-│   ├── val_final.txt                          Validation split
-│   ├── train_temp.txt                         Temp file (replaced)
+│   ├── train_temp.txt                         Temp file (replaced during train/val split)
 │   ├── cache/
 │   │   ├── {stem}_cache.json                 Dataset cache metadata
 │   │   └── {stem}_tokens_ml{max}_{src/tgt/mask}.npy  Tokenized memmap
@@ -52,15 +66,26 @@ data/
 │       ├── augmented_{pair}.txt               Backtranslation
 │       ├── {src}_{tgt}/
 │       │   ├── ff_{pair}.txt / ff_dynamic_{pair}.txt  False friends
-│       │   └── idiom_{src}_{tgt}.txt          Idiom examples
+│       │   ├── idiom_{src}_{tgt}.txt          Idiom examples (NLLB-translated)
+│       │   └── idiom_equivalences.txt         Pre-verified idiom pairs (zero NLLB cost)
 │       ├── formal_{pair}.txt / casual_{pair}.txt  Register variants
 │       ├── tone_{pair}.txt / bt_{pair}.txt    Backtranslation
 │       ├── noised_{pair}.txt                  Noise augmentation
-│       └── distilled/{pair}_distilled.txt     Knowledge-distilled
+│       └── distilled/{pair}_distilled.txt     Knowledge-distilled pairs
 ├── evaluation/
 │   └── {pair}.tsv                            Eval test sets
 └── pipeline_checkpoint.json                   Per-stage resume state
+
+datasets/                                       Final training/validation splits
+├── train_final.txt                            90% of merged data (TSV: src\tgt\tsrc_lang\ttgt_lang)
+└── val_final.txt                              10% held-out for validation
 ```
+
+### Data flow for training
+
+All data sources (OPUS downloads, sampled data, augmented pairs, false friends, idioms, backtranslations, pivots, distilled pairs) are merged into a single file by `PipelineConnector.create_final_training_file()`. The merged data is shuffled with a configurable `seed`, split 90/10 into `train_final.txt` and `val_final.txt`, and placed in `datasets/`.
+
+The vocabulary is built from monolingual corpora (`corpus/{lang}_corpus.txt`) extracted from the same merged data sources — ensuring the vocab covers the actual training data distribution.
 
 **Created by:** `pipeline/data/orchestrator.py`, `pipeline/data/state.py`, `pipeline/connectors/data.py`, `pipeline/connectors/filter.py`
 
@@ -247,7 +272,7 @@ Also creates temporary model copies during publish/ONNX export under `models/pro
 
 ```bash
 # Remove all runtime data (keep code + config)
-rm -rf checkpoints/ data/ logs/ models/ evaluation_reports/ profiles/ training_visualizations/ vocabulary/
+rm -rf checkpoints/ data/ datasets/ logs/ models/ evaluation_reports/ profiles/ training_visualizations/ vocabulary/
 rm -f pipeline_state.json *_checkpoint.json streaming_evaluation_cache.json
 rm -rf ~/.UniversalTranslationSystem/
 

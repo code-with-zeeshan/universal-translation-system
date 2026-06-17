@@ -65,7 +65,7 @@ class PipelineConnector:
                 self.logger.error(f"Error processing {file_path}: {e}")
                 continue
 
-        # Also extract from augmented data (now in 4-column format)
+        # Also extract from augmented data (4-column format: src\tgt\tsrc_lang\ttgt_lang)
         final_dir = self.runtime_dirs.augment_dir
         if final_dir.exists():
             aug_files = list(final_dir.glob('*.txt')) + list(final_dir.glob('*/*.txt'))
@@ -76,11 +76,13 @@ class PipelineConnector:
                         for line in f:
                             parts = line.strip().split('\t')
                             if len(parts) == 4:
-                                _, _, src_lang, tgt_lang = parts
+                                src_text, tgt_text, src_lang, tgt_lang = parts
                                 if src_lang not in language_texts:
                                     language_texts[src_lang] = []
                                 if tgt_lang not in language_texts:
                                     language_texts[tgt_lang] = []
+                                language_texts[src_lang].append(src_text)
+                                language_texts[tgt_lang].append(tgt_text)
                 except Exception as e:
                     self.logger.warning(f"Skipping {file_path}: {e}")
                     continue
@@ -110,10 +112,10 @@ class PipelineConnector:
         files_to_merge.extend(sampled_dir.glob('*_sampled.txt'))
 
         # Augmented files (backtranslations, idioms, false friends, etc.)
+        # Note: */*.txt already covers pivot_pairs/*.txt — no separate glob needed
         if final_dir.exists():
             files_to_merge.extend(final_dir.glob('*.txt'))
             files_to_merge.extend(final_dir.glob('*/*.txt'))
-            files_to_merge.extend(final_dir.glob('pivot_pairs/*.txt'))
         
         # Merge all
         output_file = self.runtime_dirs.train_final_path

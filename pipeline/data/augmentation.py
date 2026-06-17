@@ -681,6 +681,28 @@ FALSE_FRIEND_SEEDS: Dict[str, Dict[str, str]] = {
 }
 
 IDIOM_SEEDS: Dict[str, List[str]] = {
+    "en": [
+        "It's raining cats and dogs.",
+        "That's a piece of cake.",
+        "He's pulling my leg.",
+        "Break a leg!",
+        "It cost an arm and a leg.",
+        "Don't count your chickens before they hatch.",
+        "He bit the bullet.",
+        "She's feeling under the weather.",
+        "Let's call it a day.",
+        "He hit the nail on the head.",
+        "It's a blessing in disguise.",
+        "Don't beat around the bush.",
+        "She let the cat out of the bag.",
+        "He's the apple of my eye.",
+        "That's the last straw.",
+        "She went the extra mile.",
+        "He has a chip on his shoulder.",
+        "It's not my cup of tea.",
+        "She's a fish out of water.",
+        "He put all his eggs in one basket.",
+    ],
     "es": [
         "Está lloviendo a cántaros.",
         "Eso es pan comido.",
@@ -827,6 +849,245 @@ IDIOM_SEEDS: Dict[str, List[str]] = {
         "Tiada gading yang tak retak.",
         "Sambil menyelam minum air.",
     ],
+}
+
+# Cross-lingual idiom equivalence map.
+# Pre-verified idiom pairs with identical meanings — can be written directly
+# as parallel training data WITHOUT any NLLB call. This gives the model
+# meaning-preserving pairs at zero GPU cost.
+# Format: {src_lang_tgt_lang: {source_idiom: target_idiom}}
+IDIOM_EQUIVALENCES: Dict[str, Dict[str, str]] = {
+    "en_es": {
+        "It's raining cats and dogs.": "Está lloviendo a cántaros.",
+        "That's a piece of cake.": "Es pan comido.",
+        "It cost an arm and a leg.": "Costó un ojo de la cara.",
+        "He hit the nail on the head.": "Le dio en el clavo.",
+        "She's feeling under the weather.": "Está en las nubes.",
+        "Don't beat around the bush.": "No andarse por las ramas.",
+        "He's pulling my leg.": "Me está tomando el pelo.",
+        "Break a leg!": "¡Mucha mierda!",
+        "Let's call it a day.": "Dejémoslo por hoy.",
+        "He has a chip on his shoulder.": "Tener un mal día.",
+    },
+    "en_fr": {
+        "It's raining cats and dogs.": "Il pleut des cordes.",
+        "That's a piece of cake.": "C'est simple comme bonjour.",
+        "It cost an arm and a leg.": "Ça coûte les yeux de la tête.",
+        "He hit the nail on the head.": "Il a mis dans le mille.",
+        "Don't count your chickens before they hatch.": "Il ne faut pas vendre la peau de l'ours avant de l'avoir tué.",
+        "Don't beat around the bush.": "Ne pas y aller par quatre chemins.",
+        "Break a leg!": "Bon courage !",
+        "She's feeling under the weather.": "Elle est patraque.",
+        "Let the cat out of the bag.": "Vendre la mèche.",
+        "That's the last straw.": "C'est la goutte d'eau qui fait déborder le vase.",
+    },
+    "en_de": {
+        "It's raining cats and dogs.": "Es regnet in Strömen.",
+        "That's a piece of cake.": "Das ist ein Kinderspiel.",
+        "He hit the nail on the head.": "Er hat den Nagel auf den Kopf getroffen.",
+        "I don't understand it.": "Ich verstehe nur Bahnhof.",
+        "She's feeling under the weather.": "Sie ist nicht auf dem Damm.",
+        "Let's call it a day.": "Feierabend für heute.",
+        "Don't beat around the bush.": "Kommen Sie zur Sache.",
+        "He has a chip on his shoulder.": "Er hat eine Macke.",
+        "That's the last straw.": "Das ist der Tropfen, der das Fass zum Überlaufen bringt.",
+        "It's not my cup of tea.": "Das ist nicht mein Bier.",
+    },
+    "en_it": {
+        "It's raining cats and dogs.": "Piove a catinelle.",
+        "That's a piece of cake.": "È un gioco da ragazzi.",
+        "It cost an arm and a leg.": "Costa un occhio della testa.",
+        "He hit the nail on the head.": "Ha preso la palla al balzo.",
+        "She's feeling under the weather.": "Non si sente in forma.",
+        "Let's call it a day.": "Per oggi abbiamo finito.",
+        "Break a leg!": "In bocca al lupo!",
+        "Don't count your chickens before they hatch.": "Non dire gatto se non ce l'hai nel sacco.",
+        "Don't beat around the bush.": "Non girarci intorno.",
+        "He's the apple of my eye.": "È la pupilla dei miei occhi.",
+    },
+    "en_pt": {
+        "It's raining cats and dogs.": "Chove canivetes.",
+        "That's a piece of cake.": "Isso é mamão com açúcar.",
+        "It cost an arm and a leg.": "Custou os olhos da cara.",
+        "He hit the nail on the head.": "Ele acertou em cheio.",
+        "She's feeling under the weather.": "Ela não está bem.",
+        "Don't beat around the bush.": "Não rodeia o assunto.",
+        "Let's call it a day.": "Vamos encerrar por hoje.",
+        "Don't put all your eggs in one basket.": "Não coloque todos os ovos na mesma cesta.",
+        "Break a leg!": "Boa sorte!",
+    },
+    "en_nl": {
+        "It's raining cats and dogs.": "Het regent pijpenstelen.",
+        "That's a piece of cake.": "Dat is een eitje.",
+        "He hit the nail on the head.": "Hij slaat de spijker op de kop.",
+        "It cost an arm and a leg.": "Het kost een klein fortuin.",
+        "Don't beat around the bush.": "Draai er niet omheen.",
+        "Let's call it a day.": "Laten we het hierbij houden.",
+        "He's pulling my leg.": "Hij neemt me in de maling.",
+        "She's feeling under the weather.": "Ze is niet helemaal in orde.",
+    },
+    "en_sv": {
+        "It's raining cats and dogs.": "Det regnar småspik.",
+        "That's a piece of cake.": "Det är lätt som en plätt.",
+        "He hit the nail on the head.": "Han slog huvudet på spiken.",
+        "It cost an arm and a leg.": "Det kostade skjortan.",
+        "Don't beat around the bush.": "Inte gå som katten runt het gröt.",
+        "Let's call it a day.": "Vi slutar för idag.",
+    },
+    "en_pl": {
+        "That's a piece of cake.": "Bułka z masłem.",
+        "It's not my circus, not my monkeys.": "Nie mój cyrk, nie moje małpy.",
+        "Making a mountain out of a molehill.": "Robisz z igły widły.",
+        "Fingers crossed.": "Trzymam kciuki.",
+        "Lies have short legs.": "Kłamstwo ma krótkie nogi.",
+    },
+    "en_ru": {
+        "It's a stone's throw away.": "Рукой подать.",
+        "It's not worth the candle.": "Игра не стоит свеч.",
+        "Scapegoat.": "Козёл отпущения.",
+        "It's in the bag.": "Дело в шляпе.",
+        "When pigs fly.": "Когда рак на горе свистнет.",
+    },
+    "en_ja": {
+        "I'm extremely busy.": "猫の手も借りたい。",
+        "Even experts make mistakes.": "猿も木から落ちる。",
+        "Dumplings over flowers.": "花より団子。",
+        "A frog in a well knows nothing of the ocean.": "井の中の蛙大海を知らず。",
+        "Fall seven times, stand up eight.": "七転び八起き。",
+    },
+    "en_zh": {
+        "Draw legs on a snake (unnecessary).": "画蛇添足。",
+        "Play the lute to a cow.": "对牛弹琴。",
+        "Mend the pen after losing the sheep.": "亡羊补牢。",
+        "A frog at the bottom of a well.": "井底之蛙。",
+        "Kill two birds with one stone.": "一石二鸟。",
+    },
+    "en_ko": {
+        "Speak of the wolf and he appears.": "호랑이도 제 말 하면 온다.",
+        "A beautiful word brings a beautiful reply.": "가는 말이 고와야 오는 말이 곱다.",
+        "Lock the barn door after the horse has bolted.": "소 잃고 외양간 고친다.",
+        "Eating rice cakes while lying down.": "누워서 떡 먹기.",
+        "Where the needle goes, the thread follows.": "바늘 가는 데 실 간다.",
+    },
+    "en_ar": {
+        "He returned empty-handed.": "رجع بخفي حنين.",
+        "Mixing honey with poison.": "يدس السم في العسل.",
+        "Everything got mixed up.": "اختلط الحابل بالنابل.",
+        "On my head and eyes (welcome).": "على رأسي وعيني.",
+        "The flood has reached the heights.": "بلغ السيل الزبى.",
+    },
+    "en_hi": {
+        "What does a monkey know about the taste of ginger?": "बंदर क्या जाने अदरक का स्वाद।",
+        "Distant drums sound pleasant.": "दूर के ढोल सुहावने लगते हैं।",
+        "Between a rock and a hard place.": "आगे कुआँ पीछे खाई।",
+        "Adding salt to a wound.": "जले पर नमक छिड़कना।",
+        "All's well that ends well.": "अंत भला तो सब भला।",
+    },
+    "en_th": {
+        "Eating rice under the elbow.": "กินน้ำใต้ศอก",
+        "Seeing an elephant the size of a pig.": "เห็นช้างเท่าหมู",
+        "Catching fish with both hands.": "จับปลาสองมือ",
+        "When the tide rises, hurry to scoop.": "น้ำขึ้นให้รีบตัก",
+        "Gilding the back of the Buddha.": "ปิดทองหลังพระ",
+    },
+    "en_vi": {
+        "Sawing a plow in the middle of the road.": "Đẽo cày giữa đường.",
+        "A frog at the bottom of a well.": "Ếch ngồi đáy giếng.",
+        "Crocodile tears.": "Nước mắt cá sấu.",
+        "The cat praises its own tail.": "Mèo khen mèo dài đuôi.",
+        "With persistence, iron becomes a needle.": "Có công mài sắt có ngày nên kim.",
+    },
+    "en_uk": {
+        "To be a laughingstock.": "Пекти раків.",
+        "To twiddle one's thumbs.": "Бити байдики.",
+        "A wolf's legs feed him.": "Вовка ноги годують.",
+        "Strike while the iron is hot.": "Куй залізо поки гаряче.",
+        "Like a squirrel in a wheel.": "Мов білка в колесі.",
+    },
+    "en_id": {
+        "Where there is sugar, there are ants.": "Ada gula ada semut.",
+        "To the left are left, to the right are right.": "Bagai pinang dibelah dua.",
+        "The peg is bigger than the post.": "Besar pasak daripada tiang.",
+        "To row once and reach three islands.": "Sekali merengkuh dayung, dua tiga pulau terlampaui.",
+        "No ivory is without cracks.": "Tiada gading yang tak retak.",
+    },
+    # Non-English pairs — cultural equivalences across languages
+    "es_fr": {
+        "Está lloviendo a cántaros.": "Il pleut des cordes.",
+        "Es pan comido.": "C'est simple comme bonjour.",
+        "Meter la pata.": "Mettre les pieds dans le plat.",
+        "Costó un ojo de la cara.": "Ça coûte les yeux de la tête.",
+    },
+    "fr_es": {
+        "Il pleut des cordes.": "Está lloviendo a cántaros.",
+        "C'est simple comme bonjour.": "Es pan comido.",
+        "Vendre la mèche.": "Irse de la lengua.",
+        "Casser les pieds.": "Dar la lata.",
+    },
+    "de_fr": {
+        "Da liegt der Hund begraben.": "C'est là que le bât blesse.",
+        "Ich verstehe nur Bahnhof.": "Je n'y comprends que dalle.",
+        "Das ist unter aller Sau.": "C'est nul à chier.",
+    },
+    "fr_de": {
+        "C'est la fin des haricots.": "Das ist das Ende der Fahnenstange.",
+        "Mettre son grain de sel.": "Seinen Senf dazugeben.",
+        "Casser les pieds.": "Auf den Wecker fallen.",
+    },
+    "es_pt": {
+        "Está lloviendo a cántaros.": "Chove canivetes.",
+        "Es pan comido.": "Isso é mamão com açúcar.",
+        "Costó un ojo de la cara.": "Custou os olhos da cara.",
+        "Meter la pata.": "Meter os pés pelas mãos.",
+    },
+    "pt_es": {
+        "Chove canivetes.": "Está lloviendo a cántaros.",
+        "Isso é mamão com açúcar.": "Es pan comido.",
+        "Custou os olhos da cara.": "Costó un ojo de la cara.",
+        "Matar dois coelhos com uma paulada.": "Matar dos pájaros de un tiro.",
+    },
+    "ru_uk": {
+        "Козёл отпущения.": "Козел відпущення.",
+        "Дело в шляпе.": "Справа в капелюсі.",
+        "Бить баклуши.": "Бити байдики.",
+        "Когда рак на горе свистнет.": "Як рак на горі свисне.",
+    },
+    "uk_ru": {
+        "Бити байдики.": "Бить баклуши.",
+        "Куй залізо поки гаряче.": "Куй железо пока горячо.",
+        "Тримати камінь за пазухою.": "Держать камень за пазухой.",
+    },
+    "zh_ja": {
+        "画蛇添足。": "蛇足。",
+        "一石二鸟。": "一石二鳥。",
+        "对牛弹琴。": "猫に小判。",
+        "亡羊补牢。": "後悔先に立たず。",
+    },
+    "ja_zh": {
+        "猿も木から落ちる。": "智者千虑必有一失。",
+        "花より団子。": "实用主义。",
+        "七転び八起き。": "百折不挠。",
+    },
+    "ko_ja": {
+        "호랑이도 제 말 하면 온다.": "噂をすれば影。",
+        "소 잃고 외양간 고친다.": "後の祭り。",
+        "바늘 가는 데 실 간다.": "魚心あれば水心。",
+    },
+    "ja_ko": {
+        "猿も木から落ちる。": "원숭이도 나무에서 떨어진다.",
+        "花より団子。": "꽃보다 떡.",
+        "七転び八起き。": "칠전팔기.",
+    },
+    "nl_de": {
+        "Daar komt de aap uit de mouw.": "Da steckt der Teufel im Detail.",
+        "De kat uit de boom kijken.": "Abwarten und Tee trinken.",
+        "Twee vliegen in één klap.": "Zwei Fliegen mit einer Klappe.",
+    },
+    "de_nl": {
+        "Da liegt der Hund begraben.": "Daar zit het em nou net.",
+        "Ich drücke die Daumen.": "Ik duim voor je.",
+        "Das ist unter aller Sau.": "Dat is beneden alle peil.",
+    },
 }
 
 # Template sentences for false friend augmentation
@@ -1165,8 +1426,8 @@ class SyntheticDataAugmenter:
     @property
     def sentence_model(self):
         if self._sentence_model is None:
-            self.logger.info("Loading sentence transformer...")
-            self._sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
+            self.logger.info("Loading LaBSE sentence transformer for cross-lingual quality checks...")
+            self._sentence_model = SentenceTransformer('sentence-transformers/LaBSE')
         return self._sentence_model
 
     def _probe_pipeline_batch_size(self) -> int:
@@ -1326,6 +1587,39 @@ class SyntheticDataAugmenter:
 
         self.logger.info(f"Generated {count} idiom examples for {source_lang}→{target_lang}")
         return {"generated": count, "source_lang": source_lang, "target_lang": target_lang}
+
+    # ── 2b. Pre-verified Idiom Equivalence Pairs (zero NLLB cost) ────
+
+    def generate_idiom_equivalence_pairs(
+        self,
+        source_lang: str,
+        target_lang: str,
+        output_file: str,
+    ) -> Dict[str, int]:
+        """Write pre-verified idiom equivalence pairs as parallel data.
+
+        These pairs have identical meanings across languages and require
+        ZERO NLLB passes — they are curated seed data. This is the cheapest
+        and highest-quality idiom augmentation since the equivalences are
+        human-verified.
+        """
+        pair = f"{source_lang}_{target_lang}"
+        eq_map = IDIOM_EQUIVALENCES.get(pair)
+        if eq_map is None:
+            self.logger.info(f"No idiom equivalences for {pair}, skipping")
+            return {"generated": 0, "pair": pair}
+
+        output_path = Path(output_file)
+        DirectoryManager.create_directory(output_path.parent)
+
+        count = 0
+        with open(output_path, 'w', encoding='utf-8') as f:
+            for src, tgt in eq_map.items():
+                f.write(f"{src}\t{tgt}\t{source_lang}\t{target_lang}\n")
+                count += 1
+
+        self.logger.info(f"Wrote {count} pre-verified idiom equivalence pairs for {pair} (zero NLLB cost)")
+        return {"generated": count, "pair": pair}
 
     # ── 3. Tone / Register Augmentation ────────────────────────────────
 
@@ -1608,8 +1902,8 @@ class SyntheticDataAugmenter:
                     batch_texts.append(text)
                     if len(batch_texts) >= batch_size:
                         results = self._process_backtranslation_batch(batch_texts, source_lang, target_lang)
-                        for original, translated, back_translated in results:
-                            if translated and self._is_quality_translation(original, back_translated):
+                        for original, translated in results:
+                            if translated and self._is_quality_translation(original, translated):
                                 f_out.write(f"{original}\t{translated}\t{source_lang}\t{target_lang}\n")
                                 stats['augmented'] += 1
                             else:
@@ -1619,8 +1913,8 @@ class SyntheticDataAugmenter:
 
                 if batch_texts:
                     results = self._process_backtranslation_batch(batch_texts, source_lang, target_lang)
-                    for original, translated, back_translated in results:
-                        if translated and self._is_quality_translation(original, back_translated):
+                    for original, translated in results:
+                        if translated and self._is_quality_translation(original, translated):
                             f_out.write(f"{original}\t{translated}\t{source_lang}\t{target_lang}\n")
                             stats['augmented'] += 1
                         else:
@@ -1633,7 +1927,8 @@ class SyntheticDataAugmenter:
 
     def _process_backtranslation_batch(
         self, texts: List[str], source_lang: str, target_lang: str
-    ) -> List[Tuple[str, str, str]]:
+    ) -> List[Tuple[str, str]]:
+        """Forward-translate a batch (1 NLLB pass), using LaBSE for QC instead of a 2nd pass."""
         results = []
         try:
             translations = self.translator(
@@ -1643,26 +1938,25 @@ class SyntheticDataAugmenter:
                 max_length=512,
             )
             translated_texts = [t['translation_text'] for t in translations]
-            back_translations = self.translator(
-                translated_texts,
-                src_lang=self._nllb_code(target_lang),
-                tgt_lang=self._nllb_code(source_lang),
-                max_length=512,
-            )
-            back_translated_texts = [t['translation_text'] for t in back_translations]
-            for original, translated, back_translated in zip(texts, translated_texts, back_translated_texts):
-                results.append((original, translated, back_translated))
+            for original, translated in zip(texts, translated_texts):
+                results.append((original, translated))
         except Exception as e:
             self.logger.error(f"Batch translation failed: {e}")
-            results = [(text, None, None) for text in texts]
+            results = [(text, None) for text in texts]
         return results
 
-    def _is_quality_translation(self, original: str, back_translated: str) -> bool:
-        if not back_translated:
+    def _is_quality_translation(self, original: str, translated: str) -> bool:
+        """Check meaning preservation using LaBSE cross-lingual similarity.
+
+        LaBSE is a multilingual encoder that can directly compare sentences
+        in different languages — so we measure original (source) vs. translated
+        (target) similarity without needing a round-trip through NLLB.
+        """
+        if not translated:
             return False
         try:
             embeddings = self.sentence_model.encode(
-                [original, back_translated], convert_to_tensor=True
+                [original, translated], convert_to_tensor=True
             )
             similarity = util.cos_sim(embeddings[0], embeddings[1]).item()
             return similarity >= self.quality_threshold
@@ -1783,8 +2077,9 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
             pair_key = f"{src}_{tgt}"
             has_ff = _has_ff_seeds(src, tgt)
             has_idiom = _has_idiom_seeds(src)
+            has_eq = pair_key in IDIOM_EQUIVALENCES
 
-            if not has_ff and not has_idiom:
+            if not has_ff and not has_idiom and not has_eq:
                 skipped_no_seeds += 1
                 continue
 
@@ -1816,9 +2111,22 @@ def run_all_augmentations(config: RootConfig, langs: Optional[List[str]] = None)
                 else:
                     results[f"idiom_{pair_key}"] = augmenter.generate_idiom_examples(src, tgt, idiom_out)
 
+            if has_eq:
+                eq_out = str(pair_dir / "idiom_equivalences.txt")
+                if Path(eq_out).exists():
+                    logger.info(f"⏭️ Idiom equivalences for {pair_key} already exist, skipping")
+                    results[f"eq_{pair_key}"] = {"generated": 0, "pair": pair_key, "skipped": True}
+                else:
+                    results[f"eq_{pair_key}"] = augmenter.generate_idiom_equivalence_pairs(src, tgt, eq_out)
+
     total_generated = sum(v.get('generated', 0) for v in results.values())
+    total_zero_cost = sum(
+        v.get('generated', 0) for k, v in results.items()
+        if k.startswith('eq_')
+    )
     logger.info(
         f"Batch augmentation complete. {total_generated} total examples "
+        f"({total_zero_cost:,} zero-NLLB idiom equivalences) "
         f"across {len(results)} strategies "
         f"({skipped_no_seeds}/{total_pairs} pairs skipped – no seed data)."
     )

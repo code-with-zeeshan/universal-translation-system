@@ -39,7 +39,8 @@ def _maybe_upload_to_hub(config, runtime_dirs):
         from pipeline.data.hub_sync import upload_processed_data
         processed_dir = Path(runtime_dirs.processed_dir) if hasattr(runtime_dirs, 'processed_dir') else Path(config.data.processed_dir)
         vocab_dir = Path(runtime_dirs.vocab_dir) if hasattr(runtime_dirs, 'vocab_dir') else Path(config.data.output_dir).parent / "vocabulary" / "vocab"
-        n = upload_processed_data(hub_cfg.dataset_repo_id, processed_dir, vocab_dir, token=hub_cfg.token)
+        datasets_dir = Path(runtime_dirs.datasets_dir) if hasattr(runtime_dirs, 'datasets_dir') else processed_dir
+        n = upload_processed_data(hub_cfg.dataset_repo_id, processed_dir, vocab_dir, token=hub_cfg.token, datasets_dir=datasets_dir)
         logger.info("Uploaded %d files to HF Hub dataset %s", n, hub_cfg.dataset_repo_id)
     except Exception as e:
         logger.warning("HF Hub upload failed (non-fatal): %s", e)
@@ -113,17 +114,14 @@ class UnifiedDataPipeline:
             self.downloader = UnifiedDataDownloader(self.config)
             self.sampler = SmartDataSampler()
 
-            # Determine which NLLB model to use for augment + distill.
-            # If both stages run in the same pipeline, use the larger 3.3B model
-            # for both (avoids loading two NLLB models, gives better augment quality).
-            enabled = self.config.pipeline.enabled_stages or []
-            augment_enabled = "augment" in enabled
-            distill_enabled = "knowledge_distillation" in enabled
-            augment_model = "facebook/nllb-200-3.3B" if (augment_enabled and distill_enabled) else "facebook/nllb-200-distilled-1.3B"
+            # All NLLB stages use the same distilled 1.3B model.
+            # This avoids loading two separate NLLB variants and reduces
+            # GPU memory requirements by ~5x vs. the 3.3B model.
+            NLLB_MODEL = "facebook/nllb-200-distilled-1.3B"
 
             # Only instantiate augmenter if heavy deps are available; otherwise, create a stub that skips
             try:
-                self.augmenter = SyntheticDataAugmenter(self.config, base_model=augment_model)
+                self.augmenter = SyntheticDataAugmenter(self.config, base_model=NLLB_MODEL)
             except Exception as e:
                 self.logger.warning(f"Synthetic augmenter unavailable ({e}); augmentation will be skipped in dry-run")
                 self.augmenter = None  # type: ignore
@@ -135,16 +133,17 @@ class UnifiedDataPipeline:
                 self.pipeline_connector = None
             self.vocab_connector = VocabularyConnector()
             
-            # Strategy 2: Wikipedia backtranslation data
+            # Wikipedia backtranslator — used inside _augment_data to download
+            # monolingual data for backtranslation sources (no dedicated stage needed).
             try:
                 self.wikipedia = WikipediaBacktranslator()
             except Exception as e:
                 self.logger.warning(f"Wikipedia backtranslator unavailable ({e})")
                 self.wikipedia = None
             
-            # Strategy 3: Knowledge distillation from NLLB-3.3B
+            # Knowledge distillation from NLLB-1.3B (same model as augment)
             try:
-                self.distillator = KnowledgeDistillator(model_name="facebook/nllb-200-3.3B")
+                self.distillator = KnowledgeDistillator(model_name=NLLB_MODEL)
             except Exception as e:
                 self.logger.warning(f"Knowledge distillator unavailable ({e})")
                 self.distillator = None
@@ -199,6 +198,7 @@ class UnifiedDataPipeline:
         sections['augment'] = {
             'augmentation_pairs': list(c.data.augmentation_pairs),
             'active_languages': list(c.data.active_languages),
+            'high_resource_threshold': c.pipeline.high_resource_threshold if c.pipeline else 100_000,
         }
         sections['create_ready'] = {'train_val_split': getattr(c.data, 'train_val_split', 0.9)}
         sections['validate'] = {
@@ -212,7 +212,6 @@ class UnifiedDataPipeline:
         sections['comet_quality'] = {
             'comet_threshold': c.pipeline.comet_quality_threshold if c.pipeline else 0.7,
         }
-        sections['wikipedia_backtranslation'] = {'active_languages': list(c.data.active_languages)}
         sections['knowledge_distillation'] = {'max_pairs_per_pair': 50_000}
         sections['direct_opus'] = {'training_distribution': list(c.data.training_distribution.keys())}
         return sections
@@ -441,7 +440,6 @@ class UnifiedDataPipeline:
                 stage_handlers = {
                     PipelineStage.DOWNLOAD_EVAL: self._download_evaluation_data,
                     PipelineStage.DOWNLOAD_TRAIN: self._download_training_data,
-                    PipelineStage.WIKIPEDIA_BT: self._download_wikipedia_bt,
                     PipelineStage.DIRECT_OPUS: self._download_direct_opus,
                     PipelineStage.SAMPLE_FILTER: self._sample_and_filter_data,
                     PipelineStage.AUGMENT: self._augment_data,
@@ -661,7 +659,11 @@ class UnifiedDataPipeline:
                     self.logger.warning(f"⚠️ Vocab evolution skipped (no existing packs yet): {e}")
 
     async def _augment_data(self):
-        """Augment with synthetic data — false friends, idioms, tone, backtranslation"""
+        """Augment with synthetic data — false friends, idioms, equivalence pairs, backtranslation.
+
+        Wikipedia monolingual data is downloaded here (CPU-only, streaming) to feed
+        the backtranslation step. This replaces the former separate WIKIPEDIA_BT stage.
+        """
         with tracer.start_as_current_span("augment_data") as span:
             self.logger.info("🤖 Augmenting with synthetic data...")
 
@@ -674,7 +676,24 @@ class UnifiedDataPipeline:
                 span.set_attribute("augmented.total", 0)
                 return
 
-            # 1) False friends + idioms (template and dynamic)
+            # 0) Download Wikipedia monolingual data as backtranslation source (CPU-only)
+            if self.wikipedia is not None:
+                try:
+                    self.logger.info("🌐 Downloading Wikipedia monolingual data for backtranslation...")
+                    self.wikipedia.output_dir = self.dirs['raw']
+                    wiki_stats = self.wikipedia.download_monolingual(
+                        langs=self.config.data.active_languages,
+                        max_per_lang=200_000,
+                    )
+                    for lang, count in wiki_stats.items():
+                        span.set_attribute(f"wikipedia.{lang}", count)
+                    self.logger.info(
+                        f"✅ Wikipedia: {sum(1 for c in wiki_stats.values() if c > 0)} languages available"
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Wikipedia download failed (non-fatal): {e}")
+
+            # 1) False friends + idioms (template + dynamic + equivalence)
             from pipeline.data.augmentation import run_all_augmentations
             try:
                 aug_results = run_all_augmentations(self.config, self.config.data.active_languages)
@@ -685,8 +704,31 @@ class UnifiedDataPipeline:
                 self.logger.warning(f"False friend/idiom generation skipped: {e}")
 
             # 2) Backtranslation for each augmentation pair
+            #    Skip high-resource pairs that already have sufficient OPUS/CCMatrix data.
+            hr_threshold = 100_000
+            if hasattr(self.config, 'pipeline') and self.config.pipeline:
+                hr_threshold = self.config.pipeline.high_resource_threshold
+
             for pair in self.config.data.augmentation_pairs:
                 source, target = pair.split('-')
+
+                # Skip if this pair has enough data already (high-resource threshold)
+                existing_target = self.config.data.training_distribution.get(pair, 0)
+                sampled_file = self.dirs['sampled'] / f"{pair}_sampled.txt"
+                existing_count = 0
+                if sampled_file.exists():
+                    with open(sampled_file) as _f:
+                        for _ in _f:
+                            existing_count += 1
+
+                if existing_count >= hr_threshold or existing_target >= hr_threshold:
+                    self.logger.info(
+                        f"⏭️ Skipping NLLB backtranslation for {pair}: "
+                        f"{max(existing_count, existing_target):,} existing/examples >= "
+                        f"high_resource_threshold={hr_threshold}"
+                    )
+                    span.set_attribute(f"bt_skipped.{pair}", True)
+                    continue
 
                 mono_file = self.dirs['raw'] / f"mono_{source}.txt"
                 if mono_file.exists():
@@ -714,21 +756,9 @@ class UnifiedDataPipeline:
             span.set_attribute("augmented.total", augmented_total)
             self.logger.info(f"✅ Generated {augmented_total:,} synthetic samples")
     
-    async def _download_wikipedia_bt(self):
-        """Download Wikipedia monolingual data for backtranslation (strategy 2)."""
-        with tracer.start_as_current_span("download_wikipedia_bt") as span:
-            if getattr(self, 'dry_run', False) or self.wikipedia is None:
-                self.logger.info("🧪 Dry-run or Wikipedia unavailable: Skipping")
-                span.set_attribute("skipped", True)
-                return
-
-            self.logger.info("🌐 Downloading Wikipedia monolingual data...")
-            self.wikipedia.output_dir = self.dirs['raw']
-            langs = self.config.data.active_languages
-            stats = self.wikipedia.download_monolingual(langs=langs, max_per_lang=200_000)
-            for lang, count in stats.items():
-                span.set_attribute(f"wikipedia.{lang}", count)
-            self.logger.info(f"✅ Retrieved Wikipedia data for {sum(1 for c in stats.values() if c > 0)} languages")
+    # NOTE: Wikipedia download is now part of _augment_data (merged).
+    # The former _download_wikipedia_bt method was removed to avoid having
+    # a dedicated stage for a cheap streaming download.
 
     async def _download_direct_opus(self):
         """Direct OPUS.nlpl.eu download fallback for pairs missing after HF download (strategy 4)."""
@@ -764,7 +794,7 @@ class UnifiedDataPipeline:
                 span.set_attribute("skipped", True)
                 return
 
-            self.logger.info("🧪 Running knowledge distillation from NLLB-3.3B...")
+            self.logger.info("🧪 Running knowledge distillation from NLLB-1.3B...")
             stats = self.distillator.distill_sampled_dir(
                 str(self.dirs['sampled']),
                 str(self.dirs['final'] / 'distilled'),
@@ -786,7 +816,7 @@ class UnifiedDataPipeline:
             self.pipeline_connector.create_final_training_file()
             
             # Update stats using known output path
-            final_path = self.runtime_dirs.processed_dir / 'train_final.txt'
+            final_path = self.runtime_dirs.train_final_path
             if final_path.exists():
                 self.state.total_size_gb = final_path.stat().st_size / (1024**3)
                 
@@ -897,9 +927,10 @@ class UnifiedDataPipeline:
                 span.set_attribute("skipped", True)
                 return
 
-            processed = self.runtime_dirs.processed_dir
-            train_path = processed / 'train_final.txt'
-            val_path = processed / 'val_final.txt'
+            datasets = self.runtime_dirs.datasets_dir
+            datasets.mkdir(parents=True, exist_ok=True)
+            train_path = datasets / 'train_final.txt'
+            val_path = datasets / 'val_final.txt'
             if not train_path.exists():
                 self.logger.warning(f"Training file not found: {train_path}")
                 return
@@ -954,19 +985,29 @@ class UnifiedDataPipeline:
         return True
     
     def _validate_format(self) -> bool:
-        """Validate data format"""
-        # Check a sample of files
-        for file in list(self.dirs['final'].glob('*.txt'))[:5]:
+        """Validate format of final training/validation files and augmented sources."""
+        targets = [
+            ("train_final.txt", self.runtime_dirs.train_final_path),
+            ("val_final.txt", self.runtime_dirs.val_final_path),
+        ]
+        for name, path in targets:
+            if not path.exists():
+                self.logger.error(f"Missing final file: {path}")
+                return False
             try:
-                with open(file, 'r', encoding='utf-8') as f:
+                with open(path, 'r', encoding='utf-8') as f:
                     for i, line in enumerate(f):
-                        if i >= 10:  # Check first 10 lines
+                        if i >= 50:
                             break
-                        if '\t' not in line and not line.strip():
-                            self.logger.warning(f"Invalid format in {file.name}")
+                        if '\t' not in line:
+                            self.logger.warning(f"Invalid format in {name} line {i + 1}")
+                            return False
+                        parts = line.strip().split('\t')
+                        if len(parts) < 4:
+                            self.logger.warning(f"Expected 4+ columns in {name} line {i + 1}, got {len(parts)}")
                             return False
             except Exception as e:
-                self.logger.error(f"Cannot read {file.name}: {e}")
+                self.logger.error(f"Cannot read {name}: {e}")
                 return False
         return True
     

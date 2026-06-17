@@ -78,19 +78,34 @@ Only needed packs are downloaded to the edge device. The embedding table dynamic
 ## Data Flow
 
 ```
-Raw datasets (opus-100, etc.)
+Raw datasets (opus-100, CCMatrix, ParaCrawl, etc.)
     │
-    ▼
-Pipeline: download → sample → augment → filter → validate
+    ▼ download_training
+data/raw/{pair}.txt
     │
-    ▼
-train_final.txt (2-5M sentence pairs)
+    ▼ sample_filter
+data/processed/sampled/{pair}_sampled.txt  (deduplicated, quality-scored)
     │
-    ▼
-Training: encoder + decoder, teacher forcing, label smoothing
+    ├─▶ augment (optional)
+    │      False friends, idioms, equivalence pairs, backtranslation, pivots
+    │      Wikipedia mono-lingual data downloaded as backtranslation source
+    │      NLLB-1.3B model (shared with distillation)
     │
-    ▼
-best_model.pt → Evaluation (BLEU/COMET per language pair)
+    ▼ create_ready
+datasets/train_final.txt  ──┐
+datasets/val_final.txt    ──┤  (90/10 seed-shuffled split)
+                           │
+    ▼ vocabulary            ▼ training
+vocabulary/vocab/          encoder + decoder
+{script}_v*.msgpack        teacher forcing → best_model.pt
+                           ↓
+                           Evaluation (BLEU/COMET per language pair)
+
+All data sources (sampled + augment + pivot + distilled) are merged by
+PipelineConnector.create_final_training_file() into datasets/train_final.txt
+and datasets/val_final.txt. The corpus/ files for vocabulary training are
+extracted from the same merged sources, ensuring vocabulary coverage matches
+the training data distribution.
 ```
 
 ## Serving Architecture

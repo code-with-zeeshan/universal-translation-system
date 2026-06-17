@@ -34,12 +34,12 @@ Train all 150.8M parameters on 20 languages. This builds strong multilingual rep
 
 ### Phase 2: Knowledge Distillation
 
-Transfer knowledge from a larger teacher model (NLLB-200-3.3B by default) to the student model via KL-divergence loss.
+Transfer knowledge from a teacher model (NLLB-200-distilled-1.3B by default) to the student model via KL-divergence loss. The same 1.3B model is shared with the data augmentation pipeline, avoiding the need to load two separate NLLB variants.
 
 **Loss formula:** `alpha * CE(student, hard_labels) + (1-alpha) * T^2 * KL(softmax(student/T) || softmax(teacher/T))`
 
 ```bash
-# Distill from NLLB-200-3.3B (default teacher)
+# Distill from NLLB-200-1.3B (default teacher)
 uts train --distill
 
 # Custom teacher checkpoint
@@ -52,19 +52,19 @@ uts train --distill --distill-alpha 0.3 --distill-temp 5.0 --num-epochs 10
 | Flag | Default | Description |
 |---|---|---|
 | `--distill` | — | Enable knowledge distillation training |
-| `--teacher` | `facebook/nllb-200-3.3B` | Teacher model (HF model ID or local checkpoint path) |
+| `--teacher` | `facebook/nllb-200-distilled-1.3B` | Teacher model (HF model ID or local checkpoint path) |
 | `--distill-alpha` | `0.5` | CE vs KD loss weight (0 = pure KD, 1 = pure CE) |
 | `--distill-temp` | `4.0` | Softmax temperature for KD. Higher = softer distribution |
 
 **When to use distillation:**
-- You have access to a high-quality teacher (NLLB-3.3B requires ~16GB GPU)
+- You want soft targets that preserve semantic nuance better than hard labels
 - Domain adaptation: fine-tune student on in-domain data with a general-domain teacher
-- Model compression: preserve quality while using a smaller model
+- The 1.3B teacher fits on T4 GPUs (~6GB VRAM), making distillation feasible on modest hardware
 - Default `--distill-alpha 0.5` balances student CE loss with teacher guidance
 
 **Teacher loading priority:**
 1. Local checkpoint path (if provided via `--teacher`)
-2. NLLB-200-3.3B from Hugging Face (if CUDA available and transformers installed)
+2. NLLB-200-distilled-1.3B from Hugging Face (if CUDA available and transformers installed)
 3. Falls back to CE-only training if no teacher can be loaded
 
 ### Phase 3: LoRA Adapter Training (future languages)

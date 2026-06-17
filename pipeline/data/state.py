@@ -9,10 +9,9 @@ class PipelineStage(Enum):
     """Pipeline execution stages"""
     DOWNLOAD_EVAL = "download_evaluation"
     DOWNLOAD_TRAIN = "download_training"
-    WIKIPEDIA_BT = "wikipedia_backtranslation"
     DIRECT_OPUS = "direct_opus"
     SAMPLE_FILTER = "sample_filter"
-    AUGMENT = "augment"
+    AUGMENT = "augment"  # includes Wikipedia monolingual download
     DISTILL = "knowledge_distillation"
     CREATE_READY = "create_ready"
     VALIDATE = "validate"
@@ -23,13 +22,12 @@ class PipelineStage(Enum):
 STAGE_ORDER = [
     PipelineStage.DOWNLOAD_EVAL,
     PipelineStage.DOWNLOAD_TRAIN,
-    PipelineStage.WIKIPEDIA_BT,
     PipelineStage.DIRECT_OPUS,
     PipelineStage.SAMPLE_FILTER,
     PipelineStage.AUGMENT,
     PipelineStage.DISTILL,
-    PipelineStage.COMET_QUALITY,
     PipelineStage.CREATE_READY,
+    PipelineStage.COMET_QUALITY,   # filters train_final.txt/val_final.txt which CREATE_READY produces
     PipelineStage.VALIDATE,
     PipelineStage.VOCABULARY,
 ]

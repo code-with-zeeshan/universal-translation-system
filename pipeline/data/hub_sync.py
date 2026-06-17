@@ -28,15 +28,15 @@ def _is_logged_in() -> bool:
 
 # ── File list for sync ───────────────────────────────────────────────
 
-def _files_to_sync(processed_dir: Path, vocab_dir: Path) -> list[tuple[str, Path]]:
+def _files_to_sync(processed_dir: Path, vocab_dir: Path, datasets_dir: Path) -> list[tuple[str, Path]]:
     """Return list of (repo_path, local_path) for all files to sync."""
     files = []
 
-    # Training/validation data
-    if (processed_dir / "train_final.txt").exists():
-        files.append(("train_final.txt", processed_dir / "train_final.txt"))
-    if (processed_dir / "val_final.txt").exists():
-        files.append(("val_final.txt", processed_dir / "val_final.txt"))
+    # Training/validation data — now in dedicated datasets_dir
+    if (datasets_dir / "train_final.txt").exists():
+        files.append(("train_final.txt", datasets_dir / "train_final.txt"))
+    if (datasets_dir / "val_final.txt").exists():
+        files.append(("val_final.txt", datasets_dir / "val_final.txt"))
     if (processed_dir / "train_temp.txt").exists():
         files.append(("train_temp.txt", processed_dir / "train_temp.txt"))
 
@@ -57,15 +57,15 @@ def _files_to_sync(processed_dir: Path, vocab_dir: Path) -> list[tuple[str, Path
 
 # ── Existence check ──────────────────────────────────────────────────
 
-def data_exists_locally(processed_dir: Path, vocab_dir: Path) -> bool:
+def data_exists_locally(processed_dir: Path, vocab_dir: Path, datasets_dir: Path) -> bool:
     """Check if training data, validation data, and vocab manifest exist."""
-    train_ok = (processed_dir / "train_final.txt").exists()
-    val_ok = (processed_dir / "val_final.txt").exists()
+    train_ok = (datasets_dir / "train_final.txt").exists()
+    val_ok = (datasets_dir / "val_final.txt").exists()
     vocab_ok = (vocab_dir / "manifest.json").exists()
     if not train_ok:
-        logger.info("Missing: %s", processed_dir / "train_final.txt")
+        logger.info("Missing: %s", datasets_dir / "train_final.txt")
     if not val_ok:
-        logger.info("Missing: %s", processed_dir / "val_final.txt")
+        logger.info("Missing: %s", datasets_dir / "val_final.txt")
     if not vocab_ok:
         logger.info("Missing: %s", vocab_dir / "manifest.json")
     return train_ok and val_ok and vocab_ok
@@ -79,6 +79,7 @@ def upload_processed_data(
     vocab_dir: Path,
     token: Optional[str] = None,
     repo_type: str = "dataset",
+    datasets_dir: Optional[Path] = None,
 ) -> int:
     """Upload processed data and vocabulary packs to HF Hub.
 
@@ -91,7 +92,9 @@ def upload_processed_data(
     api = HfApi()
     api.create_repo(repo_id, repo_type=repo_type, exist_ok=True, token=token)
 
-    files = _files_to_sync(processed_dir, vocab_dir)
+    if datasets_dir is None:
+        datasets_dir = processed_dir
+    files = _files_to_sync(processed_dir, vocab_dir, datasets_dir)
     if not files:
         logger.warning("No files found to upload in %s or %s", processed_dir, vocab_dir)
         return 0
@@ -123,12 +126,15 @@ def download_processed_data(
     vocab_dir: Path,
     token: Optional[str] = None,
     repo_type: str = "dataset",
+    datasets_dir: Optional[Path] = None,
 ) -> bool:
     """Download processed data and vocabulary from HF Hub.
 
     Returns True if files were downloaded, False if no download needed.
     """
-    if data_exists_locally(processed_dir, vocab_dir):
+    if datasets_dir is None:
+        datasets_dir = processed_dir
+    if data_exists_locally(processed_dir, vocab_dir, datasets_dir):
         logger.info("Data and vocab already exist locally — skipping download.")
         return False
 
@@ -137,11 +143,12 @@ def download_processed_data(
         return False
 
     os.makedirs(processed_dir, exist_ok=True)
+    os.makedirs(datasets_dir, exist_ok=True)
     os.makedirs(vocab_dir, exist_ok=True)
 
     # Download individual known files
-    _ensure_file(repo_id, "train_final.txt", processed_dir / "train_final.txt", token)
-    _ensure_file(repo_id, "val_final.txt", processed_dir / "val_final.txt", token)
+    _ensure_file(repo_id, "train_final.txt", datasets_dir / "train_final.txt", token)
+    _ensure_file(repo_id, "val_final.txt", datasets_dir / "val_final.txt", token)
     _ensure_file(repo_id, "pipeline_state.json", processed_dir.parent.parent / "pipeline_state.json", token)
 
     # Download vocab/* via snapshot
@@ -163,7 +170,7 @@ def download_processed_data(
     except HfHubHTTPError:
         logger.warning("No vocab/ directory found in repo %s", repo_id)
 
-    success = data_exists_locally(processed_dir, vocab_dir)
+    success = data_exists_locally(processed_dir, vocab_dir, datasets_dir)
     if success:
         logger.info("Downloaded data and vocab from %s", repo_id)
     else:
