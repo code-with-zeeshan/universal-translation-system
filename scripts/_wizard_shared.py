@@ -7,37 +7,66 @@ and config_interactive.py.
 
 import os
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 
-# Stage: (key, label, description, default_enabled, time_minutes, notes)
-STAGES: List[Tuple[str, str, str, bool, int, str]] = [
+# Stage: (key, label, description, default_enabled, time_minutes, notes, category)
+# category: 'cpu' | 'gpu_light' | 'gpu_heavy'
+STAGES: List[Tuple[str, str, str, bool, int, str, str]] = [
     ("download_training",         "download_training",         "OPUS-100 + extra sources",
-        True, 30, ""),
+        True, 60, "", "cpu"),
     ("sample_filter",             "sample_filter",             "Deduplicate, filter length/content",
-        True, 10, ""),
-    ("augment",                   "augment",                   "False friends, idioms, backtranslation, pivots",
-        True, 25, ""),
-    ("create_ready",              "create_ready",              "Merge all sources -> train_final.txt/val_final.txt",
-        True,  5, ""),
-    ("validate",                  "validate",                  "Validate output data and vocabulary files",
-        True,  3, ""),
+        True, 10, "", "cpu"),
     ("vocabulary",                "vocabulary",                "Build vocabulary packs from monolingual corpora",
-        True,  8, ""),
-    ("wikipedia_backtranslation", "wikipedia_backtranslation", "Download Wikipedia monolingual data",
-        False, 15, "internet"),
+        True, 10, "", "cpu"),
+    ("create_ready",              "create_ready",              "Merge all sources -> train_final.txt/val_final.txt",
+        True,  5, "", "cpu"),
+    ("validate",                  "validate",                  "Validate output data and vocabulary files",
+        True,  3, "", "cpu"),
     ("direct_opus",               "direct_opus",               "Direct OPUS fallback (redundant — auto-fallback in download_training)",
-        False, 20, "internet, already auto"),
-    ("knowledge_distillation",    "knowledge_distillation",    "Distill NLLB-3.3B teacher into training data",
-        False, 45, "GPU req."),
+        False, 20, "already auto", "cpu"),
     ("download_evaluation",       "download_evaluation",       "Pre-fetch evaluation test sets",
-        False,  2, "use: uts eval --download"),
+        False,  2, "use: uts eval --download", "cpu"),
+
     ("comet_quality",             "comet_quality",             "Neural quality filter (Unbabel/wmt22-comet-da)",
-        False, 30, "GPU + 12GB VRAM"),
+        False, 90, "GPU ~1-2h on T4", "gpu_light"),
+
+    ("augment",                   "augment",                   "False friends, idioms, backtranslation, pivots",
+        True, 1440, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
+    ("wikipedia_backtranslation", "wikipedia_backtranslation", "Download Wikipedia monolingual data + backtranslate",
+        False, 1440, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
+    ("knowledge_distillation",    "knowledge_distillation",    "Distill NLLB-3.3B teacher into training data",
+        False, 2880, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
 ]
+
+CATEGORY_LABELS = {
+    "cpu": "CPU Stages (no GPU needed)",
+    "gpu_light": "GPU-Light Stages (T4-friendly, ~1-2h)",
+    "gpu_heavy": "GPU-Heavy Stages (needs large GPU or long runtime)",
+}
+
+CATEGORY_COLORS = {
+    "cpu": "\033[1;37m",        # white
+    "gpu_light": "\033[1;32m",  # green
+    "gpu_heavy": "\033[1;31m",  # red
+}
+
+
+def stage_category(key: str) -> str:
+    for s in STAGES:
+        if s[0] == key:
+            return s[6]
+    return "cpu"
+
+
+def stages_by_category(cat: str) -> List[Tuple]:
+    return [s for s in STAGES if s[6] == cat]
 
 
 def fmt_time(mins: int) -> str:
+    if mins >= 1440:
+        d, h = divmod(mins, 1440)
+        return f"{d}d {h}h"
     h, m = divmod(mins, 60)
     return f"{h}h {m:02d}min" if h else f"{m} min"
 
@@ -69,34 +98,54 @@ def get_key() -> str:
 
 
 def draw_stage_menu(states: Dict[str, bool], cursor: int):
-    """Render the stage selector TUI."""
-    total = sum(s[4] for i, s in enumerate(STAGES) if states[s[0]])
+    """Render the stage selector TUI with categories."""
+    category_order = ["cpu", "gpu_light", "gpu_heavy"]
 
-    print("\033[1;36m\u2500\u2500 Data Pipeline Stage Selector \u2500\u2500\033[0m")
+    flat_idx = 0
+    total = 0
+    color_reset = "\033[0m"
+    color_dim = "\033[90m"
+
+    print(f"\033[1;36m{'='*60}\033[0m")
+    title = "Data Pipeline Stage Selector"
+    print(f"\033[1;36m   {title:^54}\033[0m")
+    print(f"\033[1;36m{'='*60}\033[0m")
     print("  UP/DOWN navigate \u00b7 SPACE toggle \u00b7 ENTER confirm \u00b7 q cancel\n")
 
-    for i, (key, label, desc, default, mins, notes) in enumerate(STAGES):
-        selected = states[key]
-        check = "\033[1;32m\u2713\033[0m" if selected else "\033[1;31m\u2717\033[0m"
-        prefix = " \033[1;33m\u25b6\033[0m " if i == cursor else "   "
+    for cat in category_order:
+        cat_stages = stages_by_category(cat)
+        if not cat_stages:
+            continue
 
-        if i == 0:
-            print("  \033[1;37m\u2500\u2500 Default stages \u2500\u2500\033[0m")
-        elif i == 6:
-            print("  \033[1;37m\u2500\u2500 Optional heavy stages \u2500\u2500\033[0m")
+        cat_label = CATEGORY_LABELS.get(cat, cat)
+        cat_color = CATEGORY_COLORS.get(cat, "\033[1;37m")
+        print(f"  {cat_color}\u2500\u2500 {cat_label} \u2500\u2500{color_reset}")
 
-        line = f"  {prefix} {check} \033[1;37m{i+1:>2}.\033[0m {label:<28} \033[90m{fmt_time(mins):>8}\033[0m  {desc}"
-        if notes:
-            line += f"  \033[90m({notes})\033[0m"
-        if i == cursor:
-            print(f"\033[7m{line}\033[0m")
-        else:
-            print(line)
+        for key, label, desc, default, mins, notes, category in cat_stages:
+            selected = states[key]
+            check = "\033[1;32m\u2713\033[0m" if selected else "\033[1;31m\u2717\033[0m"
+            prefix = " \033[1;33m\u25b6\033[0m " if flat_idx == cursor else "   "
 
-    print(f"\n  \033[1;37mEstimated total time:\033[0m \033[1;33m{fmt_time(total)}\033[0m")
+            if selected:
+                total += mins
+
+            line = f"  {prefix} {check} \033[1;37m{flat_idx+1:>2}.\033[0m {label:<28} {color_dim}{fmt_time(mins):>8}{color_reset}  {desc}"
+            if notes:
+                line += f"  {color_dim}({notes}){color_reset}"
+            if flat_idx == cursor:
+                print(f"\033[7m{line}\033[0m")
+            else:
+                print(line)
+
+            flat_idx += 1
+
+        print()
+
+    print(f"  \033[1;37mEstimated total time:\033[0m \033[1;33m{fmt_time(total)}\033[0m")
+    print()
 
 
-def run_stage_selector(current_stages: list) -> list | None:
+def run_stage_selector(current_stages: list) -> Optional[List[str]]:
     """Run the interactive TUI stage selector.
 
     Args:

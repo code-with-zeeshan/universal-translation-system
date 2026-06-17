@@ -159,10 +159,37 @@ def build_setup_parser(sub: argparse.ArgumentParser):
 
 # ── data ─────────────────────────────────────────────────────────────
 
+def _filter_stages_by_gpu_level(config_path: str, gpu_level: str) -> str:
+    """Load config, filter enabled_stages by GPU level, write temp config."""
+    from scripts._wizard_shared import stage_category, STAGES
+    import tempfile, copy
+    with open(config_path) as f:
+        raw = yaml.safe_load(f) or {}
+    raw = copy.deepcopy(raw)
+    all_enabled = raw.get("pipeline", {}).get("enabled_stages", [])
+    if not all_enabled:
+        return config_path
+    # Hierarchy: cpu < gpu_light < gpu_heavy
+    allowed_cats = {"cpu"}
+    if gpu_level == "gpu_light":
+        allowed_cats.add("gpu_light")
+    elif gpu_level == "gpu_heavy":
+        allowed_cats.update({"gpu_light", "gpu_heavy"})
+    filtered = [s for s in all_enabled if stage_category(s) in allowed_cats]
+    raw.setdefault("pipeline", {})["enabled_stages"] = filtered
+    tmp = Path(tempfile.mktemp(suffix=".yaml"))
+    with open(tmp, "w") as f:
+        yaml.dump(raw, f)
+    return str(tmp)
+
+
 def cmd_data(args: argparse.Namespace):
     config_path = args.config
     if args.scale and args.scale != 1.0:
         config_path = _scale_config(config_path, args.scale)
+    gpu_level = getattr(args, 'gpu_level', None)
+    if gpu_level and gpu_level != 'all' and args.pipeline:
+        config_path = _filter_stages_by_gpu_level(config_path, gpu_level)
     if args.pipeline:
         _run("pipeline.data.orchestrator", config=config_path, resume=args.resume,
              force=args.force if hasattr(args, 'force') else False,
@@ -221,6 +248,9 @@ def build_data_parser(sub: argparse.ArgumentParser):
                      help="HuggingFace datasets cache directory (default: HF default cache)")
     sub.add_argument("--hub-repo-id", type=str, default=None,
                      help="HF Hub repo ID to upload processed data+vocab after pipeline")
+    sub.add_argument("--gpu-level", choices=["cpu", "gpu_light", "gpu_heavy", "all"],
+                     default="all", help="Filter stages by GPU requirement: cpu=CPU-only, "
+                     "gpu_light=CPU+light GPU (T4-friendly), gpu_heavy=all stages (default)")
 
 
 # ── vocab ────────────────────────────────────────────────────────────

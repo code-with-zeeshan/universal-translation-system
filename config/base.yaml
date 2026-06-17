@@ -219,6 +219,26 @@ pipeline:
     - create_ready
     - validate
     - vocabulary
+  # Stage GPU profiles (for reference; canonical list in _wizard_shared.py)
+  #   cpu:       no GPU needed, runs anywhere
+  #   gpu_light: <2h on T4 (comet_quality)
+  #   gpu_heavy: needs large GPU or extended runtime (NLLB-3.3B stages)
+  # Use: uts data --pipeline --gpu-level gpu_light  to filter by capability
+  stage_profiles:
+    cpu:
+      - download_training
+      - sample_filter
+      - vocabulary
+      - create_ready
+      - validate
+      - direct_opus
+      - download_evaluation
+    gpu_light:
+      - comet_quality
+    gpu_heavy:
+      - augment
+      - wikipedia_backtranslation
+      - knowledge_distillation
   comet_quality_threshold: 0.7
   max_dynamic_ff_per_pair: 25000
   max_idiom_per_lang: 10000
