@@ -119,15 +119,6 @@ class UnifiedDataDownloader:
         self._session_lock = threading.Lock()
         self._worker_sessions: Dict[int, Any] = {}
         
-    def _get_worker_session(self) -> Any:
-        """Get or create a per-thread HTTP session with independent connection pool."""
-        tid = threading.get_ident()
-        if tid not in self._worker_sessions:
-            with self._session_lock:
-                if tid not in self._worker_sessions:
-                    self._worker_sessions[tid] = self._setup_http_session()
-        return self._worker_sessions[tid]
-        
         # Data sources (combined from all three)
         self.data_sources = self._initialize_data_sources()
         
@@ -141,6 +132,15 @@ class UnifiedDataDownloader:
             self.source_preferences = getattr(ds_cfg, 'source_preferences', {})
         
         self.logger.info(f"📊 UnifiedDataDownloader initialized for {len(self.languages)} languages")
+    
+    def _get_worker_session(self) -> Any:
+        """Get or create a per-thread HTTP session with independent connection pool."""
+        tid = threading.get_ident()
+        if tid not in self._worker_sessions:
+            with self._session_lock:
+                if tid not in self._worker_sessions:
+                    self._worker_sessions[tid] = self._setup_http_session()
+        return self._worker_sessions[tid]
     
     def _setup_http_session(self):
         """Setup HTTP session with retry strategy. Returns None if requests is unavailable."""
