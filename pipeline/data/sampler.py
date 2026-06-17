@@ -338,6 +338,18 @@ class SmartDataSampler:
         
         return written_count
     
+    @staticmethod
+    def _has_cjk(text: str) -> bool:
+        """Check if text contains CJK or Thai characters."""
+        return bool(re.search(r'[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u0e00-\u0e7f]', text))
+
+    @staticmethod
+    def _script_aware_len(text: str) -> int:
+        """Word count for Latin text, character count for CJK/Thai (which lacks word boundaries)."""
+        if SmartDataSampler._has_cjk(text):
+            return len(text)
+        return len(text.split())
+
     def is_high_quality(self, source: str, target: str) -> bool:
         """Check if sentence pair meets all quality criteria"""
         for filter_func in self.quality_filters:
@@ -346,16 +358,18 @@ class SmartDataSampler:
         return True
     
     def filter_length(self, source: str, target: str) -> bool:
-        """Filter by word count length"""
-        source_len = len(source.split())
-        target_len = len(target.split())
+        """Filter by word/character count length (script-aware for CJK/Thai)."""
+        source_len = self._script_aware_len(source)
+        target_len = self._script_aware_len(target)
         return 5 <= source_len <= 50 and 5 <= target_len <= 50
     
     def filter_ratio(self, source: str, target: str) -> bool:
-        """Filter by character length ratio"""
+        """Filter by character length ratio (looser bounds for CJK/Thai pairs)."""
         if len(target) == 0:
             return False
         ratio = len(source) / len(target)
+        if self._has_cjk(source) or self._has_cjk(target):
+            return 0.25 <= ratio <= 4.0
         return 0.5 <= ratio <= 2.0
     
     def filter_numbers(self, source: str, target: str) -> bool:

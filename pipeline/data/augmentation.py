@@ -1107,6 +1107,7 @@ class SyntheticDataAugmenter:
         self.runtime_dirs = RuntimeDirectoryManager()
         self.output_dir = self.runtime_dirs.processed_dir
         self.pipeline_batch_size = 128
+        self._initial_pipeline_batch_size = 128
 
         self._model = None
         self._tokenizer = None
@@ -1141,7 +1142,13 @@ class SyntheticDataAugmenter:
         if self._translator is None:
             use_cuda = hasattr(torch, 'cuda') and torch.cuda.is_available()
             if use_cuda:
-                self._probe_pipeline_batch_size()
+                # Only probe if batch_size hasn't been reduced by an OOM recovery.
+                # _probe_pipeline_batch_size uses short probe text which underestimates
+                # real memory usage; skip re-probe after an OOM to avoid re-probe loop.
+                if self.pipeline_batch_size == self._initial_pipeline_batch_size:
+                    self._probe_pipeline_batch_size()
+                else:
+                    self.logger.info(f"Using OOM-reduced batch_size={self.pipeline_batch_size} (skipping probe)")
             bs = self.pipeline_batch_size if use_cuda else 1
             self.logger.info(f"Creating NLLB pipeline with batch_size={bs}")
             pipe_kwargs = dict(
@@ -1213,13 +1220,14 @@ class SyntheticDataAugmenter:
             max_viable = probe_sizes[idx - 1]
 
         self.pipeline_batch_size = max_viable
+        self._initial_pipeline_batch_size = max_viable
         self.logger.info(f"📊 NLLB optimal batch size: {max_viable} (GPU: {total_gb:.0f}GB)")
         return max_viable
 
     def _nllb_code(self, lang: str) -> str:
         return NLLB_CODE_MAP.get(lang, lang)
 
-    def _translate_batch(self, texts: List[str], src: str, tgt: str) -> List[str]:
+    def _translate_batch(self, texts: List[str], src: str, tgt: str, _retries: int = 0) -> List[str]:
         """Translate a batch using the NLLB pipeline."""
         try:
             results = self.translator(
@@ -1231,13 +1239,15 @@ class SyntheticDataAugmenter:
             return [r['translation_text'] for r in results]
         except Exception as e:
             is_oom = "out of memory" in str(e).lower()
-            if is_oom and torch.cuda.is_available() and self.pipeline_batch_size > 16:
+            if is_oom and torch.cuda.is_available() and self.pipeline_batch_size > 16 and _retries < 3:
                 new_bs = max(16, self.pipeline_batch_size // 2)
                 self.logger.warning(f"OOM at batch_size={self.pipeline_batch_size}, reducing to {new_bs} and retrying...")
                 self.pipeline_batch_size = new_bs
                 self._translator = None
-                return self._translate_batch(texts, src, tgt)
-            self.logger.error(f"Batch translation failed: {e}")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                return self._translate_batch(texts, src, tgt, _retries + 1)
+            self.logger.error(f"Batch translation failed after {_retries} retries: {e}")
             return [""] * len(texts)
 
     # ── 1. False Friend Augmentation ───────────────────────────────────
