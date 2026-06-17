@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 def _is_logged_in() -> bool:
     try:
+        from huggingface_hub import get_token
+        token = get_token()
+        if token:
+            return True
+    except Exception:
+        pass
+    try:
         from huggingface_hub import HfFolder
         return bool(HfFolder.get_token())
     except Exception:
