@@ -2,5 +2,5 @@
 # (base.txt is always installed alongside)
 # Install with: pip install -e ".[data]"
 
-tqdm>=4.66.0
+tqdm>=4.68.3
 unbabel-comet>=2.0.0
