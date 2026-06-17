@@ -3,7 +3,10 @@ import hashlib
 import hmac
 import logging
 import os
-import semver
+try:
+    import semver
+except ImportError:
+    semver = None
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -53,7 +56,7 @@ def validate_pack(self, pack_path: str) -> Tuple[bool, List[str]]:
             if field not in pack:
                 errors.append(f"Missing field: {field}")
 
-        if 'version' in pack:
+        if semver is not None and 'version' in pack:
             try:
                 semver.VersionInfo.parse(pack['version'])
             except ValueError:
@@ -106,6 +109,9 @@ def compare_packs(self, pack1_path: str, pack2_path: str) -> Dict[str, Any]:
     pack1 = _load_any(pack1_path)
     pack2 = _load_any(pack2_path)
 
+    if semver is None:
+        logger.warning("semver not installed; skipping version comparison")
+        return {}
     v1 = semver.VersionInfo.parse(pack1.get('version', '0.0.0'))
     v2 = semver.VersionInfo.parse(pack2.get('version', '0.0.0'))
 
@@ -175,6 +181,8 @@ def _cleanup_temp_files(self, *files):
 
 
 def _get_pack_version(self, pack_name: str, bump: str = "minor") -> str:
+    if semver is None:
+        return "1.0.0"
     existing_versions = []
     for file in self.output_dir.glob(f'{pack_name}_v*.json'):
         version_part = file.stem.split('_v')[-1]

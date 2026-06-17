@@ -35,6 +35,8 @@ class BaseTrainer(ABC):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.global_step = 0
         self.best_val_loss = float('inf')
+        from utils.common_utils import RuntimeDirectoryManager
+        self.runtime_dirs = RuntimeDirectoryManager(config=self.config)
         self.checkpoint_dir = Path(self.runtime_dirs.checkpoints_dir)
         self.checkpoint_dir.mkdir(exist_ok=True)
 
