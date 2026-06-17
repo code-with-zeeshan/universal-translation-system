@@ -170,19 +170,12 @@ def load_datasets(config: RootConfig) -> Tuple[Any, Any]:
     train_path = _rdm.train_final_path
     val_path = _rdm.val_final_path
 
-    if not train_path.exists():
-        hub_cfg = getattr(config, 'hub', None)
-        if hub_cfg and hub_cfg.dataset_repo_id and hub_cfg.auto_download:
-            from pipeline.data.hub_sync import download_processed_data
-            processed_dir = train_path.parent
-            vocab_dir = _rdm.vocab_dir
-            logger.info("Downloading data+vocab from HF Hub %s ...", hub_cfg.dataset_repo_id)
-            download_processed_data(hub_cfg.dataset_repo_id, processed_dir, vocab_dir, token=hub_cfg.token)
-
-    if not train_path.exists():
-        logger.error(f"Training data not found at {train_path}")
-        logger.info("Run data pipeline first, or set hub.repo_id for auto-download")
-        sys.exit(1)
+    if not train_path.exists() or not val_path.exists() or not _rdm.vocab_manifest_path.exists():
+        from pipeline.data.orchestrator import ensure_data_ready
+        logger.info("Some data or vocab missing — running ensure_data_ready (download → pipeline fallback)")
+        if not ensure_data_ready(config):
+            logger.error(f"Could not obtain training data at {train_path}")
+            sys.exit(1)
     
     train_dataset = ModernParallelDataset(
         str(train_path),

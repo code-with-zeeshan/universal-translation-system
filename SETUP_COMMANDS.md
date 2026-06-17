@@ -378,7 +378,7 @@ See `docs/RUNTIME_LAYOUT.md` for the complete filesystem reference (~40 dirs, ~1
 | What | Where |
 |---|---|
 | Config | `config/base.yaml` |
-| Training data | `data/processed/train_final.txt` |
+| Training data | `output/datasets/train_final.txt` |
 | Vocabulary packs | `vocabulary/vocab/` |
 | Model checkpoints | `checkpoints/{experiment}/` |
 | Evaluation data | `data/evaluation/{pair}.tsv` |

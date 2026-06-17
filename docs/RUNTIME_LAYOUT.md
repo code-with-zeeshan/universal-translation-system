@@ -89,6 +89,35 @@ The vocabulary is built from monolingual corpora (`corpus/{lang}_corpus.txt`) ex
 
 **Created by:** `pipeline/data/orchestrator.py`, `pipeline/data/state.py`, `pipeline/connectors/data.py`, `pipeline/connectors/filter.py`
 
+### HF Hub Sync
+
+The `hub_sync.py` module uploads/downloads data and vocabulary to/from Hugging Face Hub dataset repos,
+enabling split-run workflows (CPU pipeline → upload → GPU pipeline → download) across Colab sessions.
+
+**Upload structure** — files are uploaded with hierarchical prefixes so the same repo can hold all artifacts:
+
+| Local path | HF Hub repo path |
+|---|---|
+| `output/datasets/train_final.txt` | `datasets/train_final.txt` |
+| `output/datasets/val_final.txt` | `datasets/val_final.txt` |
+| `vocabulary/vocab/{pack}.msgpack` | `vocab/{pack}.msgpack` |
+| `pipeline_state.json` | `pipeline_state.json` |
+
+**Download** — uses `snapshot_download` with `allow_patterns` for the `datasets/*` and `vocab/*` prefixes,
+then moves content into the correct local directories.
+
+**Smart fallback** — `ensure_data_ready()` in `orchestrator.py` implements a 3-tier resolve chain when
+training is launched without local data:
+
+1. Check locally → return immediately if data + vocab both present
+2. Download from HF Hub (if `hub.dataset_repo_id` configured)
+3. Run the data pipeline for whichever component is still missing
+   — missing data → core pipeline stages (`download_training` through `validate`)
+   — missing vocab → vocabulary stage only
+   — both missing → full pipeline
+
+**Created by:** `pipeline/data/hub_sync.py`, `pipeline/data/orchestrator.py`
+
 ---
 
 ## Training

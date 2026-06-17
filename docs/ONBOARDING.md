@@ -182,6 +182,10 @@ uts train --full --config config/override/my_config.yaml
 | `--distill-alpha FLOAT` | CE vs KD loss weight, 0–1 (default: `0.5`) |
 | `--distill-temp FLOAT` | Distillation temperature (default: `4.0`) |
 
+> **Data auto-resolve:** When `--full` training finds data or vocab missing locally, it automatically
+> downloads from HF Hub (if `hub.dataset_repo_id` set) or runs the data pipeline for the missing
+> components. See `docs/RUNTIME_LAYOUT.md` for the sync/fallback chain.
+
 **Config reference (key settings in `config/base.yaml`):**
 
 ```yaml

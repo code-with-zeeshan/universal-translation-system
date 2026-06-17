@@ -46,6 +46,68 @@ def _maybe_upload_to_hub(config, runtime_dirs):
         logger.warning("HF Hub upload failed (non-fatal): %s", e)
 
 
+def ensure_data_ready(config: 'RootConfig') -> bool:
+    """Ensure data (train_final.txt, val_final.txt) and vocab are available.
+
+    Tries in order:
+      1. Local check — if both present, return immediately.
+      2. Download from HF Hub (if hub.dataset_repo_id set).
+      3. Run the data pipeline for whichever components are still missing.
+
+    Returns True when all required data and vocab are available.
+    """
+    from pipeline.data.hub_sync import download_processed_data, whats_missing
+
+    _rdm = RuntimeDirectoryManager(config=config)
+    processed_dir = _rdm.processed_dir
+    vocab_dir = _rdm.vocab_dir
+    datasets_dir = _rdm.datasets_dir
+
+    missing = whats_missing(processed_dir, vocab_dir, datasets_dir)
+    if not missing.get("data") and not missing.get("vocab"):
+        logger.info("All data and vocab already present locally")
+        return True
+
+    # Step 2 — download from HF Hub if configured
+    hub_cfg = getattr(config, 'hub', None)
+    if hub_cfg and hub_cfg.dataset_repo_id:
+        logger.info("Trying download from HF Hub %s ...", hub_cfg.dataset_repo_id)
+        download_processed_data(
+            hub_cfg.dataset_repo_id, processed_dir, vocab_dir,
+            token=hub_cfg.token, datasets_dir=datasets_dir,
+        )
+
+    # Step 3 — re-check what's still missing
+    missing = whats_missing(processed_dir, vocab_dir, datasets_dir)
+    if not missing.get("data") and not missing.get("vocab"):
+        logger.info("All data and vocab ready after download")
+        return True
+
+    # Step 4 — run pipeline for missing components
+    stages_to_run: list[PipelineStage] = []
+    if missing.get("data"):
+        logger.info("Data still missing — running data pipeline stages")
+        stages_to_run.extend(CORE_STAGES)
+    if missing.get("vocab"):
+        logger.info("Vocab still missing — running vocabulary stage")
+        if PipelineStage.VOCABULARY not in stages_to_run:
+            stages_to_run.append(PipelineStage.VOCABULARY)
+
+    if not stages_to_run:
+        return True
+
+    pipeline = UnifiedDataPipeline(config)
+    import asyncio
+    asyncio.run(pipeline.run_pipeline(resume=True, stages=stages_to_run))
+
+    # Final verification
+    missing = whats_missing(processed_dir, vocab_dir, datasets_dir)
+    if missing.get("data") or missing.get("vocab"):
+        logger.error("Still missing after pipeline run: %s", missing)
+        return False
+    return True
+
+
 CORE_STAGES = [
     PipelineStage.DOWNLOAD_TRAIN,
     PipelineStage.SAMPLE_FILTER,

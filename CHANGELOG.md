@@ -29,6 +29,11 @@ All notable changes to the Universal Translation System will be documented in th
 - **`README.md`**: Added `uts config` row to workflow table (1 config topic); CLI topics count updated from 28→33.
 - **`pipeline/training/launch.py`**: `load_datasets()` checks `hub.dataset_repo_id` + `hub.auto_download` before failing with "data not found" — auto-downloads from HF if configured.
 - **`config/base.yaml`**: Added `hub:` section with `dataset_repo_id: code-with-zeeshan/UTS-Datasets`, `model_repo_id: code-with-zeeshan/Universal-Translation-System`, `token: ""`, `auto_upload: false`, `auto_download: true`.
+- **HF Hub `datasets/` prefix** (`pipeline/data/hub_sync.py`): Upload now places files under `datasets/*` prefix on HF Hub. Download uses `snapshot_download` with `datasets/*` pattern. New `whats_missing()` returns fine-grained `{data, vocab}` status.
+- **Training auto-fallback** (`pipeline/training/launch.py`, `pipeline/data/orchestrator.py`): New `ensure_data_ready()` implements 3-tier resolve: local check → HF Hub download → run data pipeline for missing components only. `load_datasets()` calls it automatically instead of failing with "Run data pipeline first".
+- **`SETUP_COMMANDS.md`**: Fixed stale training data path (`data/processed/train_final.txt` → `output/datasets/train_final.txt`).
+- **`docs/RUNTIME_LAYOUT.md`**: Added "HF Hub Sync" section documenting upload prefix structure, snapshot download, and `ensure_data_ready` fallback chain.
+- **`docs/ONBOARDING.md`**: Added data auto-resolve note to training section.
 
 ### Fixed
 - **C1 — Data config erased on load**: `config/schemas.py:441` — `config_data['data'] = {}` overwrote all YAML data config (languages, training_distribution, augmentation_pairs). Changed to `config_data.setdefault('data', {})`.
