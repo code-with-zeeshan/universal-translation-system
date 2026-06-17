@@ -6,6 +6,9 @@ Replaces: download_curated_data.py, download_training_data.py, smart_data_downlo
 
 import logging
 import json
+import os
+import threading
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Set
 from dataclasses import dataclass
@@ -91,20 +94,39 @@ class UnifiedDataDownloader:
         if isinstance(data_cfg, dict):
             self.languages = data_cfg.get('active_languages', ['en'])
             self.training_distribution = data_cfg.get('training_distribution', {})
-            self.download_max_workers = data_cfg.get('download_max_workers', 4)
+            self.download_max_workers = min(
+                data_cfg.get('download_max_workers', 4),
+                os.cpu_count() or 4, 6
+            )
             self.download_parallel_batches = data_cfg.get('download_parallel_batches', False)
             self.datasets_cache_dir = data_cfg.get('datasets_cache_dir', None)
+            self.download_rate_limit = data_cfg.get('download_rate_limit', 0)
         else:
             self.languages = getattr(data_cfg, 'active_languages', ['en'])
             self.training_distribution = getattr(data_cfg, 'training_distribution', {})
-            self.download_max_workers = getattr(data_cfg, 'download_max_workers', 4)
+            self.download_max_workers = min(
+                getattr(data_cfg, 'download_max_workers', 4),
+                os.cpu_count() or 4, 6
+            )
             self.download_parallel_batches = getattr(data_cfg, 'download_parallel_batches', False)
             self.datasets_cache_dir = getattr(data_cfg, 'datasets_cache_dir', None)
+            self.download_rate_limit = getattr(data_cfg, 'download_rate_limit', 0)
         
         self.dataset_loader = DatasetLoader(self.logger, self.datasets_cache_dir)
         
-        # Setup HTTP session with retries (from curated downloader)
-        self.session = self._setup_http_session()
+        # Per-worker sessions (instead of shared) to avoid connection pool contention.
+        # Lazily created in _get_worker_session().
+        self._session_lock = threading.Lock()
+        self._worker_sessions: Dict[int, Any] = {}
+        
+    def _get_worker_session(self) -> Any:
+        """Get or create a per-thread HTTP session with independent connection pool."""
+        tid = threading.get_ident()
+        if tid not in self._worker_sessions:
+            with self._session_lock:
+                if tid not in self._worker_sessions:
+                    self._worker_sessions[tid] = self._setup_http_session()
+        return self._worker_sessions[tid]
         
         # Data sources (combined from all three)
         self.data_sources = self._initialize_data_sources()
@@ -586,7 +608,8 @@ class UnifiedDataDownloader:
 
     def _download_direct_opus(self, pair: LanguagePair, output_dir: Path) -> bool:
         """Download directly from opus.nlpl.eu as fallback when HF datasets fail."""
-        if self.session is None:
+        session = self._get_worker_session()
+        if session is None:
             self.logger.warning("HTTP session unavailable, skipping direct OPUS download")
             return False
 
@@ -596,11 +619,27 @@ class UnifiedDataDownloader:
         for corpus in corpora:
             url = self._OPUS_DIRECT_URL.format(corpus=corpus, lang_pair=pair.pair_string)
             try:
+                # Rate limiting: wait between requests to avoid 429
+                if self.download_rate_limit > 0:
+                    time.sleep(1.0 / self.download_rate_limit)
+
                 self.logger.info(f"Downloading {corpus} from {url}")
-                resp = self.session.get(url, timeout=120, stream=True)
+                resp = session.get(url, timeout=120, stream=True)
+
+                # Exponential backoff on 429 (Too Many Requests)
+                if resp.status_code == 429:
+                    retry_after = int(resp.headers.get('Retry-After', 10))
+                    self.logger.warning(
+                        f"Rate limited for {pair.pair_string}/{corpus}, "
+                        f"retrying after {retry_after}s"
+                    )
+                    time.sleep(retry_after)
+                    resp = session.get(url, timeout=120, stream=True)
+
                 if resp.status_code != 200:
                     self.logger.debug(f"{corpus} not available for {pair.pair_string} (HTTP {resp.status_code})")
                     continue
+
                 total = 0
                 with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
                     for name in zf.namelist():

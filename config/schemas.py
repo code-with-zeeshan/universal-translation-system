@@ -22,8 +22,9 @@ class DataConfig(BaseModel):
     max_sentence_length: int = Field(64, description="Maximum sentence length")
     output_dir: str = "data/processed"
     augmentation_pairs: List[str] = Field(default_factory=list, description="Language pairs for synthetic augmentation")
-    download_max_workers: int = Field(4, description="Max parallel downloads per batch")
+    download_max_workers: int = Field(4, description="Max parallel downloads per batch (auto-clamped to min(value, cpu_count, 6))")
     download_parallel_batches: bool = Field(False, description="Run download batches concurrently")
+    download_rate_limit: int = Field(0, description="Max requests/sec per worker for OPUS direct downloads (0 = no limit)")
     datasets_cache_dir: Optional[str] = Field(None, description="Cache directory for HuggingFace datasets")
     cache_dir: str = Field("data/processed/cache", description="Cache directory for tokenized/preprocessed data")
     seed: int = Field(42, description="Random seed for reproducible train/val split and sampling")

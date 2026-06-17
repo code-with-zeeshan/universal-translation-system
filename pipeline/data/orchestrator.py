@@ -545,7 +545,10 @@ class UnifiedDataPipeline:
                 dataset_types=[DatasetType.TRAINING]
             )
             
-            # Auto-fallback: try direct OPUS for any pair that still has no data
+            # Auto-fallback: try direct OPUS for any pair that still has no data.
+            # This runs unconditionally inside the download_training stage, making
+            # the dedicated 'direct_opus' pipeline stage redundant. No need to
+            # enable it separately — missing pairs get this retry automatically.
             for p_str in expected_pairs:
                 if not (raw_dir / f"{p_str}.txt").exists():
                     src, tgt = p_str.split('-', 1)

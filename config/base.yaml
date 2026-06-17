@@ -80,6 +80,7 @@ data:
   download_max_workers: 4
   download_parallel_batches: false
   # datasets_cache_dir: /path/to/hf/cache
+  download_rate_limit: 2
 
   augmentation_pairs:
     - en-es
