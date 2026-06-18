@@ -83,6 +83,13 @@ def _scale_config(config_path: str, scale: float) -> str:
     return tmp.name
 
 
+def _load_enabled_stages(config_path: str) -> list:
+    """Read enabled_stages from a YAML config file."""
+    with open(config_path) as f:
+        cfg = yaml.safe_load(f) or {}
+    return cfg.get("pipeline", {}).get("enabled_stages", [])
+
+
 def _find_latest_checkpoint() -> str | None:
     """Return the most recently modified .pt file in checkpoints/."""
     from utils.common_utils import RuntimeDirectoryManager
@@ -223,8 +230,32 @@ def cmd_data(args: argparse.Namespace):
         if result.returncode != 0 or not wizard_path or not Path(wizard_path).exists():
             print("  \033[33mCancelled.\033[0m")
             return
+
+        print("\n  \033[1;36m\u2500\u2500 Next Step \u2500\u2500\033[0m")
+        print("  \033[1;37m1) Run pipeline now\033[0m")
+        print("  \033[1;37m2) Tweak more settings\033[0m (opens config builder with your stages)")
+        choice = input("\n  Choose [1/2]: ").strip()
+
+        if choice == "2":
+            print("  \033[90mLaunching config builder with your stage selection...\033[0m\n")
+            subprocess.run(
+                [PY, str(ROOT / "scripts/config_interactive.py"),
+                 "--preset-stages", ",".join(
+                     _load_enabled_stages(wizard_path))],
+                cwd=str(ROOT), check=False
+            )
+            Path(wizard_path).unlink(missing_ok=True)
+            return
+
         config_path = wizard_path
+        temp_dir = ROOT / "config" / "override" / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        import shutil
+        saved = temp_dir / f"quick_{Path(wizard_path).stem}.yaml"
+        shutil.copy2(wizard_path, saved)
+        print(f"  \033[90mConfig saved to {saved}\033[0m\n")
         _run("pipeline.data.orchestrator", config=config_path, resume=True)
+        Path(wizard_path).unlink(missing_ok=True)
     elif args.domains:
         _run_module("tools/domain_data.py", "--domain", args.domains)
     else:

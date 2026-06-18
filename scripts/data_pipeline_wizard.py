@@ -4,7 +4,7 @@ Interactive data pipeline stage selector.
 
 Usage:
     python scripts/data_pipeline_wizard.py              # TUI, saves YAML, prints path
-    python scripts/data_pipeline_wizard.py --run         # TUI, then immediately runs pipeline
+    python scripts/data_pipeline_wizard.py --run         # TUI, prints path for auto-run
 
 Stage definitions and TUI helpers are in _wizard_shared.py (single source of truth).
 """
@@ -78,7 +78,6 @@ def run_wizard() -> int:
         return 1
 
     config_path = generate_config(states, tempfile.mktemp(suffix=".yaml"))
-    total = sum(s[4] for s in STAGES if states[s[0]])
 
     if args.run:
         print(config_path, flush=True)
@@ -88,7 +87,6 @@ def run_wizard() -> int:
     print()
     print(f"  Run the pipeline with your custom stages:")
     print(f"  \033[1;37m$ uts data --pipeline --config {config_path}\033[0m")
-    print(f"  \033[1;37m$ uts data --pipeline --config {config_path} --scale 5\033[0m")
     print()
     print(f"  \033[90mEstimated time: {fmt_time(total)}\033[0m")
     return 0

@@ -2,18 +2,16 @@
 """
 config_interactive.py — Interactive config builder.
 
-Loads config/base.yaml as defaults, lets you override pipeline stages,
-training settings, model architecture, and data settings interactively,
-then saves the complete merged config to config/override/<name>.yaml.
-
-Stage definitions and TUI helpers are in _wizard_shared.py (single source of truth).
+Loads config/base.yaml as defaults, lets you override all settings
+interactively, then saves complete merged config to config/override/<name>.yaml.
 
 Usage:
-    python scripts/config_interactive.py                # Interactive TUI
-    python scripts/config_interactive.py --set training.num_epochs=20  # CLI
+    python scripts/config_interactive.py                           # Interactive TUI
+    python scripts/config_interactive.py --preset-stages a,b,c     # Pre-fill stages
+    python scripts/config_interactive.py --set training.num_epochs=20  # CLI batch
     python scripts/config_interactive.py --non-interactive --set ...   # Batch
-    python scripts/config_interactive.py --list                        # List overrides
-    python scripts/config_interactive.py --diff my_config              # Diff vs base
+    python scripts/config_interactive.py --list                    # List overrides
+    python scripts/config_interactive.py --diff my_config          # Diff vs base
 """
 
 import sys
@@ -29,8 +27,17 @@ ROOT = Path(__file__).resolve().parent.parent
 BASE_CONFIG = ROOT / "config" / "base.yaml"
 OVERRIDE_DIR = ROOT / "config" / "override"
 
+# Base.yaml key order for output
+KEY_ORDER = [
+    "config_version", "data_version", "pipeline_version",
+    "data", "data_strategy", "model", "training", "distributed",
+    "monitoring", "pipeline", "security", "hub",
+]
 
-# ── Helpers ──────────────────────────────────────────────────────────
+TW = "\033[1;33m[TWEAK]\033[0m"
+AD = "\033[1;35m[ADVANCED]\033[0m"
+OP = "\033[1;32m[OPTIONAL]\033[0m"
+
 
 def load_yaml(path: Path) -> dict:
     with open(path) as f:
@@ -55,14 +62,10 @@ def deep_merge(base: dict, override: dict) -> dict:
 def save_config(config: dict, name: str) -> Path:
     OVERRIDE_DIR.mkdir(parents=True, exist_ok=True)
     path = OVERRIDE_DIR / f"{name}.yaml"
-
-    # Reorder top-level keys to match base.yaml style
-    key_order = ["project", "model", "training", "data", "pipeline", "hub", "memory"]
-    ordered = {k: config[k] for k in key_order if k in config}
+    ordered = {k: config[k] for k in KEY_ORDER if k in config}
     for k in config:
         if k not in ordered:
             ordered[k] = config[k]
-
     with open(path, "w") as f:
         yaml.dump(ordered, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
     return path
@@ -78,24 +81,15 @@ def dot_set(config: dict, key: str, value: Any):
 
 def parse_value(val: str) -> Any:
     v = val.strip()
-    if v.lower() == "true":
-        return True
-    if v.lower() == "false":
-        return False
-    if v.lower() == "none":
-        return None
-    try:
-        return int(v)
-    except ValueError:
-        pass
-    try:
-        return float(v)
-    except ValueError:
-        pass
+    if v.lower() == "true": return True
+    if v.lower() == "false": return False
+    if v.lower() == "none": return None
+    try: return int(v)
+    except ValueError: pass
+    try: return float(v)
+    except ValueError: pass
     return v
 
-
-# ── TUI Input Helpers ───────────────────────────────────────────────
 
 def get_input(prompt: str, default: str = "") -> str:
     val = input(f"{prompt}" + (f" [{default}]: " if default else ": "))
@@ -110,202 +104,365 @@ def get_bool(prompt: str, default: bool = False) -> bool:
 def get_int(prompt: str, default: int, min_v: int = 0, max_v: int = 10**9) -> int:
     while True:
         v = input(f"{prompt} [{default}]: ").strip()
-        if not v:
-            return default
+        if not v: return default
         try:
             n = int(v)
-            if n < min_v:
-                print(f"  Minimum: {min_v}")
-                continue
-            if n > max_v:
-                print(f"  Maximum: {max_v}")
-                continue
+            if n < min_v: print(f"  Minimum: {min_v}"); continue
+            if n > max_v: print(f"  Maximum: {max_v}"); continue
             return n
-        except ValueError:
-            print("  Enter a valid integer.")
+        except ValueError: print("  Enter a valid integer.")
 
 
 def get_float(prompt: str, default: float) -> float:
     while True:
         v = input(f"{prompt} [{default}]: ").strip()
-        if not v:
-            return default
-        try:
-            return float(v)
-        except ValueError:
-            print("  Enter a valid number.")
+        if not v: return default
+        try: return float(v)
+        except ValueError: print("  Enter a valid number.")
+
+
+def get_str_list(prompt: str, default: List[str]) -> List[str]:
+    val = input(f"{prompt} [{','.join(default)}]: ").strip()
+    if not val: return default
+    return [x.strip() for x in val.split(",") if x.strip()]
 
 
 def wait_enter():
     input("\n  Press ENTER to continue...")
 
 
-# ── Section: Training Settings ───────────────────────────────────────
+def _section_header(num: int, total: int, title: str, desc: str = ""):
+    clear_screen()
+    print(f"\033[1;36mSection {num}/{total}: {title}\033[0m")
+    if desc:
+        print(f"  \033[90m{desc}\033[0m")
+    print()
+
+
+# ── Section 1: Pipeline Stages ──────────────────────────────────────
+
+def section_stages(base: dict, preset_stages: List[str] = None) -> dict:
+    _section_header(1, 9, "Pipeline Stages",
+                    "Select which stages to run. ESSENTIAL = must-run, "
+                    "RECOMMENDED = improves quality, ADVANCED = best but expensive")
+    current = preset_stages or base.get("pipeline", {}).get("enabled_stages", [])
+    enabled = run_stage_selector(current)
+    if enabled is None:
+        return None
+    return {"pipeline": {"enabled_stages": enabled}}
+
+
+# ── Section 2: Training ─────────────────────────────────────────────
 
 def section_training(config: dict) -> dict:
+    _section_header(2, 9, "Training Settings",
+                    f"{TW} = commonly tweaked  |  {AD} = leave as default for most users")
     t = config.get("training", {})
     overrides = {}
-    print("\n\u2500\u2500 Training Settings (ENTER = keep current) \u2500\u2500\n")
-    for field, label, getter in [
-        ("batch_size", "Batch size", lambda: get_int("Batch size", t.get("batch_size", 32), 1)),
-        ("num_epochs", "Epochs", lambda: get_int("Epochs", t.get("num_epochs", 10), 1)),
-        ("lr", "Learning rate", lambda: get_float("Learning rate", t.get("lr", 3e-4))),
-        ("warmup_steps", "Warmup steps", lambda: get_int("Warmup steps", t.get("warmup_steps", 1000), 0)),
-        ("weight_decay", "Weight decay", lambda: get_float("Weight decay", t.get("weight_decay", 0.01))),
-        ("accumulation_steps", "Accumulation steps", lambda: get_int("Accumulation steps", t.get("accumulation_steps", 4), 1)),
+
+    for field, label, hint, getter in [
+        ("num_epochs", "Epochs", TW, lambda: get_int("  Epochs", t.get("num_epochs", 10), 1)),
+        ("batch_size", "Batch size per GPU", TW, lambda: get_int("  Batch size", t.get("batch_size", 32), 1)),
+        ("accumulation_steps", "Gradient accumulation steps", TW,
+         lambda: get_int("  Accumulation steps", t.get("accumulation_steps", 4), 1)),
+        ("lr", "Learning rate", TW, lambda: get_float("  Learning rate", t.get("lr", 3e-4))),
+        ("warmup_steps", "Warmup steps", TW, lambda: get_int("  Warmup steps", t.get("warmup_steps", 1000), 0)),
+        ("weight_decay", "Weight decay", AD, lambda: get_float("  Weight decay", t.get("weight_decay", 0.01))),
     ]:
+        print(f"  {hint} {label}")
         val = getter()
         if val != t.get(field):
             overrides[field] = val
-    mixed = get_bool("Mixed precision", t.get("mixed_precision", True))
-    if mixed != t.get("mixed_precision"):
-        overrides["mixed_precision"] = mixed
-    use_lora = get_bool("Use LoRA", t.get("use_lora", False))
+
+    print()
+    use_fsdp = get_bool(f"  {AD} Use FSDP (Fully Sharded Data Parallel)", t.get("use_fsdp", False))
+    if use_fsdp != t.get("use_fsdp"):
+        overrides["use_fsdp"] = use_fsdp
+
+    mp = get_bool(f"  {TW} Mixed precision", t.get("mixed_precision", True))
+    if mp != t.get("mixed_precision"):
+        overrides["mixed_precision"] = mp
+
+    dtype = get_input(f"  {AD} Dtype (bfloat16/float16/float32)", t.get("dtype", "bfloat16"))
+    if dtype != t.get("dtype"):
+        overrides["dtype"] = dtype
+
+    gc = get_bool(f"  {AD} Gradient checkpointing", t.get("gradient_checkpointing", True))
+    if gc != t.get("gradient_checkpointing"):
+        overrides["gradient_checkpointing"] = gc
+
+    cm = get_bool(f"  {AD} Compile model (torch.compile)", t.get("compile_model", True))
+    if cm != t.get("compile_model"):
+        overrides["compile_model"] = cm
+
+    fa = get_bool(f"  {AD} Flash attention", t.get("flash_attention", True))
+    if fa != t.get("flash_attention"):
+        overrides["flash_attention"] = fa
+
+    print()
+    use_lora = get_bool(f"  {TW} Use LoRA (add new languages without full retrain)", t.get("use_lora", False))
     if use_lora != t.get("use_lora"):
         overrides["use_lora"] = use_lora
     if use_lora:
-        lr = get_int("LoRA rank (encoder)", t.get("lora_r", 16), 1)
-        if lr != t.get("lora_r"):
-            overrides["lora_r"] = lr
-        lrd = get_int("LoRA rank (decoder)", t.get("lora_r_decoder", 64), 1)
-        if lrd != t.get("lora_r_decoder"):
-            overrides["lora_r_decoder"] = lrd
+        for field, label, getter in [
+            ("lora_r", "  LoRA rank (encoder)", lambda: get_int("  LoRA rank encoder", t.get("lora_r", 16), 1)),
+            ("lora_r_decoder", "  LoRA rank (decoder)", lambda: get_int("  LoRA rank decoder", t.get("lora_r_decoder", 64), 1)),
+        ]:
+            val = getter()
+            if val != t.get(field):
+                overrides[field] = val
+
+    print()
+    for field, label, hint, getter in [
+        ("save_every", "  Save checkpoint every N epochs", AD, lambda: get_int("  Save every", t.get("save_every", 2), 1)),
+        ("validate_every", "  Validate every N epochs", AD, lambda: get_int("  Validate every", t.get("validate_every", 1), 1)),
+        ("log_every", "  Log every N steps", AD, lambda: get_int("  Log every", t.get("log_every", 50), 1)),
+    ]:
+        print(f"  {hint} {label}")
+        val = getter()
+        if val != t.get(field):
+            overrides[field] = val
+
     return {"training": overrides} if overrides else {}
 
 
-# ── Section: Model Architecture ──────────────────────────────────────
+# ── Section 3: Model Architecture ───────────────────────────────────
 
 def section_model(config: dict) -> dict:
+    _section_header(3, 9, "Model Architecture",
+                    f"{AD} = only change if you know what you're doing")
     m = config.get("model", {})
     overrides = {}
-    print("\n\u2500\u2500 Model Architecture (ENTER = keep current) \u2500\u2500\n")
+
     for field, label, default, getter in [
-        ("hidden_dim", "Hidden dimension", 512, lambda d: get_int(label, d, 64)),
-        ("num_layers", "Encoder layers", 6, lambda d: get_int(label, d, 1)),
-        ("num_heads", "Encoder heads", 8, lambda d: get_int(label, d, 1)),
-        ("decoder_dim", "Decoder dimension", 512, lambda d: get_int(label, d, 64)),
-        ("decoder_layers", "Decoder layers", 8, lambda d: get_int(label, d, 1)),
-        ("decoder_heads", "Decoder heads", 8, lambda d: get_int(label, d, 1)),
+        ("hidden_dim", "  Hidden dimension", 512, lambda d: get_int("  Hidden dim", d, 64, 2048)),
+        ("num_layers", "  Encoder layers", 6, lambda d: get_int("  Encoder layers", d, 1, 48)),
+        ("num_heads", "  Encoder heads", 8, lambda d: get_int("  Encoder heads", d, 1, 64)),
+        ("decoder_dim", "  Decoder dimension", 512, lambda d: get_int("  Decoder dim", d, 64, 2048)),
+        ("decoder_layers", "  Decoder layers", 8, lambda d: get_int("  Decoder layers", d, 1, 48)),
+        ("decoder_heads", "  Decoder heads", 8, lambda d: get_int("  Decoder heads", d, 1, 64)),
     ]:
+        print(f"  {AD} {label}")
         val = getter(m.get(field, default))
         if val != m.get(field, default):
             overrides[field] = val
-    dropout = get_float("Dropout", m.get("dropout", 0.1))
+
+    print(f"  {AD} Dropout")
+    dropout = get_float("  Dropout", m.get("dropout", 0.1))
     if abs(dropout - m.get("dropout", 0.1)) > 1e-10:
         overrides["dropout"] = dropout
+
     return {"model": overrides} if overrides else {}
 
 
-# ── Section: Data Settings ───────────────────────────────────────────
+# ── Section 4: Data ─────────────────────────────────────────────────
 
 def section_data(config: dict) -> dict:
+    _section_header(4, 9, "Data Settings",
+                    f"{TW} = commonly changed  |  {AD} = advanced")
     d = config.get("data", {})
     overrides = {}
-    print("\n\u2500\u2500 Data Settings (ENTER = keep current) \u2500\u2500\n")
-    max_len = get_int("Max sentence length", d.get("max_sentence_length", 128), 16)
-    if max_len != d.get("max_sentence_length"):
-        overrides["max_sentence_length"] = max_len
-    seed = get_int("Random seed", d.get("seed", 42), 0)
+
+    print(f"  {TW} Languages")
+    langs = d.get("languages", [])
+    new_langs = get_str_list("  Languages (comma-sep, e.g. en,es,fr,de)", langs)
+    if new_langs != langs:
+        overrides["languages"] = new_langs
+
+    print(f"  {AD} Random seed")
+    seed = get_int("  Seed", d.get("seed", 42), 0)
     if seed != d.get("seed"):
         overrides["seed"] = seed
-    current_langs = d.get("languages", [])
-    print(f"\nCurrent languages ({len(current_langs)}): {', '.join(current_langs)}")
-    if get_bool("Change language list?", False):
-        lang_str = get_input("Languages (comma-sep)", ",".join(current_langs))
-        new_langs = [l.strip() for l in lang_str.split(",") if l.strip()]
-        if new_langs != current_langs:
-            overrides["languages"] = new_langs
-    return {"data": overrides} if overrides else {}
 
+    print(f"  {AD} Max sentence length (tokens)")
+    max_len = get_int("  Max length", d.get("max_sentence_length", 128), 16, 512)
+    if max_len != d.get("max_sentence_length"):
+        overrides["max_sentence_length"] = max_len
 
-# ── Section: Advanced Data Quality Settings ──────────────────────────
-
-def section_data_quality(config: dict) -> dict:
-    print("\n\u2500\u2500 Advanced Data Quality (ENTER = keep current) \u2500\u2500\n")
-    overrides = {}
-
-    td = config.get("data", {}).get("training_distribution", {})
-    print(f"  Current training_distribution: {len(td)} language pairs")
-    if get_bool("Adjust per-pair sentence counts?", False):
+    print(f"\n  {TW} Per-pair sentence counts (training_distribution)")
+    td = d.get("training_distribution", {})
+    if get_bool("  Adjust per-pair counts?", False):
         new_td = {}
-        print("  Enter count for each pair (blank = keep current, 0 = remove):")
         for pair in sorted(td.keys()):
             cur = td[pair]
             val = get_input(f"    {pair}", str(cur))
             if val:
                 try:
                     n = int(val)
-                    if n > 0:
-                        new_td[pair] = n
+                    if n > 0: new_td[pair] = n
                 except ValueError:
                     new_td[pair] = cur
         if new_td != td:
-            overrides.setdefault("data", {})["training_distribution"] = new_td
+            overrides["training_distribution"] = new_td
 
-    ap = config.get("data", {}).get("augmentation_pairs", [])
-    print(f"\n  Current augmentation_pairs: {len(ap)} pairs")
-    if get_bool("Change augmentation pairs?", False):
-        ap_str = get_input("Augmentation pairs (comma-sep, e.g. en-es,fr-de)", ",".join(ap))
-        new_ap = [p.strip() for p in ap_str.split(",") if p.strip()]
-        if new_ap != ap:
-            overrides.setdefault("data", {})["augmentation_pairs"] = new_ap
+    print(f"\n  {AD} Augmentation pairs (for backtranslation)")
+    ap = d.get("augmentation_pairs", [])
+    new_ap = get_str_list("  Augmentation pairs (comma-sep)", ap)
+    if new_ap != ap:
+        overrides["augmentation_pairs"] = new_ap
 
-    vs = config.get("data", {}).get("vocabulary_strategy", {})
-    print(f"\n  Vocab approach: {vs.get('approach', 'production')}")
-    if get_bool("Change vocab strategy?", False):
-        approach = get_input("  Vocab approach (production/research)", vs.get("approach", "production"))
-        if approach.lower() in ("production", "research"):
-            overrides.setdefault("data", {}).setdefault("vocabulary_strategy", {})["approach"] = approach.lower()
-        groups = vs.get("groups", {})
-        print(f"  Current vocab groups: {len(groups)} (latin, cjk, arabic, ...)")
-        if get_bool("Edit vocab groups?", False):
-            print("  Enter groups as: group_name: lang1,lang2,...  (blank line to finish):")
-            new_groups = {}
-            while True:
-                line = input("    ").strip()
-                if not line:
-                    break
-                if ":" in line:
-                    gname, langs = line.split(":", 1)
-                    new_groups[gname.strip()] = [l.strip() for l in langs.split(",") if l.strip()]
-            if new_groups:
-                overrides.setdefault("data", {}).setdefault("vocabulary_strategy", {})["groups"] = new_groups
+    print(f"\n  {AD} Download settings")
+    dw = get_int("  Max download workers", d.get("download_max_workers", 4), 1, 32)
+    if dw != d.get("download_max_workers"):
+        overrides["download_max_workers"] = dw
+    pb = get_bool("  Parallel batch downloads", d.get("download_parallel_batches", False))
+    if pb != d.get("download_parallel_batches"):
+        overrides["download_parallel_batches"] = pb
 
+    print(f"\n  {AD} Vocabulary strategy")
+    vs = d.get("vocabulary_strategy", {})
+    approach = get_input("  Vocab approach (production/research)", vs.get("approach", "production"))
+    if approach.lower() in ("production", "research") and approach.lower() != vs.get("approach"):
+        overrides.setdefault("vocabulary_strategy", {})["approach"] = approach.lower()
+
+    return {"data": overrides} if overrides else {}
+
+
+# ── Section 5: Data Strategy ────────────────────────────────────────
+
+def section_data_strategy(config: dict) -> dict:
+    _section_header(5, 9, "Data Strategy",
+                    f"{AD} = only change if customizing data sources")
     ds = config.get("data_strategy", {})
-    print(f"\n  Current data_strategy priority_rules: high={len(ds.get('priority_rules', {}).get('high', []))} pairs")
-    if get_bool("Change data strategy priority rules?", False):
-        ds_override = {}
+    overrides = {}
+
+    pr = ds.get("priority_rules", {})
+    print(f"  Current high priority: {len(pr.get('high', []))} pairs")
+    print(f"  Current medium priority: {len(pr.get('medium', []))} pairs")
+    print(f"  Current low priority: {len(pr.get('low', []))} pairs")
+    if get_bool("  Edit priority rules?", False):
+        pr_override = {}
         for tier in ("high", "medium", "low"):
-            cur = ds.get("priority_rules", {}).get(tier, [])
-            if get_bool(f"  Edit {tier} priority pairs?", False):
-                new_list = get_input(f"  {tier} pairs (comma-sep)", ",".join(cur))
-                ds_override.setdefault("priority_rules", {})[tier] = [p.strip() for p in new_list.split(",") if p.strip()]
-        ds_config = config.get("data_strategy", {})
-        sp = ds_config.get("source_preferences", {})
-        print("  Source preferences control which datasets are used per language group.")
-        if get_bool("Change source preferences?", False):
-            pref_override = {}
-            for group, sources in sp.items():
-                cur_str = ",".join(sources)
-                new_str = get_input(f"  {group} sources (comma-sep)", cur_str)
-                if new_str != cur_str:
-                    pref_override[group] = [s.strip() for s in new_str.split(",") if s.strip()]
-            if pref_override:
-                ds_override["source_preferences"] = pref_override
-        if ds_override:
-            overrides["data_strategy"] = ds_override
+            cur = pr.get(tier, [])
+            new_list = get_str_list(f"    {tier} pairs", cur)
+            if new_list != cur:
+                pr_override[tier] = new_list
+        if pr_override:
+            overrides["priority_rules"] = pr_override
 
-    ct = config.get("pipeline", {}).get("comet_quality_threshold", 0.7)
-    new_ct = get_float("Comet quality threshold (0.0-1.0)", ct)
-    if abs(new_ct - ct) > 1e-10 and 0 <= new_ct <= 1:
-        overrides.setdefault("pipeline", {})["comet_quality_threshold"] = new_ct
+    print(f"\n  Source preferences control which datasets are used per language group.")
+    sp = ds.get("source_preferences", {})
+    if get_bool("  Edit source preferences?", False):
+        sp_override = {}
+        for group, sources in sp.items():
+            new_str = get_str_list(f"    {group} sources", sources)
+            if new_str != sources:
+                sp_override[group] = new_str
+        if sp_override:
+            overrides["source_preferences"] = sp_override
 
-    ff = config.get("pipeline", {}).get("max_dynamic_ff_per_pair", 25000)
-    new_ff = get_int("Max false friends per pair", ff, 0)
-    if new_ff != ff:
-        overrides.setdefault("pipeline", {})["max_dynamic_ff_per_pair"] = new_ff
+    return {"data_strategy": overrides} if overrides else {}
 
-    return overrides
+
+# ── Section 6: Pipeline Settings ────────────────────────────────────
+
+def section_pipeline(config: dict) -> dict:
+    _section_header(6, 9, "Pipeline Settings",
+                    f"{TW} = commonly tweaked  |  {AD} = advanced")
+    p = config.get("pipeline", {})
+    overrides = {}
+
+    print(f"  {TW} COMET quality threshold (0.0-1.0, higher = stricter)")
+    ct = get_float("  Threshold", p.get("comet_quality_threshold", 0.7))
+    if abs(ct - p.get("comet_quality_threshold", 0.7)) > 1e-10 and 0 <= ct <= 1:
+        overrides["comet_quality_threshold"] = ct
+
+    print(f"  {TW} High-resource threshold (skip NLLB BT for pairs above this count)")
+    hr = get_int("  Threshold", p.get("high_resource_threshold", 100_000_000), 0)
+    if hr != p.get("high_resource_threshold"):
+        overrides["high_resource_threshold"] = hr
+
+    print(f"  {AD} Max false friends per pair")
+    ff = get_int("  Max FF/pair", p.get("max_dynamic_ff_per_pair", 25000), 0)
+    if ff != p.get("max_dynamic_ff_per_pair"):
+        overrides["max_dynamic_ff_per_pair"] = ff
+
+    print(f"  {AD} Max idioms per language")
+    im = get_int("  Max idioms/lang", p.get("max_idiom_per_lang", 10000), 0)
+    if im != p.get("max_idiom_per_lang"):
+        overrides["max_idiom_per_lang"] = im
+
+    return {"pipeline": overrides} if overrides else {}
+
+
+# ── Section 7: Distributed Training ─────────────────────────────────
+
+def section_distributed(config: dict) -> dict:
+    _section_header(7, 9, "Distributed Training",
+                    f"{AD} = only needed for multi-GPU training")
+    di = config.get("distributed", {})
+    overrides = {}
+
+    backend = get_input(f"  {AD} Backend (nccl/gloo/mpi)", di.get("backend", "nccl"))
+    if backend != di.get("backend"):
+        overrides["backend"] = backend
+
+    bucket = get_int(f"  {AD} Bucket cap (MB)", di.get("bucket_cap_mb", 25), 1)
+    if bucket != di.get("bucket_cap_mb"):
+        overrides["bucket_cap_mb"] = bucket
+
+    for field, label, default in [
+        ("find_unused_parameters", "  Find unused parameters", False),
+        ("broadcast_buffers", "  Broadcast buffers", False),
+        ("gradient_as_bucket_view", "  Gradient as bucket view", True),
+        ("static_graph", "  Static graph", True),
+    ]:
+        val = get_bool(f"  {AD} {label}", di.get(field, default))
+        if val != di.get(field, default):
+            overrides[field] = val
+
+    return {"distributed": overrides} if overrides else {}
+
+
+# ── Section 8: Monitoring ───────────────────────────────────────────
+
+def section_monitoring(config: dict) -> dict:
+    _section_header(8, 9, "Monitoring & Logging",
+                    f"{OP} = optional, enable only if you use the tool")
+    mo = config.get("monitoring", {})
+    overrides = {}
+
+    for field, label in [
+        ("use_wandb", "Use Weights & Biases"),
+        ("use_tensorboard", "Use TensorBoard"),
+        ("log_gradients", "Log gradient histograms"),
+        ("log_weights", "Log weight histograms"),
+        ("log_learning_rate", "Log learning rate"),
+    ]:
+        val = get_bool(f"  {OP} {label}", mo.get(field, False))
+        if val != mo.get(field, False):
+            overrides[field] = val
+
+    return {"monitoring": overrides} if overrides else {}
+
+
+# ── Section 9: Hub Settings ─────────────────────────────────────────
+
+def section_hub(config: dict) -> dict:
+    _section_header(9, 9, "Hugging Face Hub Settings",
+                    f"{TW} = set these if using HF Hub sync")
+    h = config.get("hub", {})
+    overrides = {}
+
+    dr = get_input(f"  {TW} Dataset repo ID", h.get("dataset_repo_id", "code-with-zeeshan/UTS-Datasets"))
+    if dr != h.get("dataset_repo_id"):
+        overrides["dataset_repo_id"] = dr
+
+    mr = get_input(f"  {TW} Model repo ID", h.get("model_repo_id", "code-with-zeeshan/Universal-Translation-System"))
+    if mr != h.get("model_repo_id"):
+        overrides["model_repo_id"] = mr
+
+    print(f"  {OP} Auto-upload after pipeline/training")
+    au = get_bool("  Auto-upload", h.get("auto_upload", False))
+    if au != h.get("auto_upload"):
+        overrides["auto_upload"] = au
+
+    print(f"  {OP} Auto-download data if missing")
+    ad = get_bool("  Auto-download", h.get("auto_download", True))
+    if ad != h.get("auto_download"):
+        overrides["auto_download"] = ad
+
+    return {"hub": overrides} if overrides else {}
 
 
 # ── Section: Review & Save ──────────────────────────────────────────
@@ -336,7 +493,7 @@ def section_review(base: dict, merged: dict) -> Path | None:
     print(f"\n  Usage:")
     print(f"    \033[1;37m$ uts data --pipeline --config {path}\033[0m")
     print(f"    \033[1;37m$ uts train --full --config {path}\033[0m")
-    print(f"    \033[1;37m$ uts tui --config {path}\033[0m")
+    print(f"    \033[1;37m$ uts eval --model --config {path}\033[0m")
     return path
 
 
@@ -355,8 +512,6 @@ def _compute_diff(base: dict, merged: dict, prefix: str = "") -> List[Tuple[str,
     return changes
 
 
-# ── CLI override application ─────────────────────────────────────────
-
 def apply_cli_overrides(base: dict, sets: List[str]) -> dict:
     merged = deep_merge({}, base)
     for s in sets:
@@ -370,18 +525,11 @@ def apply_cli_overrides(base: dict, sets: List[str]) -> dict:
     return merged
 
 
-# ── Main ─────────────────────────────────────────────────────────────
-
 def main():
     import argparse
     parser = argparse.ArgumentParser(
         description="Interactive config builder for Universal Translation System",
-        epilog=(
-            "Examples:\n"
-            "  python scripts/config_interactive.py\n"
-            "  python scripts/config_interactive.py --set training.num_epochs=20\n"
-            "  python scripts/config_interactive.py --list"
-        ),
+        epilog="Examples:\n  python scripts/config_interactive.py\n  python scripts/config_interactive.py --set training.num_epochs=20",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
@@ -394,6 +542,8 @@ def main():
                         help="List existing override configs")
     parser.add_argument("--diff", metavar="NAME",
                         help="Show diff between override and base.yaml")
+    parser.add_argument("--preset-stages", default="",
+                        help="Comma-separated stages to pre-fill (from data --interactive)")
     args = parser.parse_args()
 
     if not BASE_CONFIG.exists():
@@ -438,65 +588,41 @@ def main():
         print(f"\nSaved to {path}")
         return 0
 
+    preset_stages = [s.strip() for s in args.preset_stages.split(",") if s.strip()] if args.preset_stages else None
+
     clear_screen()
-    print("\033[1;36m\u2500\u2500 Universal Translation System \u2014 Interactive Config Builder \u2500\u2500\033[0m")
-    print()
+    print("\033[1;36m\u2500\u2500 Universal Translation System \u2014 Interactive Config Builder \u2500\u2500\033[0m\n")
     print("  This wizard helps you create a config based on base.yaml.")
-    print("  Each section shows defaults; press ENTER to keep.")
-    print("  Sections: 1) Pipeline Stages  2) Training  3) Model  4) Data  5) Advanced Quality  6) Review")
+    print("  Each setting shows its default; press ENTER to keep it.\n")
+    print(f"  Legend:  {TW} = commonly changed  |  {AD} = power user  |  {OP} = optional\n")
+    print("  Sections: 1) Pipeline Stages  2) Training  3) Model  4) Data")
+    print("            5) Data Strategy  6) Pipeline  7) Distributed")
+    print("            8) Monitoring  9) Hub  10) Review & Save")
     wait_enter()
 
-    # Section 1: Pipeline Stages
-    clear_screen()
-    print("Section 1/6: Pipeline Stages\n")
-    current_stages = merged.get("pipeline", {}).get("enabled_stages", [])
-    enabled = run_stage_selector(current_stages)
-    if enabled is None:
-        print("Cancelled.")
-        return 1
-    merged.setdefault("pipeline", {})["enabled_stages"] = enabled
-    wait_enter()
+    sections = [
+        ("Pipeline Stages", lambda: section_stages(base, preset_stages)),
+        ("Training", lambda: section_training(merged)),
+        ("Model Architecture", lambda: section_model(merged)),
+        ("Data Settings", lambda: section_data(merged)),
+        ("Data Strategy", lambda: section_data_strategy(merged)),
+        ("Pipeline Settings", lambda: section_pipeline(merged)),
+        ("Distributed Training", lambda: section_distributed(merged)),
+        ("Monitoring & Logging", lambda: section_monitoring(merged)),
+        ("Hub Settings", lambda: section_hub(merged)),
+    ]
 
-    # Section 2: Training
-    clear_screen()
-    print("Section 2/6: Training Settings\n")
-    tr = section_training(merged)
-    if tr:
-        merged = deep_merge(merged, tr)
-    wait_enter()
+    for name, fn in sections:
+        result = fn()
+        if result is None:
+            print("  \033[33mCancelled.\033[0m")
+            return 1
+        merged = deep_merge(merged, result)
+        wait_enter()
 
-    # Section 3: Model
-    clear_screen()
-    print("Section 3/6: Model Architecture\n")
-    mo = section_model(merged)
-    if mo:
-        merged = deep_merge(merged, mo)
-    wait_enter()
-
-    # Section 4: Data
-    clear_screen()
-    print("Section 4/6: Data Settings\n")
-    da = section_data(merged)
-    if da:
-        merged = deep_merge(merged, da)
-    wait_enter()
-
-    # Section 4b: Advanced Data Quality (optional)
-    clear_screen()
-    print("Section 5/6: Advanced Data Quality Settings\n")
-    print("  This section controls data quality levers: training_distribution,")
-    print("  augmentation_pairs, vocab strategy groups, data strategy priorities,")
-    print("  comet threshold, and false friend limits.")
-    if get_bool("Configure advanced data quality settings?", True):
-        dq = section_data_quality(merged)
-        if dq:
-            merged = deep_merge(merged, dq)
-    wait_enter()
-
-    # Section 6: Review & Save
     result = section_review(base, merged)
     if result is None:
-        print("Cancelled.")
+        print("  \033[33mCancelled.\033[0m")
         return 1
     print(f"\n  \033[1;32mDone!\033[0m Configuration saved to \033[1;33m{result}\033[0m")
     return 0
