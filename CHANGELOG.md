@@ -37,6 +37,8 @@ All notable changes to the Universal Translation System will be documented in th
 - **`download_max_workers: 0`**, **`download_parallel_batches: true`**, **`download_rate_limit: 0`**, **`vocab_threads: 0`** — all defaults changed to `0` (auto = GPU tier) or `true` in `base.yaml`.
 - **`DataConfig` field defaults updated** in `config/schemas.py`: `download_max_workers=0`, `download_parallel_batches=True`, `download_rate_limit=0`, `vocab_threads=0`.
 - **`unused import os` removed** from `pipeline/vocabulary/config.py`.
+- **Relaxed `numpy<2.0.0` → `numpy>=1.24.0`** and **`datasets<2.20.0` → `datasets>=2.16.0`** in `requirements/base.txt` — prevents unnecessary downgrades on Colab/Lightning AI where numpy 2.x and datasets 4.x are pre-installed. The codebase is fully compatible with both newer versions (no deprecated aliases used).
+- **Added `docs/ENVIRONMENT_SETUP.md`** — per-platform install guidance (Colab, Lightning AI, local).
 - **OpenTelemetry**: All 4 hard OTEL imports (`pipeline/data/orchestrator.py`, `runtime/encoder/universal_encoder.py`, `runtime/coordinator/advanced_coordinator.py`, `runtime/cloud_decoder/optimized_decoder.py`) replaced with soft fallback via `utils.tracing`. OTEL packages are now optional — services work without `serve.txt` extras.
 - **`.env.example`**: Added `HF_TOKEN_FILE`, `REDIS_PASSWORD_FILE`, `API_RATE_LIMIT`, `API_BURST_LIMIT`, `API_TIMEOUT`, `API_VERSION` bare env vars for secrets file bootstrap and API tuning.
 - **`requirements/coordinator.txt`**: Added `zeroconf>=0.131.0` for mDNS service discovery (was missing despite being used in `udn/cli.py`).
