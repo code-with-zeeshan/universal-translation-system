@@ -900,27 +900,213 @@ class UnifiedDataPipeline:
                 self.logger.info(f"🧹 Cleaned up intermediate directory: {d}")
 
     async def _validate_dataset(self):
-        """Validate the final dataset"""
+        """Validate the final dataset — per-stage artifact checks + integrated validations."""
         with tracer.start_as_current_span("validate_dataset") as span:
             self.logger.info("✔️ Validating final dataset...")
-            
-            validations = {
-                'size_check': self._validate_size(),
-                'language_coverage': self._validate_languages(),
-                'format_check': self._validate_format(),
-                'quality_check': self._validate_quality()
-            }
-            
+
+            validations = {}
+
+            completed = self.state.completed_stages
+
+            if completed.get('download_training'):
+                v = self._validate_stage_download_training()
+                validations['download_training'] = v
+
+            if completed.get('sample_filter'):
+                v = self._validate_stage_sample_filter()
+                validations['sample_filter'] = v
+
+            if completed.get('augment'):
+                v = self._validate_stage_augment()
+                validations['augment'] = v
+
+            if completed.get('comet_quality'):
+                v = self._validate_stage_comet_quality()
+                validations['comet_quality'] = v
+
+            if completed.get('vocabulary'):
+                v = self._validate_stage_vocabulary()
+                validations['vocabulary'] = v
+
+            validations['size_check'] = self._validate_size()
+            validations['language_coverage'] = self._validate_languages()
+            validations['format_check'] = self._validate_format()
+            validations['quality_check'] = self._validate_quality()
+
             all_valid = all(validations.values())
-            
+
             if all_valid:
                 self.logger.info("✅ All validations passed!")
             else:
                 failed = [k for k, v in validations.items() if not v]
                 self.logger.warning(f"⚠️ Failed validations: {failed}")
-            
+
             span.set_attribute("validation.passed", all_valid)
+            span.set_attribute("validation.failed", str(failed))
             return all_valid
+
+    def _validate_stage_download_training(self) -> bool:
+        """Check every training pair has a raw file with content."""
+        distribution = self.config.data.training_distribution
+        raw_dir = self.dirs['raw']
+        all_ok = True
+        for pair_str in distribution:
+            fpath = raw_dir / f"{pair_str}.txt"
+            if not fpath.exists():
+                self.logger.error(f"[download_training] Missing raw file: {fpath}")
+                all_ok = False
+                continue
+            try:
+                line_count = sum(1 for _ in open(fpath, encoding='utf-8'))
+                if line_count < 50:
+                    self.logger.warning(
+                        f"[download_training] {pair_str} only {line_count} lines (< 50)"
+                    )
+                    all_ok = False
+            except Exception as e:
+                self.logger.error(f"[download_training] Cannot read {fpath}: {e}")
+                all_ok = False
+        return all_ok
+
+    def _validate_stage_sample_filter(self) -> bool:
+        """Check each pair has a sampled file with reasonable retention."""
+        distribution = self.config.data.training_distribution
+        sampled_dir = self.dirs['sampled']
+        all_ok = True
+        for pair_str, target_size in distribution.items():
+            fpath = sampled_dir / f"{pair_str}_sampled.txt"
+            if not fpath.exists():
+                self.logger.error(f"[sample_filter] Missing sampled file: {fpath}")
+                all_ok = False
+                continue
+            try:
+                line_count = sum(1 for _ in open(fpath, encoding='utf-8'))
+                if line_count == 0:
+                    self.logger.error(f"[sample_filter] {pair_str} sampled file is empty")
+                    all_ok = False
+                elif target_size > 0:
+                    ratio = line_count / target_size
+                    if ratio > 0.99:
+                        self.logger.warning(
+                            f"[sample_filter] {pair_str} retention {ratio:.0%} "
+                            f"({line_count}/{target_size}) — filtering may not have run"
+                        )
+                    elif ratio < 0.01:
+                        self.logger.warning(
+                            f"[sample_filter] {pair_str} retention {ratio:.1%} "
+                            f"({line_count}/{target_size}) — almost all data dropped"
+                        )
+            except Exception as e:
+                self.logger.error(f"[sample_filter] Cannot read {fpath}: {e}")
+                all_ok = False
+        return all_ok
+
+    def _validate_stage_augment(self) -> bool:
+        """Check augment output files exist and have content."""
+        augment_dir = self.runtime_dirs.augment_dir
+        all_ok = True
+        if not augment_dir.exists():
+            self.logger.warning(f"[augment] Augment dir not found: {augment_dir}")
+            return True
+
+        for pair_dir in augment_dir.iterdir():
+            if not pair_dir.is_dir():
+                continue
+            pair_key = pair_dir.name
+            for fname in ('false_friends.txt', 'false_friends_dynamic.txt',
+                          'idioms.txt', 'idiom_equivalences.txt'):
+                fpath = pair_dir / fname
+                if fpath.exists():
+                    try:
+                        lc = sum(1 for _ in open(fpath, encoding='utf-8'))
+                        if lc == 0:
+                            self.logger.warning(
+                                f"[augment] {pair_key}/{fname} is empty"
+                            )
+                    except Exception as e:
+                        self.logger.error(
+                            f"[augment] Cannot read {pair_key}/{fname}: {e}"
+                        )
+                        all_ok = False
+
+        final_dir = self.dirs['final']
+        if final_dir.exists():
+            for bt_file in final_dir.glob("augmented_*.txt"):
+                try:
+                    lc = sum(1 for _ in open(bt_file, encoding='utf-8'))
+                    if lc == 0:
+                        pair = bt_file.stem.replace('augmented_', '')
+                        self.logger.warning(
+                            f"[augment] Backtranslated {pair} is empty"
+                        )
+                except Exception as e:
+                    self.logger.error(f"[augment] Cannot read {bt_file}: {e}")
+                    all_ok = False
+
+            pivot_dir = final_dir / 'pivot_pairs'
+            if pivot_dir.exists():
+                for pf in pivot_dir.glob("*.txt"):
+                    try:
+                        lc = sum(1 for _ in open(pf, encoding='utf-8'))
+                        if lc == 0:
+                            self.logger.warning(
+                                f"[augment] Pivot file {pf.name} is empty"
+                            )
+                    except Exception as e:
+                        self.logger.error(f"[augment] Cannot read {pf}: {e}")
+                        all_ok = False
+
+        return all_ok
+
+    def _validate_stage_vocabulary(self) -> bool:
+        """Check vocab packs and manifest exist with content."""
+        vocab_dir = self.runtime_dirs.vocab_dir
+        if not vocab_dir.exists():
+            self.logger.error(f"[vocabulary] Vocab dir not found: {vocab_dir}")
+            return False
+
+        manifest = self.runtime_dirs.vocab_manifest_path
+        if not manifest.exists():
+            self.logger.error(f"[vocabulary] Missing manifest: {manifest}")
+            return False
+
+        pack_count = 0
+        for fpath in vocab_dir.glob("*.msgpack"):
+            pack_count += 1
+            if fpath.stat().st_size == 0:
+                self.logger.error(f"[vocabulary] Empty pack: {fpath.name}")
+                return False
+
+        if pack_count == 0:
+            self.logger.error(
+                f"[vocabulary] No .msgpack packs found in {vocab_dir}"
+            )
+            return False
+
+        self.logger.info(
+            f"[vocabulary] {pack_count} packs + manifest — OK"
+        )
+        return True
+
+    def _validate_stage_comet_quality(self) -> bool:
+        """If COMET ran, verify final files exist and are non-empty."""
+        datasets = self.runtime_dirs.datasets_dir
+        for fname in ('train_final.txt', 'val_final.txt'):
+            fpath = datasets / fname
+            if not fpath.exists():
+                self.logger.error(
+                    f"[comet_quality] Missing {fname} — COMET may have overwritten?"
+                )
+                return False
+            try:
+                lc = sum(1 for _ in open(fpath, encoding='utf-8'))
+                if lc == 0:
+                    self.logger.error(f"[comet_quality] {fname} is empty after COMET filter")
+                    return False
+            except Exception as e:
+                self.logger.error(f"[comet_quality] Cannot read {fname}: {e}")
+                return False
+        return True
     
     async def _create_vocabulary(self):
         """Create vocabulary packs from processed data"""
