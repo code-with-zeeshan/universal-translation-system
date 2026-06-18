@@ -5,6 +5,8 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
+- **`utils/tracing.py`** — Unified tracing module with graceful OpenTelemetry fallback. Provides `get_tracer()`, `setup_tracing()`, `setup_otlp_tracing()`, `maybe_instrument_app()`, `shutdown_tracing()`. When OTEL packages are not installed, all calls become no-ops — no more crashes from hard OTEL imports.
+- **`scripts/init_env.py`** — Initialize `.env` from `.env.example` with auto-generated cryptographically strong secrets. Usage: `python scripts/init_env.py --role coordinator --rsa`. Replaces all placeholder values (`use-openssl-rand-hex-32-*`) with `secrets.token_hex()` output. Supports `--check` mode to detect weak secrets in existing `.env`. Also writes individual secret files to `output/secrets/` for Docker Compose.
 - **Language ID token** (`runtime/encoder/universal_encoder.py`): `nn.Embedding(20, hidden_dim)` prepends a per-language bias to all input token positions via `language` parameter in `forward()`. List of 20 supported languages (`en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, pl, uk, nl, id, sv, vi`). ONNX export updated with `language` input alongside `input_ids`/`attention_mask`.
 - **Early BLEU validation** (`pipeline/training/trainer.py`): `_evaluate_bleu()` method generates on a subset of the validation set and computes corpus BLEU using `sacrebleu`. Runs after epoch 1 in the training loop; score logged and stored in `training_history['bleu_scores']`.
 - **Auto-evolve vocab for low-resource pairs** (`pipeline/data/orchestrator.py`): After `_sample_and_filter_data`, pairs with <50% of `target_size` trigger `VocabularyEvolver.evolve_all_packs()` to expand the relevant script-group vocab packs with new subwords.
@@ -21,6 +23,10 @@ All notable changes to the Universal Translation System will be documented in th
 - **HF Hub card files** at `/home/user/hf_upload/`: `model_readme.md` + `model_gitattributes` for model repo, `dataset_readme.md` + `dataset_gitattributes` for dataset repo.
 
 ### Changed
+- **OpenTelemetry**: All 4 hard OTEL imports (`pipeline/data/orchestrator.py`, `runtime/encoder/universal_encoder.py`, `runtime/coordinator/advanced_coordinator.py`, `runtime/cloud_decoder/optimized_decoder.py`) replaced with soft fallback via `utils.tracing`. OTEL packages are now optional — services work without `serve.txt` extras.
+- **`.env.example`**: Added `HF_TOKEN_FILE`, `REDIS_PASSWORD_FILE`, `API_RATE_LIMIT`, `API_BURST_LIMIT`, `API_TIMEOUT`, `API_VERSION` bare env vars for secrets file bootstrap and API tuning.
+- **`requirements/coordinator.txt`**: Added `zeroconf>=0.131.0` for mDNS service discovery (was missing despite being used in `udn/cli.py`).
+- **`pipeline/data/orchestrator.py`**: Fixed stale comment `NLLB-3.3B` → `NLLB-1.3B` on knowledge distillation docstring.
 - **`setup.py`**: Added `data` pip extra (`pip install -e ".[data]"`) for data + vocabulary pipeline. Includes `tqdm` (progress bars) and `unbabel-comet` (COMET quality filter). Missing `data` extra was causing install failures in Colab.
 - **Encoder/decoder dimension unified to 512** (`config/base.yaml`): `decoder_dim: 768→512`, `decoder_heads: 12→8` (head_dim stays 64). All runtime defaults (`decoder_core.py`, `decoder_server.py`, `udn/decoder.py`, `udn/config.py`) updated from `encoder_dim=1024`/`decoder_dim=512` to both 512. Bootstrap defaults (`bootstrap.py`, `scripts/pipeline.py`) updated. `encoder_adapter` becomes identity `512→512` — fewer params, no quality loss.
 - **`scripts/data_pipeline_wizard.py`**: Refactored from standalone TUI implementation to thin CLI wrapper that imports stage definitions from `_wizard_shared.py`.

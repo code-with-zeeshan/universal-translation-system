@@ -102,9 +102,8 @@ Use the unified CLI for all operations:
 git clone https://github.com/code-with-zeeshan/universal-translation-system
 cd universal-translation-system
 
-# Copy and configure environment variables
-cp .env.example .env
-# Edit .env with your configuration
+# Auto-generate .env with strong secrets
+python scripts/init_env.py --role general --rsa
 
 # Start services with Docker Compose
 docker compose --env-file .env up -d

@@ -50,7 +50,7 @@ Quick reference for builders:
 # Clone & install
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git
 cd universal-translation-system
-cp .env.example .env              # Edit: set UTS_HMAC_KEY, HF_TOKEN, etc.
+python scripts/init_env.py --role general   # Auto-generate .env with strong secrets
 pip install -e ".[train]"
 
 # Full pipeline (auto-resumes if interrupted)
@@ -173,7 +173,8 @@ Run `./uts docs --list` for all 33 topics. Key ones:
 | TUI Dashboard | ✅ Stable | Real-time pipeline + training + GPU monitoring |
 | Publishing | ✅ Stable | Split → ONNX → quantize → HF Hub upload |
 | Version Management | ✅ Stable | Centralized semver, compatibility checks, CI gate |
-| Secret Management | ✅ Stable | 3-layer: bootstrap → credential manager → secure serialization |
+| Secret Management | ✅ Stable | 3-layer: bootstrap → credential manager → secure serialization + `init_env.py` auto-generation |
+| Tracing / OTEL | ✅ Stable | Graceful fallback — works with or without OpenTelemetry packages |
 | Auto-Resume Pipeline | ✅ Stable | Cross-stage data→train→eval with config-hash invalidation |
 | Android SDK | ✅ Enhanced | Coordinator-aware, local decoder + port auto-scan |
 | iOS SDK | ✅ Enhanced | Coordinator-aware, local decoder + port auto-scan |

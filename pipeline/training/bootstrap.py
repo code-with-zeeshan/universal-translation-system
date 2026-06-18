@@ -55,9 +55,12 @@ class PretrainedModelBootstrapper:
     
     def create_encoder_from_pretrained(self, 
                                     model_name: str = 'xlm-roberta-base',
-                                    output_path: str = 'self.runtime_dirs.encoder_models_dir / "universal_encoder_initial.pt"',
+                                    output_path: Optional[str] = None,
                                     target_hidden_dim: int = 768) -> nn.Module:
         """Create encoder using modern AutoModel patterns with dimension adaptation"""
+        
+        if output_path is None:
+            output_path = str(RuntimeDirectoryManager().encoder_models_dir / "universal_encoder_initial.pt")
         
         logger.info(f"🔄 Loading {model_name} with AutoModel...")
         
@@ -293,11 +296,14 @@ class PretrainedModelBootstrapper:
 
     def create_decoder_from_mbart(self, 
                                 model_name: str = 'facebook/mbart-large-50',
-                                output_path: str = 'self.runtime_dirs.decoder_models_dir / "universal_decoder_initial.pt"',
+                                output_path: Optional[str] = None,
                                 encoder_dim: int = 512,
                                 decoder_dim: int = 512,
                                 max_seq_length: int = 512) -> nn.Module:
         """Create decoder using modern AutoModel patterns"""
+        
+        if output_path is None:
+            output_path = str(RuntimeDirectoryManager().decoder_models_dir / "universal_decoder_initial.pt")
         
         logger.info(f"🔄 Loading {model_name} with AutoModel...")
         

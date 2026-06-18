@@ -8,7 +8,7 @@ This guide covers local (Docker Compose), standalone Docker, Helm, and Kubernete
 ### Prerequisites
 - **Docker** and **Docker Compose**
 - **NVIDIA drivers + CUDA + NVIDIA Container Toolkit** (for GPU decoder)
-- **.env** (optional) based on `.env.example`
+- **.env** — auto-generate with `python scripts/init_env.py --role coordinator` (or `--role decoder` for decoder-only)
 
 ### Bring up the stack
 ```bash
@@ -40,10 +40,15 @@ docker compose logs -f decoder
 - `monitoring/prometheus/*`, `monitoring/grafana/*`
 
 ### Configuration via environment variables
-See `docs/environment-variables.md` and `.env.example`.
+See `docs/environment-variables.md` and `.env.example`. Auto-generate with:
+```bash
+python scripts/init_env.py --role coordinator --rsa
+```
 - **Ports**: `ENCODER_PORT`, `DECODER_PORT`, `COORDINATOR_PORT`
 - **Coordinator**: `POOL_CONFIG_PATH` (default: `config/decoder_pool.json`), `REDIS_URL`
 - **Secrets**: `DECODER_JWT_SECRET`, `COORDINATOR_JWT_SECRET`, `COORDINATOR_TOKEN`, `INTERNAL_SERVICE_TOKEN`
+
+All external services (Redis, Prometheus, Grafana, etcd, OpenTelemetry, wandb) support both self-hosted and managed/SaaS modes — configure via URL/host env vars or disable with feature flags. See `docs/environment-variables.md` for the complete list.
 
 ### Volumes and artifacts
 - **Models**: `./models` mounted to `/app/models`

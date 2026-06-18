@@ -60,22 +60,11 @@ from runtime.encoder.language_adapters import AdapterUniversalEncoder
 # +++ ADDED: Import the new dependency +++
 from .dependencies import verify_internal_request
 
-# OpenTelemetry imports
-from opentelemetry import trace
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+# OpenTelemetry (graceful fallback if not installed)
+from utils.tracing import get_tracer, setup_otlp_tracing, maybe_instrument_app, shutdown_tracing
 
-# OpenTelemetry setup
-trace.set_tracer_provider(
-    TracerProvider(resource=Resource.create({SERVICE_NAME: "cloud-decoder"}))
-)
-otlp_exporter = OTLPSpanExporter()
-span_processor = BatchSpanProcessor(otlp_exporter)
-trace.get_tracer_provider().add_span_processor(span_processor)
-tracer = trace.get_tracer(__name__)
+setup_otlp_tracing("cloud-decoder")
+tracer = get_tracer(__name__)
 
 # Environment variables for configuration
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
@@ -327,7 +316,7 @@ class CompositionRequest(BaseModel):
 # FastAPI application for serving
 # Use shared API_VERSION for API surface; keep MODEL_VERSION in /status
 app = FastAPI(title=API_TITLE, version=API_VERSION, openapi_url="/openapi.json")
-FastAPIInstrumentor.instrument_app(app)
+maybe_instrument_app(app)
 
 @app.on_event("startup")
 async def startup_validation():
@@ -416,13 +405,7 @@ async def _install_shutdown_handler():
                 RedisManager.get_instance().stop_health_check()
             except Exception:
                 logger.warning("redis_health_check_stop_failed", exc_info=True)
-            try:
-                provider = trace.get_tracer_provider()
-                shutdown = getattr(provider, "shutdown", None)
-                if callable(shutdown):
-                    shutdown()
-            except Exception:
-                logger.warning("otel_shutdown_failed", exc_info=True)
+            shutdown_tracing()
         except Exception:
             logger.warning("cleanup_all_failed", exc_info=True)
     shutdown_ref = GracefulShutdown(cleanup)

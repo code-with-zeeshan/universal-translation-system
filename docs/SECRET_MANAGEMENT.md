@@ -147,6 +147,30 @@ uts tools --rotate-secrets --key-name coordinator_jwt_secret --set-env
 3. For RS256: add new public key to `JWT_PUBLIC_KEY_PATH`, keep old keys for grace period, then remove
 4. Set the printed `_EXPIRY` in your deployment to enable auto-rotation monitoring
 
+## Initial Setup
+
+Use `scripts/init_env.py` to auto-generate `.env` with strong random secrets:
+
+```bash
+# General role (just UTS_HMAC_KEY)
+python scripts/init_env.py --role general
+
+# Coordinator (all secrets + optional RSA keypair)
+python scripts/init_env.py --role coordinator --rsa
+
+# Fill everything + RSA
+python scripts/init_env.py --all --rsa
+
+# Check existing .env for weak values
+python scripts/init_env.py --check
+```
+
+The script:
+1. Copies `.env.example` → `.env`
+2. Replaces all placeholder secrets (`use-openssl-rand-hex-32-*`) with `secrets.token_hex()`
+3. Writes individual secret files to `output/secrets/` for Docker Compose mounting
+4. Optionally generates an RSA-2048 keypair for RS256 JWT auth
+
 ## Best Practices
 
 1. **Never commit secrets** to version control — use `.env` (gitignored), Docker Secrets, or K8s Secrets

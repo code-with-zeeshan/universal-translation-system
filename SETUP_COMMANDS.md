@@ -63,12 +63,10 @@ ln -sf "$PWD/bin/uts" ~/.local/bin/uts   # then add ~/.local/bin to your PATH
 ### 3. Set up environment variables
 
 ```bash
-# Copy template and edit
-cp .env.example .env
-# Or set the minimum required:
-export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"
-export UTS_ROLE="master"
-export JWT_SECRET="dev-jwt-secret-change-in-production"
+# Auto-generate .env with strong secrets
+python scripts/init_env.py --role general
+# For coordinator: python scripts/init_env.py --role coordinator --rsa
+# See: python scripts/init_env.py --help
 ```
 
 Add to `~/.bashrc` for permanence. See `docs/environment-variables.md` for all 150+ options.
@@ -354,7 +352,7 @@ cd /teamspace/studios/this_studio && \
 git clone https://github.com/code-with-zeeshan/universal-translation-system.git && \
 cd universal-translation-system && \
 pip install -e ".[train]" && \
-cp .env.example .env && \
+python scripts/init_env.py --role general && \
 . .env && \
 ./uts data --pipeline && \
 ./uts vocab --build && \
@@ -393,8 +391,8 @@ See `docs/RUNTIME_LAYOUT.md` for the complete filesystem reference (~40 dirs, ~1
 
 | Error | Cause | Fix |
 |---|---|---|
-| `HMAC key not configured` | Missing `UTS_HMAC_KEY` | `export UTS_HMAC_KEY=...` |
-| `JWT secret not configured` | Missing `JWT_SECRET` | `export JWT_SECRET=...` |
+| `HMAC key not configured` | Missing `UTS_HMAC_KEY` | `python scripts/init_env.py --role general` |
+| `JWT secret not configured` | Missing `JWT_SECRET` | `python scripts/init_env.py --role coordinator` |
 | `CUDA out of memory` | Batch too large for your GPU | Reduce `batch_size` or check [your tier](#before-you-start) |
 | `No module named '...'` | Missing dependency | `pip install -e ".[train]"` |
 | `ConnectionError` | Network issue | Retry; auto-resume picks up where it left off |

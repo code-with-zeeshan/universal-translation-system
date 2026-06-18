@@ -6,13 +6,13 @@ import torch.nn.functional as F
 from typing import Optional, Dict, List
 import os
 import logging
-from opentelemetry import trace
+from utils.tracing import get_tracer
 
 # --- MODIFIED ---
 # Import our new custom layers
 from .custom_layers import RotaryEmbedding, CustomTransformerEncoderLayer
 
-tracer = trace.get_tracer(__name__)
+tracer = get_tracer(__name__)
 logger = logging.getLogger(__name__)
 MODEL_VERSION = os.environ.get("MODEL_VERSION", "1.0.0")
 

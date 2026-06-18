@@ -31,7 +31,9 @@ Set via `.env` file, shell exports, Docker Compose, or K8s Secrets/ConfigMaps.
 | `JWKS_KEYS_JSON` | No | — | JWKS key set as JSON array (for public key distribution) |
 | `UTS_VOCAB_SIGNING_KEY` | No | — | HMAC key for vocabulary pack signing/validation |
 | `REDIS_PASSWORD` | Yes* | — | Redis password (required if `REDIS_URL` not set) |
+| `REDIS_PASSWORD_FILE` | No | — | Path to file containing `REDIS_PASSWORD` (Docker/K8s) |
 | `HF_TOKEN` | **YES** | — | Hugging Face token for model/vocab downloads |
+| `HF_TOKEN_FILE` | No | — | Path to file containing `HF_TOKEN` (Docker/K8s) |
 | `GRAFANA_ADMIN_PASSWORD` | No | `admin` | Grafana admin password |
 
 ### Secret Bootstrap Resolution Order
@@ -59,6 +61,10 @@ The `*_FILE` pattern is the recommended approach for containers:
 | `API_PORT` | `8001` | FastAPI port |
 | `API_WORKERS` | `1` | FastAPI workers |
 | `API_TITLE` | `Cloud Decoder API` | FastAPI title |
+| `API_RATE_LIMIT` | `100` | Max requests per minute per client |
+| `API_BURST_LIMIT` | `20` | Burst allowance before rate limiting |
+| `API_TIMEOUT` | `30` | Request timeout in seconds |
+| `API_VERSION` | `1.0.0` | API version string |
 | `COORDINATOR_HOST` | `0.0.0.0` | Coordinator bind host |
 | `COORDINATOR_PORT` | `5100` | Coordinator port |
 | `COORDINATOR_WORKERS` | `1` | Coordinator workers |
@@ -71,56 +77,56 @@ The `*_FILE` pattern is the recommended approach for containers:
 
 ## Paths
 
-> **Deprecated in favor of `RuntimeDirectoryManager`** (`utils.common_utils.RuntimeDirectoryManager`). These env vars still work for backward compatibility (via `utils/constants.py`), but new code should obtain runtime paths through RDM. The env vars override RDM defaults when set.
+> Runtime paths are resolved by `RuntimeDirectoryManager` (`utils.common_utils.RuntimeDirectoryManager`) with `root=output` by default. The env vars below override the RDM defaults. `constants.py` values are the env-var fallbacks (without `output/` prefix) for backward compatibility.
 
 | Variable | Default | Description |
 |---|---|---|
-| `MODEL_PATH` | `/app/models/decoder_model.pt` | Decoder model path (universal-decoder-node) |
+| `MODEL_PATH` | `/app/models/decoder_model.pt` | Decoder model path (universal-decoder-node, Docker) |
 | `MODEL_VERSION` | `1.0.0` | Model version string |
-| `MODELS_DIR` | `models` | Models directory |
-| `ENCODER_MODEL_PATH` | `models/production/encoder.pt` | Encoder model file path |
-| `DECODER_MODEL_PATH` | `models/production/decoder.pt` | Decoder model file path |
-| `FALLBACK_MODEL_PATH` | `models/fallback/encoder.pt` | Fallback encoder path |
-| `VOCAB_DIR` | `vocabulary/vocab` | Vocabulary directory |
-| `VOCABS_DIR` | `vocabulary/vocab` | Vocabulary directory (HF artifact store) |
-| `ADAPTERS_DIR` | `models/adapters` | Adapter checkpoints directory |
-| `CHECKPOINT_DIR` | `checkpoints` | Training checkpoints directory |
-| `POOL_CONFIG_PATH` | `config/decoder_pool.json` | Decoder pool config file |
-| `DATA_RAW_DIR` | `data/raw` | Raw data directory |
-| `DATA_PROCESSED_DIR` | `data/processed` | Processed data directory |
-| `DATA_SAMPLED_DIR` | `data/sampled` | Sampled data directory |
-| `DATA_FINAL_DIR` | `data/final` | Final training-ready data |
-| `DATA_CACHE_DIR` | `data/cache` | Data cache directory |
-| `DATA_ESSENTIAL_DIR` | `data/essential` | Essential data directory |
-| `LOG_DIR` | `logs` | Log files directory |
-| `DEFAULT_CONFIG_PATH` | `config/default_config.json` | Default config path |
-| `DEFAULT_MODEL_PATH` | `models/default_model` | Default model path |
-| `DEFAULT_VOCAB_PATH` | `vocabulary/default_vocab` | Default vocab path |
-| `DEFAULT_LOG_PATH` | `logs/system.log` | Default log file |
-| `TRUSTED_MODELS_DIR` | `models` | Trusted models directory |
-| `TRUSTED_HASHES_FILE` | `trusted_model_hashes.txt` | File with trusted model hashes |
+| `MODELS_DIR` | `output/models` | Models directory |
+| `ENCODER_MODEL_PATH` | `output/models/production/encoder.pt` | Encoder model file path |
+| `DECODER_MODEL_PATH` | `output/models/production/decoder.pt` | Decoder model file path |
+| `FALLBACK_MODEL_PATH` | `None` | Fallback encoder path (no fallback by default) |
+| `VOCAB_DIR` | `output/vocabulary/vocab` | Vocabulary directory |
+| `VOCABS_DIR` | `output/vocabulary/vocab` | Vocabulary directory (HF artifact store) |
+| `ADAPTERS_DIR` | `output/models/adapters` | Adapter checkpoints directory |
+| `CHECKPOINT_DIR` | `output/checkpoints` | Training checkpoints directory |
+| `POOL_CONFIG_PATH` | `output/config/decoder_pool.json` | Decoder pool config file |
+| `DATA_RAW_DIR` | `output/data/raw` | Raw data directory |
+| `DATA_PROCESSED_DIR` | `output/data/processed` | Processed data directory |
+| `DATA_SAMPLED_DIR` | `output/data/processed/sampled` | Sampled data directory |
+| `DATA_FINAL_DIR` | `output/data/processed/augment` | Final training-ready data |
+| `DATA_CACHE_DIR` | `output/data/processed/cache` | Data cache directory |
+| `DATA_ESSENTIAL_DIR` | `output/data/essential` | Essential data directory |
+| `LOG_DIR` | `output/logs` | Log files directory |
+| `DEFAULT_CONFIG_PATH` | `config/default_config.json` | Code constant (not runtime) |
+| `DEFAULT_MODEL_PATH` | `models/default_model` | Code constant (not runtime) |
+| `DEFAULT_VOCAB_PATH` | `vocabulary/default_vocab` | Code constant (not runtime) |
+| `DEFAULT_LOG_PATH` | `logs/system.log` | Code constant (not runtime) |
+| `TRUSTED_MODELS_DIR` | `models` | Trusted models directory (UDN) |
+| `TRUSTED_HASHES_FILE` | `trusted_model_hashes.txt` | File with trusted model hashes (UDN) |
 
 ### Path Overrides via `UTS_` Prefix
 
-All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms:
+All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms. Values below show the RDM-resolved paths (under `output/` root):
 
 | Variable | Default | Description |
 |---|---|---|
-| `UTS_MODELS_DIR` | `models` | Top-level models directory |
-| `UTS_MODELS_PRODUCTION_DIR` | `models/production` | Production model artifacts |
-| `UTS_MODELS_ENCODER_DIR` | `models/encoder` | Encoder-specific models |
-| `UTS_MODELS_DECODER_DIR` | `models/decoder` | Decoder-specific models |
-| `UTS_MODELS_ADAPTERS_DIR` | `models/adapters` | Adapter checkpoints |
-| `UTS_CHECKPOINT_DIR` | `checkpoints` | Training checkpoints |
-| `UTS_VOCAB_DIR` | `vocabulary/vocab` | Vocabulary packs |
-| `UTS_CONFIG_DIR` | `config` | Configuration files |
-| `UTS_LOG_DIR` | `logs` | Log output |
-| `UTS_DATA_RAW_DIR` | `data/raw` | Raw downloads |
-| `UTS_DATA_PROCESSED_DIR` | `data/processed` | Processed data |
-| `UTS_DATA_SAMPLED_DIR` | `data/sampled` | Sampled data |
-| `UTS_DATA_FINAL_DIR` | `data/final` | Final training data |
-| `UTS_DATA_CACHE_DIR` | `data/cache` | Data cache |
-| `UTS_DATA_ESSENTIAL_DIR` | `data/essential` | Essential data |
+| `UTS_MODELS_DIR` | `output/models` | Top-level models directory |
+| `UTS_MODELS_PRODUCTION_DIR` | `output/models/production` | Production model artifacts |
+| `UTS_MODELS_ENCODER_DIR` | `output/models/encoder` | Encoder-specific models |
+| `UTS_MODELS_DECODER_DIR` | `output/models/decoder` | Decoder-specific models |
+| `UTS_MODELS_ADAPTERS_DIR` | `output/models/adapters` | Adapter checkpoints |
+| `UTS_CHECKPOINT_DIR` | `output/checkpoints` | Training checkpoints |
+| `UTS_VOCAB_DIR` | `output/vocabulary/vocab` | Vocabulary packs |
+| `UTS_CONFIG_DIR` | `output/config` | Configuration files |
+| `UTS_LOG_DIR` | `output/logs` | Log output |
+| `UTS_DATA_RAW_DIR` | `output/data/raw` | Raw downloads |
+| `UTS_DATA_PROCESSED_DIR` | `output/data/processed` | Processed data |
+| `UTS_DATA_SAMPLED_DIR` | `output/data/processed/sampled` | Sampled data |
+| `UTS_DATA_FINAL_DIR` | `output/data/processed/augment` | Final training data |
+| `UTS_DATA_CACHE_DIR` | `output/data/processed/cache` | Data cache |
+| `UTS_DATA_ESSENTIAL_DIR` | `output/data/essential` | Essential data |
 
 ### SDK Web Paths
 
@@ -171,6 +177,7 @@ All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms:
 |---|---|---|
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
 | `REDIS_PASSWORD` | — | Redis password |
+| `REDIS_PORT` | `6379` | Redis port (bare form, used by first-time setup) |
 | `REDIS_KEY_PREFIX` | `translation:` | Redis key prefix |
 | `REDIS_CONN_TIMEOUT` | `2` | Connection timeout (seconds) |
 | `REDIS_READ_TIMEOUT` | `2` | Read timeout (seconds) |
@@ -183,7 +190,7 @@ All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms:
 | `MONITORING_LOG_LEVEL` | `INFO` | Log level for monitoring |
 | `LOG_LEVEL` | `INFO` | Application log level |
 | `LOG_FORMAT` | — | Custom log format string |
-| `PROFILE_OUTPUT_DIR` | `profiles` | Profiling output directory |
+| `PROFILE_OUTPUT_DIR` | `output/profiles` | Profiling output directory |
 | `PROFILE_EXPORT_FORMAT` | `json` | Profile export format |
 | `BOTTLENECK_THRESHOLD_MS` | `100.0` | Bottleneck detection threshold (ms) |
 | `MEMORY_MONITOR_INTERVAL_SECONDS` | `60` | Memory check interval |
@@ -192,6 +199,7 @@ All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms:
 | `CLEANUP_THRESHOLD_PERCENT` | `80` | Auto-cleanup trigger (%) |
 | `METRICS_PATH` | `/metrics` | Prometheus metrics endpoint path |
 | `METRICS_COLLECTION_INTERVAL` | `15` | Metrics collection interval (seconds) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318/v1/traces` | OpenTelemetry OTLP HTTP endpoint for trace export |
 
 ## Circuit Breaker
 
@@ -334,6 +342,11 @@ These accept both `UTS_<NAME>` and bare `<NAME>`. Unset variables fall through t
 | `UTS_API_BURST_LIMIT` | `20` |
 | `UTS_API_TIMEOUT` | `30` |
 | `UTS_API_VERSION` | `1.0.0` |
+
+### Testing
+| Variable | Default | Description |
+|---|---|---|
+| `RUN_E2E_TESTS` | — | Set to `1` to enable end-to-end integration tests (test suite) |
 
 ### File Name Overrides
 | Variable | Default |

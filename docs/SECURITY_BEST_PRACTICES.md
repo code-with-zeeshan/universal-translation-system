@@ -15,7 +15,7 @@ This document outlines security best practices for deploying and operating the U
 
 ### Environment Variables
 - **Never commit secrets to version control**
-- Use environment variables for all sensitive information
+- Use `scripts/init_env.py` to auto-generate `.env` with strong secrets instead of manual placeholders
 - Prefer `*_FILE` environment variables in containers and orchestrators
 - Centralized bootstrap validates required secrets and fails fast
 

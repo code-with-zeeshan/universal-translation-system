@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Any
 
 from torch.utils.data import Sampler, Dataset
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from opentelemetry import trace
+from utils.tracing import get_tracer
 
 from config.schemas import RootConfig
 from utils.exceptions import DataError
@@ -27,7 +27,7 @@ from pipeline.vocabulary.evolve import VocabularyEvolver
 from utils.constants import CONFIG_DIR, BASE_CONFIG_FILENAME
 
 logger = logging.getLogger(__name__)
-tracer = trace.get_tracer(__name__)
+tracer = get_tracer(__name__)
 
 
 def _maybe_upload_to_hub(config, runtime_dirs):
@@ -851,7 +851,7 @@ class UnifiedDataPipeline:
             self.logger.info(f"✅ Direct OPUS: {downloaded} additional pairs downloaded")
 
     async def _distill_data(self):
-        """Knowledge distillation from NLLB-3.3B teacher (strategy 3)."""
+        """Knowledge distillation from NLLB-1.3B teacher (strategy 3)."""
         with tracer.start_as_current_span("distill_data") as span:
             if getattr(self, 'dry_run', False) or self.distillator is None:
                 self.logger.info("🧪 Dry-run or distillator unavailable: Skipping")

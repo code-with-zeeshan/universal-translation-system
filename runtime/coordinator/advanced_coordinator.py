@@ -27,11 +27,7 @@ from fastapi import (FastAPI, Request, Depends, HTTPException, Form, Header, Res
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jinja2 import Environment, select_autoescape
-from opentelemetry import trace
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from utils.tracing import get_tracer, setup_tracing, maybe_instrument_app, shutdown_tracing
 from prometheus_client import Counter, Gauge, generate_latest
 from pydantic import BaseModel, Field
 from watchdog.events import FileSystemEventHandler
@@ -263,13 +259,7 @@ async def _install_shutdown():
             except Exception:
                 pass
             # Flush telemetry if supported
-            try:
-                provider = trace.get_tracer_provider()
-                shutdown = getattr(provider, "shutdown", None)
-                if callable(shutdown):
-                    shutdown()
-            except Exception:
-                pass
+            shutdown_tracing()
         except Exception:
             pass
     _shutdown = GracefulShutdown(_cleanup)
@@ -450,10 +440,9 @@ async def update_node_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- OpenTelemetry Tracing ---
-trace.set_tracer_provider(TracerProvider(resource=Resource.create({SERVICE_NAME: "coordinator-service"})))
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
-tracer = trace.get_tracer(__name__)
-FastAPIInstrumentor.instrument_app(app)
+setup_tracing("coordinator-service")
+tracer = get_tracer(__name__)
+maybe_instrument_app(app)
 
 # --- Prometheus Metrics ---
 requests_total = Counter('coordinator_requests_total', 'Total requests received', ['endpoint', 'group'])

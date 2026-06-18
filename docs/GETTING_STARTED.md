@@ -21,9 +21,11 @@ cd universal-translation-system
 pip install -e ".[train]"
 # Note: ".[train]" installs only base.txt + train.txt.
 # For all features (serve, decoder, export, tui): pip install -e ".[all]"
-cp .env.example .env
-export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"
-export JWT_SECRET="dev-jwt-secret-change-in-production"
+
+# Auto-generate .env with strong secrets (UTS_HMAC_KEY, etc.)
+python scripts/init_env.py --role general
+# For coordinator: python scripts/init_env.py --role coordinator --rsa
+# See: python scripts/init_env.py --help
 ```
 
 ### 2. Verify environment
@@ -189,6 +191,6 @@ See [TROUBLESHOOT.md](TROUBLESHOOT.md) or [SETUP_COMMANDS.md](../SETUP_COMMANDS.
 |---|---|---|
 | `No module named '...'` | Missing install | `pip install -e ".[train]"` |
 | `CUDA out of memory` | Batch too large | Reduce `batch_size` or increase `accumulation_steps` in config |
-| `HMAC key not configured` | Missing env var | `export UTS_HMAC_KEY=...` |
+| `HMAC key not configured` | Missing env var | `python scripts/init_env.py --role general` |
 | `Checkpoint conflict` | Config hash mismatch | `./uts train --full --force` |
 | `BLEU ~0.0` | Only 1 epoch or LoRA on random init | Train 10 epochs or set `use_lora: false` |

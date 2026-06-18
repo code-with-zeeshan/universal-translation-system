@@ -266,7 +266,7 @@ def run_all(config_path: str) -> None:
     run_convert(
         task='pytorch-to-onnx',
         model_path=str(rdm.encoder_models_dir / "universal_encoder_initial.pt"),
-        output_path='models/encoder/universal_encoder.onnx',
+        output_path=str(rdm.production_dir / "encoder.onnx"),
         opset=17,
         use_dynamo=True,
     )

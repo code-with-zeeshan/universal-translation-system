@@ -18,7 +18,7 @@ error: externally-managed-environment
 ```
 ValueError: HMAC key not configured
 ```
-**Fix:** `export UTS_HMAC_KEY="dev-only-change-in-production-1234567890abc"`
+**Fix:** `python scripts/init_env.py --role general` (auto-generates `.env` with strong `UTS_HMAC_KEY`)
 
 ---
 

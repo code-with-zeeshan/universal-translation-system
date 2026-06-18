@@ -3,3 +3,6 @@
 
 # etcd service discovery (optional feature)
 etcd3>=0.12.0
+
+# mDNS service discovery (zeroconf for UDN)
+zeroconf>=0.131.0
