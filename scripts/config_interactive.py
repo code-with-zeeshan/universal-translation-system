@@ -55,8 +55,16 @@ def deep_merge(base: dict, override: dict) -> dict:
 def save_config(config: dict, name: str) -> Path:
     OVERRIDE_DIR.mkdir(parents=True, exist_ok=True)
     path = OVERRIDE_DIR / f"{name}.yaml"
+
+    # Reorder top-level keys to match base.yaml style
+    key_order = ["project", "model", "training", "data", "pipeline", "hub", "memory"]
+    ordered = {k: config[k] for k in key_order if k in config}
+    for k in config:
+        if k not in ordered:
+            ordered[k] = config[k]
+
     with open(path, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        yaml.dump(ordered, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
     return path
 
 

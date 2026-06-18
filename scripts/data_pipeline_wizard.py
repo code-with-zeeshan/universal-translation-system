@@ -3,24 +3,24 @@
 Interactive data pipeline stage selector.
 
 Usage:
-    python scripts/data_pipeline_wizard.py
-
-Generates a JSON config override that can be passed to uts data --pipeline --config <path>.
+    python scripts/data_pipeline_wizard.py              # TUI, saves YAML, prints path
+    python scripts/data_pipeline_wizard.py --run         # TUI, then immediately runs pipeline
 
 Stage definitions and TUI helpers are in _wizard_shared.py (single source of truth).
 """
 
-import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict
+
+import yaml
 
 from scripts._wizard_shared import (
     STAGES,
     clear_screen,
     draw_stage_menu,
     fmt_time,
-    get_key,
     run_stage_selector,
 )
 
@@ -33,16 +33,11 @@ def confirm(prompt: str, default: bool = True) -> bool:
     return default if not s else s.startswith("y")
 
 
-def get_choice(prompt: str, default: str = "") -> str:
-    val = input(f"{prompt}" + (f" [{default}]: " if default else ": "))
-    return val if val else default
-
-
 def generate_config(states: Dict[str, bool], output_path: str) -> str:
     enabled = [k for k, v in states.items() if v]
     config = {"pipeline": {"enabled_stages": enabled}}
     with open(output_path, "w") as f:
-        json.dump(config, f, indent=2)
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     return output_path
 
 
@@ -61,6 +56,12 @@ def preview_config(states: Dict[str, bool]) -> None:
 
 
 def run_wizard() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="Interactive data pipeline stage selector")
+    parser.add_argument("--run", action="store_true",
+                        help="Auto-run pipeline after stage selection")
+    args = parser.parse_args()
+
     default_stages = [s[0] for s in STAGES if s[3]]
     enabled = run_stage_selector(default_stages)
     if enabled is None:
@@ -76,18 +77,18 @@ def run_wizard() -> int:
         print("  \033[33mCancelled.\033[0m")
         return 1
 
-    default_path = str(ROOT / "config" / "generated_pipeline_config.json")
-    output_path = get_choice("Output config path", default_path)
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-
-    generate_config(states, output_path)
+    config_path = generate_config(states, tempfile.mktemp(suffix=".yaml"))
     total = sum(s[4] for s in STAGES if states[s[0]])
 
-    print(f"\n  \033[1;32m\u2713\033[0m Config written to \033[1;33m{output_path}\033[0m")
+    if args.run:
+        print(config_path, flush=True)
+        return 0
+
+    print(f"\n  \033[1;32m\u2713\033[0m Config written to \033[1;33m{config_path}\033[0m")
     print()
     print(f"  Run the pipeline with your custom stages:")
-    print(f"  \033[1;37m$ uts data --pipeline --config {output_path}\033[0m")
-    print(f"  \033[1;37m$ uts data --pipeline --config {output_path} --scale 5\033[0m")
+    print(f"  \033[1;37m$ uts data --pipeline --config {config_path}\033[0m")
+    print(f"  \033[1;37m$ uts data --pipeline --config {config_path} --scale 5\033[0m")
     print()
     print(f"  \033[90mEstimated time: {fmt_time(total)}\033[0m")
     return 0

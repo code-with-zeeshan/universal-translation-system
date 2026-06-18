@@ -215,7 +215,16 @@ def cmd_data(args: argparse.Namespace):
     elif args.validate_data:
         _run("pipeline.data.orchestrator", config=config_path, stage="validate")
     elif args.interactive:
-        _run_script("scripts/data_pipeline_wizard.py")
+        result = subprocess.run(
+            [PY, str(ROOT / "scripts/data_pipeline_wizard.py"), "--run"],
+            cwd=str(ROOT), capture_output=True, text=True, check=False
+        )
+        wizard_path = result.stdout.strip()
+        if result.returncode != 0 or not wizard_path or not Path(wizard_path).exists():
+            print("  \033[33mCancelled.\033[0m")
+            return
+        config_path = wizard_path
+        _run("pipeline.data.orchestrator", config=config_path, resume=True)
     elif args.domains:
         _run_module("tools/domain_data.py", "--domain", args.domains)
     else:
