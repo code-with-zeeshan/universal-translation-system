@@ -13,9 +13,9 @@ from typing import Dict, List, Tuple, Optional
 # Stage: (key, label, description, default_enabled, time_minutes, notes, category)
 # category: 'cpu' | 'gpu_light' | 'gpu_heavy'
 #
-# Quality stages (augment, wikipedia_backtranslation, knowledge_distillation)
-# all use NLLB-3.3B to create meaning-preserving parallel data — they handle
-# idioms, metaphors, and cultural equivalents rather than word-for-word swaps.
+# Quality stages (augment, knowledge_distillation) use NLLB-1.3B (distilled)
+# to create meaning-preserving parallel data — they handle idioms, metaphors,
+# and cultural equivalents rather than word-for-word swaps.
 STAGES: List[Tuple[str, str, str, bool, int, str, str]] = [
     ("download_training",         "download_training",         "OPUS-100 + extra sources",
         True, 60, "", "cpu"),
@@ -31,18 +31,16 @@ STAGES: List[Tuple[str, str, str, bool, int, str, str]] = [
     ("comet_quality",             "comet_quality",             "Neural semantic quality filter (Unbabel/wmt22-comet-da)",
         False, 90, "GPU ~1-2h on T4", "gpu_light"),
 
-    ("augment",                   "augment",                   "Backtranslation + pivots for meaning-preserving synthetic pairs (NLLB-3.3B)",
-        True, 1440, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
-    ("wikipedia_backtranslation", "wikipedia_backtranslation", "Wikipedia BT for domain coverage + cultural adaptation (NLLB-3.3B)",
-        False, 1440, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
-    ("knowledge_distillation",    "knowledge_distillation",    "NLLB-3.3B soft targets preserving semantic nuance over literal swaps",
-        False, 2880, "GPU heavy (NLLB-3.3B)", "gpu_heavy"),
+    ("augment",                   "augment",                   "Backtranslation + pivots for meaning-preserving synthetic pairs (NLLB-1.3B)",
+        True, 1440, "GPU heavy (NLLB-1.3B)", "gpu_heavy"),
+    ("knowledge_distillation",    "knowledge_distillation",    "NLLB-1.3B soft targets preserving semantic nuance over literal swaps",
+        False, 2880, "GPU heavy (NLLB-1.3B)", "gpu_heavy"),
 ]
 
 CATEGORY_LABELS = {
     "cpu": "CPU Stages (no GPU needed)",
     "gpu_light": "GPU-Light Stages (T4-friendly, ~1-2h)",
-    "gpu_heavy": "Quality Stages (meaning-preserving data via NLLB-3.3B — heavy but essential)",
+    "gpu_heavy": "Quality Stages (meaning-preserving data via NLLB-1.3B — heavy but essential)",
 }
 
 CATEGORY_COLORS = {

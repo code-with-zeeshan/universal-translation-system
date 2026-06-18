@@ -260,7 +260,7 @@ class UnifiedDataPipeline:
         sections['augment'] = {
             'augmentation_pairs': list(c.data.augmentation_pairs),
             'active_languages': list(c.data.active_languages),
-            'high_resource_threshold': c.pipeline.high_resource_threshold if c.pipeline else 100_000,
+            'high_resource_threshold': c.pipeline.high_resource_threshold if c.pipeline else 100_000_000,
         }
         sections['create_ready'] = {'train_val_split': getattr(c.data, 'train_val_split', 0.9)}
         sections['validate'] = {
