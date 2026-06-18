@@ -102,6 +102,47 @@ Harmless warning. These adapters are created at runtime but weren't saved in old
 
 ---
 
+## GPU / Performance
+
+### Wrong GPU tier detected (or CPU fallback)
+
+The pipeline logs `Detected GPU tier: <tier>` at startup. If it's wrong:
+
+1. Check CUDA is available: `python -c "import torch; print(torch.cuda.is_available())"`
+2. Check device name: `python -c "import torch; print(torch.cuda.get_device_name(0))"`
+3. If device is unknown, the system falls back by VRAM:
+   - ≥70 GB → A100
+   - ≥40 GB → L40S
+   - ≥20 GB → L4
+   - else → T4
+4. **Override:** Set `UTS_GPU_TIER=t4|l4|l40s|a100|h100|cpu` to force a profile.
+
+### `Flash Attention 2` not applied in NLLB
+
+**Fix:** `pip install flash-attn --no-build-isolation`. Falls back to eager attention with a warning.
+
+### `BetterTransformer` not applied
+
+**Fix:** `pip install optimum`. Falls back silently.
+
+### `torch.compile` fails
+
+Common on T4 (compute capability 7.5, no compile support). Suppressed with `torch._dynamo.config.suppress_errors = True` — runs without compile.
+
+### NLLB OOM at smallest batch
+
+**Fix:** Switch to distilled 600M variant: set `config.base_model: facebook/nllb-200-distilled-600M`.
+
+### LaBSE embedding filter skipped in sampler
+
+**Fix:** `pip install sentence-transformers`. Falls back to heuristic-only filtering.
+
+### COMET filter unusually slow
+
+Batch size may be too large for your GPU. Check `comet_batch_size` in logs. Override in `base.yaml` or switch GPU tier.
+
+---
+
 ## Serving
 
 ### `Address already in use`

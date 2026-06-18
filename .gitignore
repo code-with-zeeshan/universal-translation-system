@@ -116,7 +116,7 @@ data/cache/
 data/essential/
 data/log/
 data/download_strategy.json
-data/pipeline_checkpoint.json
+data/data-vocab_pipeline_checkpoint.json
 data/pipeline_state.json
 
 # Downloaded archives

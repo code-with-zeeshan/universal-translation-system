@@ -22,12 +22,13 @@ class DataConfig(BaseModel):
     max_sentence_length: int = Field(64, description="Maximum sentence length")
     output_dir: str = "data/processed"
     augmentation_pairs: List[str] = Field(default_factory=list, description="Language pairs for synthetic augmentation")
-    download_max_workers: int = Field(4, description="Max parallel downloads per batch (auto-clamped to min(value, cpu_count, 6))")
-    download_parallel_batches: bool = Field(False, description="Run download batches concurrently")
-    download_rate_limit: int = Field(0, description="Max requests/sec per worker for OPUS direct downloads (0 = no limit)")
+    download_max_workers: int = Field(0, description="Max parallel downloads per batch (0 = auto-detect from GPU profile, clamped to cpu_count)")
+    download_parallel_batches: bool = Field(True, description="Run download batches concurrently")
+    download_rate_limit: int = Field(0, description="Max requests/sec per worker for OPUS direct downloads (0 = auto-detect from GPU profile)")
     datasets_cache_dir: Optional[str] = Field(None, description="Cache directory for HuggingFace datasets")
     cache_dir: str = Field("data/processed/cache", description="Cache directory for tokenized/preprocessed data")
     seed: int = Field(42, description="Random seed for reproducible train/val split and sampling")
+    vocab_threads: int = Field(0, description="Threads for SentencePiece training (0 = auto-detect from GPU profile)")
 
     class Config:
         extra = "allow"
@@ -195,9 +196,9 @@ class DataStrategyConfig(BaseModel):
     )
     source_preferences: Dict[str, List[str]] = Field(
         default_factory=lambda: {
-            "en_centric": ["opus-100", "opus_ccmatrix", "opus_paracrawl", "open_subtitles", "wmt19", "wmt20", "wmt21"],
-            "european": ["opus-100", "opus_ccmatrix", "opus_paracrawl", "open_subtitles", "wmt19", "wmt20", "wmt21"],
-            "asian": ["opus-100", "opus_ccmatrix"],
+            "en_centric": ["opus-100", "opus_paracrawl", "open_subtitles", "wmt19", "wmt20", "wmt21"],
+            "european": ["opus-100", "opus_paracrawl", "open_subtitles", "wmt19", "wmt20", "wmt21"],
+            "asian": ["opus-100"],
             "default": ["opus-100", "open_subtitles"],
         },
         description="Preferred data sources per language group",

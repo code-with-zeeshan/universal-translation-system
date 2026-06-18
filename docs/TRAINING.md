@@ -139,6 +139,28 @@ training:
   compile_model: true
 ```
 
+## Data Pipeline Performance
+
+The data pipeline auto-tunes to your GPU. All batch sizes, worker counts, and thread pools
+are determined by the detected GPU tier. See [PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md)
+for the full per-tier reference.
+
+| GPU | Download | Sample+Filter | NLLB Augment | COMET | Vocab | Approx Total |
+|-----|----------|---------------|--------------|-------|-------|-------------|
+| T4 16GB | 8 workers | LaBSE bs=64 | NLLB bs=128 | bs=64 | 8 threads | ~4-6 hrs |
+| L4 24GB | 12 workers | LaBSE bs=128 | NLLB bs=256 | bs=128 | 12 threads | ~3-5 hrs |
+| L40S 48GB | 24 workers | LaBSE bs=256 | NLLB bs=512 | bs=256 | 16 threads | ~2-3 hrs |
+| A100 80GB | 32 workers | LaBSE bs=512 | NLLB bs=1024+bf16 | bs=512 | 32 threads | ~1-2 hrs |
+| H100 80GB | 48 workers | LaBSE bs=1024 | NLLB bs=2048+bf16 | bs=1024 | 48 threads | ~40-90 min |
+
+Key optimizations applied per tier:
+- **NLLB**: Flash Attention 2, BetterTransformer, `torch.compile` (L4+), bfloat16 (A100/H100)
+- **Download**: Parallel batches, per-worker HTTP sessions, tier-scaled rate limit
+- **Sample filter**: LaBSE GPU embedding similarity on top of heuristic filters
+- **COMET**: Parallel train/val scoring, tier-scaled batch size
+- **Create-ready**: Concurrent corpus + final file creation
+- **Vocabulary**: GPU-profile-scaled SentencePiece threads
+
 ## Memory Usage (A100 40GB)
 
 | Config | VRAM | Batch | Speed |

@@ -74,7 +74,7 @@ data/
 │       └── distilled/{pair}_distilled.txt     Knowledge-distilled pairs
 ├── evaluation/
 │   └── {pair}.tsv                            Eval test sets
-└── pipeline_checkpoint.json                   Per-stage resume state
+└── data-vocab_pipeline_checkpoint.json        Per-stage resume state
 
 datasets/                                       Final training/validation splits
 ├── train_final.txt                            90% of merged data (TSV: src\tgt\tsrc_lang\ttgt_lang)
@@ -257,7 +257,7 @@ pipeline_state.json                            Global data→train→eval tracke
 data_checkpoint.json                           Data phase auto-resume
 ```
 
-**Created by:** `utils/pipeline_checkpoint.py`
+**Created by:** `pipeline/data/state.py → PipelineState.to_dict()`
 
 ---
 

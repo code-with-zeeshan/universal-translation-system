@@ -183,6 +183,13 @@ All paths in `utils/constants.py` accept both `VAR` and `UTS_VAR` forms. Values 
 | `REDIS_READ_TIMEOUT` | `2` | Read timeout (seconds) |
 | `REDIS_HEALTH_CHECK_INTERVAL` | `30` | Health check interval (seconds) |
 
+## GPU Tuning
+
+| Variable | Default | Description |
+|---|---|---|
+| `UTS_GPU_TIER` | auto-detect | Force GPU profile: `t4`/`l4`/`l40s`/`a100`/`h100`/`cpu`. Overrides hardware detection. Affects download workers, NLLB/COMET/LaBSE batch sizes, SentencePiece threads, and create-ready parallelism. |
+| `WIKI_DOWNLOAD_WORKERS` | `20` | Concurrent Wikipedia downloads in augment stage |
+
 ## Performance / Monitoring
 
 | Variable | Default | Description |

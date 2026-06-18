@@ -5,6 +5,14 @@ All notable changes to the Universal Translation System will be documented in th
 ## [Unreleased]
 
 ### Added
+- **GPU tier system** (`utils/gpu_utils.py`): Auto-detects T4/L4/L40S/A100/H100 via `torch.cuda.get_device_properties()` and applies per-tier optimizations across the entire pipeline. Override with `UTS_GPU_TIER` env var. Tiers define download workers (8–48), NLLB batch size (128–2048), COMET batch size (64–1024), LaBSE batch size (64–1024), create-ready parallelism (4–24), vocab SentencePiece threads (8–48), rate limiting (8–30 req/s), dtype (fp16/bf16), and feature flags (FA2, BetterTransformer, torch.compile).
+- **NLLB optimizations** (augment + distill): Flash Attention 2 (`attn_implementation="flash_attention_2"`), BetterTransformer (`optimum`), and `torch.compile(mode="reduce-overhead")` applied per GPU tier. bfloat16 on A100/H100, float16 on T4/L4/L40S. All wrapped in try/except with silent fallback.
+- **LaBSE GPU embedding filter** (`pipeline/data/sampler.py`): Cross-lingual cosine similarity filter via SentenceTransformer, batch-sized per tier. Filters low-quality pairs (threshold ≥0.5) after heuristic pass. Controlled by `use_gpu_embedding` flag; disables gracefully if `sentence-transformers` not installed.
+- **Parallel COMET quality filtering**: Train + val files scored concurrently (was sequential) via `ThreadPoolExecutor(max_workers=2)`.
+- **Parallel create_ready**: `create_monolingual_corpora()` + `create_final_training_file()` run concurrently; worker count per tier (4–24).
+- **`vocab_threads: 0` in config** (0 = auto from GPU profile) — SentencePiece `num_threads` scaled per tier.
+- **`DataConfig.vocab_threads` field** in `config/schemas.py`.
+- **`UTS_GPU_TIER`** env var in `.env.example` for headless override.
 - **`utils/tracing.py`** — Unified tracing module with graceful OpenTelemetry fallback. Provides `get_tracer()`, `setup_tracing()`, `setup_otlp_tracing()`, `maybe_instrument_app()`, `shutdown_tracing()`. When OTEL packages are not installed, all calls become no-ops — no more crashes from hard OTEL imports.
 - **`scripts/init_env.py`** — Initialize `.env` from `.env.example` with auto-generated cryptographically strong secrets. Usage: `python scripts/init_env.py --role coordinator --rsa`. Replaces all placeholder values (`use-openssl-rand-hex-32-*`) with `secrets.token_hex()` output. Supports `--check` mode to detect weak secrets in existing `.env`. Also writes individual secret files to `output/secrets/` for Docker Compose.
 - **Language ID token** (`runtime/encoder/universal_encoder.py`): `nn.Embedding(20, hidden_dim)` prepends a per-language bias to all input token positions via `language` parameter in `forward()`. List of 20 supported languages (`en, es, fr, de, zh, ja, ko, ar, hi, ru, pt, it, tr, th, pl, uk, nl, id, sv, vi`). ONNX export updated with `language` input alongside `input_ids`/`attention_mask`.
@@ -23,6 +31,12 @@ All notable changes to the Universal Translation System will be documented in th
 - **HF Hub card files** at `/home/user/hf_upload/`: `model_readme.md` + `model_gitattributes` for model repo, `dataset_readme.md` + `dataset_gitattributes` for dataset repo.
 
 ### Changed
+- **`pipeline_checkpoint.json` renamed to `data-vocab_pipeline_checkpoint.json`** — clarifies scope (data + vocab pipeline stages only), avoids collision with future training/eval checkpoints. Updated in orchestrator, .gitignore, and RUNTIME_LAYOUT.md.
+- **`DIRECT_OPUS` pipeline stage removed** from `PipelineStage` enum, `STAGE_ORDER`, config sections — fully redundant because `download_training` already falls back to direct OPUS download for missing pairs.
+- **`opus_ccmatrix` dataset removed** from config/schemas/downloader — dataset no longer exists on HuggingFace Hub.
+- **`download_max_workers: 0`**, **`download_parallel_batches: true`**, **`download_rate_limit: 0`**, **`vocab_threads: 0`** — all defaults changed to `0` (auto = GPU tier) or `true` in `base.yaml`.
+- **`DataConfig` field defaults updated** in `config/schemas.py`: `download_max_workers=0`, `download_parallel_batches=True`, `download_rate_limit=0`, `vocab_threads=0`.
+- **`unused import os` removed** from `pipeline/vocabulary/config.py`.
 - **OpenTelemetry**: All 4 hard OTEL imports (`pipeline/data/orchestrator.py`, `runtime/encoder/universal_encoder.py`, `runtime/coordinator/advanced_coordinator.py`, `runtime/cloud_decoder/optimized_decoder.py`) replaced with soft fallback via `utils.tracing`. OTEL packages are now optional — services work without `serve.txt` extras.
 - **`.env.example`**: Added `HF_TOKEN_FILE`, `REDIS_PASSWORD_FILE`, `API_RATE_LIMIT`, `API_BURST_LIMIT`, `API_TIMEOUT`, `API_VERSION` bare env vars for secrets file bootstrap and API tuning.
 - **`requirements/coordinator.txt`**: Added `zeroconf>=0.131.0` for mDNS service discovery (was missing despite being used in `udn/cli.py`).

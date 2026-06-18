@@ -1,6 +1,12 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
+
+
+def _default_threads() -> int:
+    """Auto-detect optimal SentencePiece threads from GPU profile or env."""
+    from utils.gpu_utils import get_gpu_profile
+    return get_gpu_profile().vocab_threads
 
 
 class CreationMode(Enum):
@@ -17,7 +23,7 @@ class UnifiedVocabConfig:
     vocab_size: int = 32000
     model_type: str = 'bpe'
     character_coverage: float = 0.9995
-    num_threads: int = 16
+    num_threads: int = field(default_factory=_default_threads)
 
     # SentencePiece settings (PRODUCTION mode)
     pad_id: int = 0

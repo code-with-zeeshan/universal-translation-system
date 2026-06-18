@@ -19,7 +19,8 @@ class VocabularyConnector:
     def create_vocabularies_from_pipeline(self, processed_dir: str = '',
                                            output_dir: str = '',
                                            vocab_size: int = 32000,
-                                           max_model_vocab_size: Optional[int] = None):
+                                           max_model_vocab_size: Optional[int] = None,
+                                           num_threads: Optional[int] = None):
         """Create vocabulary packs after data pipeline completes"""
         if not output_dir:
             output_dir = str(self.runtime_dirs.vocab_dir)
@@ -43,11 +44,16 @@ class VocabularyConnector:
         if not processed_path.exists():
             raise DataError(f"Processed data directory not found: {processed_dir}")
         
-        # Create vocabulary packs with requested vocab size per pack
+        # Create vocabulary packs with GPU-aware thread count
+        if num_threads is None or num_threads == 0:
+            from utils.gpu_utils import get_gpu_profile
+            num_threads = get_gpu_profile().vocab_threads
+
+        config = UnifiedVocabConfig(vocab_size=vocab_size, num_threads=num_threads)
         creator = VocabularyPackCreator(
             corpus_dir=str(self.runtime_dirs.corpus_dir),
             output_dir=output_dir,
-            config=UnifiedVocabConfig(vocab_size=vocab_size),
+            config=config,
         )
         
         # Create all standard packs

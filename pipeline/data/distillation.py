@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple
 from tqdm import tqdm
 
 from pipeline.data.augmentation import NLLB_CODE_MAP
+from utils.gpu_utils import get_gpu_profile, configure_nllb_model
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +28,27 @@ except Exception:
 
 
 def _lazy_teacher(model_name: str = TEACHER_MODEL):
-    """Lazy-load teacher model and tokenizer."""
+    """Lazy-load teacher model with GPU-tier optimizations."""
     if AutoModelForSeq2SeqLM is None:
         raise ImportError("transformers required for distillation")
-    logger.info(f"Loading teacher model {model_name} (this may take a while)...")
-    model = AutoModelForSeq2SeqLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else None,
-    )
+    gpu = get_gpu_profile()
+    logger.info(f"Loading teacher model {model_name} on {gpu.name}...")
+    use_cuda = torch is not None and torch.cuda.is_available()
+    if use_cuda:
+        dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+        torch_dtype = dtype.get(gpu.nllb_dtype, torch.float16)
+        use_fa2 = gpu.nllb_flash_attention_2
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name,
+            torch_dtype=torch_dtype,
+            device_map="auto",
+            attn_implementation="flash_attention_2" if use_fa2 else "eager",
+        )
+        model = configure_nllb_model(model, gpu)
+    else:
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            model_name, torch_dtype=torch.float32
+        )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     return model, tokenizer
 
@@ -58,12 +71,15 @@ class KnowledgeDistillator:
     def translator(self):
         if self._translator is None:
             model, tokenizer = _lazy_teacher(self._model_name)
+            gpu = get_gpu_profile()
             use_cuda = torch is not None and torch.cuda.is_available()
+            bs = gpu.nllb_batch_size if use_cuda else 1
+            self.logger.info(f"Creating distillation pipeline batch_size={bs} (profile: {gpu.name})")
             pipe_kwargs = dict(
                 task="translation",
                 model=model,
                 tokenizer=tokenizer,
-                batch_size=16 if use_cuda else 1,
+                batch_size=bs,
             )
             if not use_cuda:
                 pipe_kwargs["device"] = -1

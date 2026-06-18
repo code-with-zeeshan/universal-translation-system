@@ -174,7 +174,8 @@ class UnifiedDataPipeline:
         try:
             # Use unified components
             self.downloader = UnifiedDataDownloader(self.config)
-            self.sampler = SmartDataSampler()
+            from utils.gpu_utils import torch_is_available
+            self.sampler = SmartDataSampler(use_gpu_embedding=torch_is_available())
 
             # All NLLB stages use the same distilled 1.3B model.
             # This avoids loading two separate NLLB variants and reduces
@@ -221,7 +222,7 @@ class UnifiedDataPipeline:
     
     def _save_checkpoint(self):
         """Save pipeline state for resume capability"""
-        checkpoint_path = self.runtime_dirs.data_dir / 'pipeline_checkpoint.json'
+        checkpoint_path = self.runtime_dirs.data_dir / 'data-vocab_pipeline_checkpoint.json'
         
         with open(checkpoint_path, 'w') as f:
             json.dump(self.state.to_dict(), f, indent=2)
@@ -230,7 +231,7 @@ class UnifiedDataPipeline:
     
     def _load_checkpoint(self):
         """Load pipeline state if checkpoint exists"""
-        checkpoint_path = self.runtime_dirs.data_dir / 'pipeline_checkpoint.json'
+        checkpoint_path = self.runtime_dirs.data_dir / 'data-vocab_pipeline_checkpoint.json'
         
         if checkpoint_path.exists():
             try:
@@ -275,7 +276,6 @@ class UnifiedDataPipeline:
             'comet_threshold': c.pipeline.comet_quality_threshold if c.pipeline else 0.7,
         }
         sections['knowledge_distillation'] = {'max_pairs_per_pair': 50_000}
-        sections['direct_opus'] = {'training_distribution': list(c.data.training_distribution.keys())}
         return sections
 
     def _compute_stage_hash(self, stage: PipelineStage) -> str:
@@ -502,7 +502,6 @@ class UnifiedDataPipeline:
                 stage_handlers = {
                     PipelineStage.DOWNLOAD_EVAL: self._download_evaluation_data,
                     PipelineStage.DOWNLOAD_TRAIN: self._download_training_data,
-                    PipelineStage.DIRECT_OPUS: self._download_direct_opus,
                     PipelineStage.SAMPLE_FILTER: self._sample_and_filter_data,
                     PipelineStage.AUGMENT: self._augment_data,
                     PipelineStage.DISTILL: self._distill_data,
@@ -824,32 +823,6 @@ class UnifiedDataPipeline:
     # The former _download_wikipedia_bt method was removed to avoid having
     # a dedicated stage for a cheap streaming download.
 
-    async def _download_direct_opus(self):
-        """Direct OPUS.nlpl.eu download fallback for pairs missing after HF download (strategy 4)."""
-        with tracer.start_as_current_span("download_direct_opus") as span:
-            if getattr(self, 'dry_run', False):
-                self.logger.info("🧪 Dry-run: Skipping direct OPUS")
-                span.set_attribute("skipped", True)
-                return
-
-            raw_dir = self.dirs['base'] / 'raw'
-            self.logger.info("📦 Direct OPUS download (fallback for missing pairs)...")
-
-            schedule = self.downloader.get_download_schedule(DatasetType.TRAINING)
-            downloaded = 0
-            for batch in schedule:
-                for pair in batch.get('pairs', []):
-                    pair_str = pair.pair_string
-                    if (raw_dir / f"{pair_str}.txt").exists():
-                        continue
-                    if pair_str not in self.required_pairs:
-                        continue
-                    ok = self.downloader._download_direct_opus(pair, raw_dir)
-                    if ok:
-                        downloaded += 1
-            span.set_attribute("direct_opus.downloaded", downloaded)
-            self.logger.info(f"✅ Direct OPUS: {downloaded} additional pairs downloaded")
-
     async def _distill_data(self):
         """Knowledge distillation from NLLB-1.3B teacher (strategy 3)."""
         with tracer.start_as_current_span("distill_data") as span:
@@ -869,21 +842,30 @@ class UnifiedDataPipeline:
             self.logger.info(f"✅ Distilled {sum(stats.values()):,} pairs")
 
     async def _create_training_ready(self):
-        """Create training-ready data files"""
+        """Create training-ready data files with parallel I/O"""
+        from utils.gpu_utils import get_gpu_profile
+        gpu = get_gpu_profile()
+        self.logger.info(f"📝 Creating training-ready data (workers={gpu.create_ready_workers})...")
+        
         with tracer.start_as_current_span("create_training_ready") as span:
-            self.logger.info("📝 Creating training-ready data...")
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             
-            # Create monolingual corpora
-            self.pipeline_connector.create_monolingual_corpora()
+            with ThreadPoolExecutor(max_workers=gpu.create_ready_workers) as pool:
+                futs = {
+                    pool.submit(self.pipeline_connector.create_monolingual_corpora): "monolingual",
+                    pool.submit(self.pipeline_connector.create_final_training_file): "final",
+                }
+                for fut in as_completed(futs):
+                    name = futs[fut]
+                    try:
+                        fut.result()
+                        self.logger.info(f"✅ {name.capitalize()} corpora created")
+                    except Exception as e:
+                        self.logger.error(f"❌ {name.capitalize()} corpora failed: {e}")
             
-            # Create final training file
-            self.pipeline_connector.create_final_training_file()
-            
-            # Update stats using known output path
             final_path = self.runtime_dirs.train_final_path
             if final_path.exists():
                 self.state.total_size_gb = final_path.stat().st_size / (1024**3)
-                
                 with open(final_path, 'r', encoding='utf-8') as f:
                     self.state.total_sentences = sum(1 for _ in f)
             
@@ -1113,11 +1095,13 @@ class UnifiedDataPipeline:
         with tracer.start_as_current_span("create_vocabulary") as span:
             self.logger.info("📚 Creating vocabulary packs...")
             
+            vocab_threads = getattr(self.config.data, 'vocab_threads', 0)
             created_packs = self.vocab_connector.create_vocabularies_from_pipeline(
                 processed_dir=str(self.dirs['processed']),
                 output_dir=self.runtime_dirs.vocab_dir,
                 vocab_size=self.config.vocabulary.vocab_size,
                 max_model_vocab_size=self.config.model.vocab_size,
+                num_threads=vocab_threads,
             )
             
             span.set_attribute("vocabulary.packs_created", len(created_packs))
@@ -1143,9 +1127,11 @@ class UnifiedDataPipeline:
             return 0
 
         self.logger.info(f"Scoring {len(lines):,} pairs from {path.name} with COMET...")
+        from utils.gpu_utils import get_gpu_profile
+        profile = get_gpu_profile()
         pairs = [line.split('\t') for line in lines]
         comet_data = [{"src": p[0], "mt": p[1], "ref": p[1]} for p in pairs]
-        scores = comet_model.predict(comet_data, batch_size=64, gpus=1)
+        scores = comet_model.predict(comet_data, batch_size=profile.comet_batch_size, gpus=1)
 
         kept_lines: list[str] = []
         for line, score in zip(lines, scores.scores):
@@ -1167,10 +1153,11 @@ class UnifiedDataPipeline:
 
         Scores every source→target pair with COMET and drops pairs below
         the quality threshold. Preserves the full 4-column row format.
-        Filters both train_final.txt and val_final.txt for consistency.
+        Filters both train_final.txt and val_final.txt in parallel.
         """
         with tracer.start_as_current_span("comet_quality_filter") as span:
             from evaluation.evaluator import COMET_AVAILABLE
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
             if getattr(self, 'dry_run', False) or not COMET_AVAILABLE:
                 self.logger.info("COMET not available — skipping quality filter")
@@ -1195,8 +1182,23 @@ class UnifiedDataPipeline:
                 model_path = download_model("Unbabel/wmt22-comet-da")
                 comet_model = load_from_checkpoint(model_path)
 
-                train_kept = self._comet_filter_file(train_path, comet_model, threshold)
-                val_kept = self._comet_filter_file(val_path, comet_model, threshold)
+                # Score train + val in parallel
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    f_map = {
+                        pool.submit(self._comet_filter_file, train_path, comet_model, threshold): "train",
+                        pool.submit(self._comet_filter_file, val_path, comet_model, threshold): "val",
+                    }
+                    train_kept = val_kept = 0
+                    for fut in as_completed(f_map):
+                        name = f_map[fut]
+                        try:
+                            result = fut.result()
+                            if name == "train":
+                                train_kept = result
+                            else:
+                                val_kept = result
+                        except Exception as e:
+                            self.logger.warning(f"COMET {name} failed: {e}")
 
                 span.set_attribute("comet.train_kept", train_kept)
                 span.set_attribute("comet.val_kept", val_kept)

@@ -1,33 +1,35 @@
 # pipeline/data/sampler.py
 """
-Smart Data Sampler - Refactored with Low Priority Clean-up
-- Standardized logging
-- Centralized directory creation
-- Cleaned imports
-- Standardized logging messages
+Smart Data Sampler with optional LaBSE GPU embedding filter.
 """
 
 import random
 import re
 import mmap
 from pathlib import Path
-from typing import List, Tuple, Callable, Dict
+from typing import List, Tuple, Callable, Dict, Optional
 from tqdm import tqdm
 import asyncio
 import aiofiles
 import itertools
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import numpy as np
 
 import logging
 
-# Clean import from utils
 from utils.common_utils import DirectoryManager
+from utils.gpu_utils import get_gpu_profile, torch_is_available
+
+try:
+    from sentence_transformers import SentenceTransformer, util
+except Exception:
+    SentenceTransformer = None
+
 
 class SmartDataSampler:
     """Sample high-quality data from large corpora with memory efficiency and async support"""
     
-    def __init__(self, log_dir: str = None):
+    def __init__(self, log_dir: str = None, use_gpu_embedding: bool = True):
         """
         Initialize sampler with standardized logging
         
@@ -35,16 +37,58 @@ class SmartDataSampler:
             log_dir: Custom log directory (optional)
         """
         self.logger = logging.getLogger(__name__)
+        self.use_gpu_embedding = use_gpu_embedding and SentenceTransformer is not None and torch_is_available()
         
-        # Initialize quality filters
         self.quality_filters: List[Callable[[str, str], bool]] = [
             self.filter_length,
             self.filter_ratio,
             self.filter_numbers,
-            self.filter_quality_score
+            self.filter_quality_score,
         ]
         
+        self._sentence_model = None
+        self._embed_cache: Dict[str, np.ndarray] = {}
+        
+        if self.use_gpu_embedding:
+            gpu = get_gpu_profile()
+            self.embed_batch_size = gpu.labse_batch_size
+            self.logger.info(f"📊 LaBSE GPU embedding filter enabled (batch_size={self.embed_batch_size}, profile={gpu.name})")
+        else:
+            self.embed_batch_size = 1
+        
         self.logger.info(f"📊 Initialized SmartDataSampler with {len(self.quality_filters)} quality filters")
+    
+    @property
+    def sentence_model(self):
+        if self._sentence_model is None and self.use_gpu_embedding:
+            self.logger.info("Loading LaBSE sentence transformer for cross-lingual quality...")
+            self._sentence_model = SentenceTransformer('sentence-transformers/LaBSE')
+            if torch_is_available():
+                self._sentence_model = self._sentence_model.to('cuda')
+        return self._sentence_model
+    
+    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+        """Embed a batch of texts with LaBSE on GPU."""
+        model = self.sentence_model
+        if model is None:
+            return np.array([])
+        return model.encode(texts, batch_size=self.embed_batch_size, convert_to_numpy=True, show_progress_bar=False)
+    
+    def _cosine_similarity_filter(self, sources: List[str], targets: List[str], threshold: float = 0.5) -> List[bool]:
+        """Filter pairs by cross-lingual embedding similarity.
+        
+        Returns a boolean mask: True if similarity >= threshold.
+        """
+        if not self.use_gpu_embedding or not sources:
+            return [True] * len(sources)
+        
+        src_emb = self._embed_texts(sources)
+        tgt_emb = self._embed_texts(targets)
+        if src_emb.size == 0 or tgt_emb.size == 0:
+            return [True] * len(sources)
+        
+        sims = util.cos_sim(src_emb, tgt_emb).diagonal().cpu().numpy()
+        return [s >= threshold for s in sims]
 
     def _process_file_in_batches(self, file_path: Path, batch_size: int = 10000):
         """Process file in batches for better memory efficiency"""
@@ -105,7 +149,15 @@ class SmartDataSampler:
             # Calculate statistics
             quality_percentage = (len(quality_lines) / total_lines * 100) if total_lines > 0 else 0
             self.logger.info(f"✅ Quality assessment complete: {len(quality_lines):,} quality pairs ({quality_percentage:.1f}%)")
-        
+
+            # Optional: LaBSE embedding similarity filter (GPU)
+            if self.use_gpu_embedding:
+                self.logger.info(f"🔬 Running LaBSE embedding similarity filter (batch_size={self.embed_batch_size})...")
+                quality_lines = await self._embedding_filter_pass_async(
+                    input_path, quality_lines, source_lang, target_lang
+                )
+                self.logger.info(f"✅ After embedding filter: {len(quality_lines):,} quality pairs remain")
+
             # Sample subset if needed
             sampled_indices = self._sample_indices(quality_lines, target_size)
 
@@ -337,6 +389,51 @@ class SmartDataSampler:
                         self.logger.debug(f"Processed {line_idx:,}/{total_lines:,} lines")
         
         return written_count
+    
+    async def _embedding_filter_pass_async(
+        self, input_path: Path, quality_indices: List[int],
+        source_lang: Optional[str], target_lang: Optional[str],
+        threshold: float = 0.5,
+    ) -> List[int]:
+        """Filter quality_indices by LaBSE cross-lingual similarity on GPU.
+        
+        Reads lines for quality_indices in batches, computes embedding
+        similarity, and keeps only pairs above threshold.
+        """
+        if not self.use_gpu_embedding or not quality_indices:
+            return quality_indices
+        
+        idx_set = set(quality_indices)
+        batch_sources: List[str] = []
+        batch_targets: List[str] = []
+        batch_indices: List[int] = []
+        kept: List[int] = []
+        
+        with open(input_path, 'r', encoding='utf-8') as f:
+            for line_idx, line in enumerate(f):
+                if line_idx not in idx_set:
+                    continue
+                parts = line.strip().split('\t')
+                if len(parts) >= 2:
+                    batch_sources.append(parts[0])
+                    batch_targets.append(parts[1])
+                    batch_indices.append(line_idx)
+                
+                if len(batch_sources) >= self.embed_batch_size:
+                    mask = self._cosine_similarity_filter(batch_sources, batch_targets, threshold)
+                    for i, ok in enumerate(mask):
+                        if ok:
+                            kept.append(batch_indices[i])
+                    batch_sources, batch_targets, batch_indices = [], [], []
+        
+        # Final batch
+        if batch_sources:
+            mask = self._cosine_similarity_filter(batch_sources, batch_targets, threshold)
+            for i, ok in enumerate(mask):
+                if ok:
+                    kept.append(batch_indices[i])
+        
+        return kept
     
     @staticmethod
     def _has_no_word_boundaries(text: str) -> bool:

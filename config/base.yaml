@@ -77,10 +77,12 @@ data:
     ar-fr: 40000
     th-vi: 40000
   
-  download_max_workers: 4
-  download_parallel_batches: false
+  # GPU-aware defaults: these are overridden by GPU profile detection.
+  # Set UTS_GPU_TIER=t4|l4|l40s|a100|h100 to force a specific profile.
+  download_max_workers: 0     # 0 = auto-detect from GPU profile
+  download_parallel_batches: true
   # datasets_cache_dir: /path/to/hf/cache
-  download_rate_limit: 2
+  download_rate_limit: 0      # 0 = auto-detect from GPU profile
 
   augmentation_pairs:
     - en-es
@@ -106,6 +108,9 @@ data:
     - ar-fr
     - th-vi
 
+  # Number of threads for SentencePiece training (0 = auto from GPU profile)
+  vocab_threads: 0
+
   vocabulary_strategy:
     approach: production # or "research"
     groups:
@@ -125,9 +130,9 @@ data_strategy:
     low: ['en-tr', 'en-th', 'en-vi', 'en-pl', 'en-uk', 'en-nl', 'en-id', 'en-sv']
   
   source_preferences:
-    en_centric: ['opus-100', 'opus_ccmatrix', 'opus_paracrawl', 'open_subtitles', 'wmt19', 'wmt20', 'wmt21']
-    european: ['opus-100', 'opus_ccmatrix', 'opus_paracrawl', 'open_subtitles', 'wmt19', 'wmt20', 'wmt21']
-    asian: ['opus-100', 'opus_ccmatrix']
+    en_centric: ['opus-100', 'opus_paracrawl', 'open_subtitles', 'wmt19', 'wmt20', 'wmt21']
+    european: ['opus-100', 'opus_paracrawl', 'open_subtitles', 'wmt19', 'wmt20', 'wmt21']
+    asian: ['opus-100']
     default: ['opus-100', 'open_subtitles']
 
 

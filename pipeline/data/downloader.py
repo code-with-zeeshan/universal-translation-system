@@ -38,6 +38,7 @@ from config.schemas import RootConfig
 from utils.exceptions import DataError
 from utils.common_utils import DirectoryManager
 from utils.security import validate_model_source
+from utils.gpu_utils import get_gpu_profile
 from pipeline.data.utils import DataProcessor, DatasetLoader
 
 class DatasetType(Enum):
@@ -88,29 +89,37 @@ class UnifiedDataDownloader:
         # Initialize utilities
         self.data_processor = DataProcessor(config, self.logger)
         
-        # Configuration
-        # Support both object-attr and dict-style configs
+        # Configuration with GPU-aware defaults
+        gpu = get_gpu_profile()
+
+        def _resolve(val, fallback):
+            return fallback if val == 0 else val
+
         data_cfg = getattr(config, 'data', {})
         if isinstance(data_cfg, dict):
             self.languages = data_cfg.get('active_languages', ['en'])
             self.training_distribution = data_cfg.get('training_distribution', {})
+            raw_workers = data_cfg.get('download_max_workers', 0)
             self.download_max_workers = min(
-                data_cfg.get('download_max_workers', 4),
-                os.cpu_count() or 4, 6
+                _resolve(raw_workers, gpu.download_max_workers),
+                os.cpu_count() or 4,
             )
-            self.download_parallel_batches = data_cfg.get('download_parallel_batches', False)
+            self.download_parallel_batches = data_cfg.get('download_parallel_batches', gpu.download_parallel_batches)
             self.datasets_cache_dir = data_cfg.get('datasets_cache_dir', None)
-            self.download_rate_limit = data_cfg.get('download_rate_limit', 0)
+            raw_rate = data_cfg.get('download_rate_limit', 0)
+            self.download_rate_limit = _resolve(raw_rate, gpu.download_rate_limit)
         else:
             self.languages = getattr(data_cfg, 'active_languages', ['en'])
             self.training_distribution = getattr(data_cfg, 'training_distribution', {})
+            raw_workers = getattr(data_cfg, 'download_max_workers', 0)
             self.download_max_workers = min(
-                getattr(data_cfg, 'download_max_workers', 4),
-                os.cpu_count() or 4, 6
+                _resolve(raw_workers, gpu.download_max_workers),
+                os.cpu_count() or 4,
             )
-            self.download_parallel_batches = getattr(data_cfg, 'download_parallel_batches', False)
+            self.download_parallel_batches = getattr(data_cfg, 'download_parallel_batches', gpu.download_parallel_batches)
             self.datasets_cache_dir = getattr(data_cfg, 'datasets_cache_dir', None)
-            self.download_rate_limit = getattr(data_cfg, 'download_rate_limit', 0)
+            raw_rate = getattr(data_cfg, 'download_rate_limit', 0)
+            self.download_rate_limit = _resolve(raw_rate, gpu.download_rate_limit)
         
         self.dataset_loader = DatasetLoader(self.logger, self.datasets_cache_dir)
         
@@ -175,12 +184,7 @@ class UnifiedDataDownloader:
                 'streaming': True,
                 'quality': 'medium',
             },
-            'opus_ccmatrix': {
-                'dataset_name': 'Helsinki-NLP/opus_ccmatrix',
-                'type': DatasetType.TRAINING,
-                'streaming': True,
-                'quality': 'medium',
-            },
+
             'open_subtitles': {
                 'dataset_name': 'Helsinki-NLP/open_subtitles',
                 'type': DatasetType.TRAINING,

@@ -6,10 +6,9 @@ from typing import Dict, List, Optional
 
 
 class PipelineStage(Enum):
-    """Pipeline execution stages"""
+    """Pipeline execution stages (data + vocabulary pipeline)"""
     DOWNLOAD_EVAL = "download_evaluation"
     DOWNLOAD_TRAIN = "download_training"
-    DIRECT_OPUS = "direct_opus"
     SAMPLE_FILTER = "sample_filter"
     AUGMENT = "augment"  # includes Wikipedia monolingual download
     DISTILL = "knowledge_distillation"
@@ -22,7 +21,6 @@ class PipelineStage(Enum):
 STAGE_ORDER = [
     PipelineStage.DOWNLOAD_EVAL,
     PipelineStage.DOWNLOAD_TRAIN,
-    PipelineStage.DIRECT_OPUS,
     PipelineStage.SAMPLE_FILTER,
     PipelineStage.AUGMENT,
     PipelineStage.DISTILL,

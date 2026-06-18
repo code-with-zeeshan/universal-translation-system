@@ -38,7 +38,7 @@ Expected: GPU detected, Python version OK, all imports resolve.
 
 ### 3. Run the data pipeline
 
-Downloads opus-100, samples, augments, validates, builds vocab. Auto-resumes if interrupted.
+Downloads opus-100, samples, augments, validates, builds vocab. Auto-resumes if interrupted. GPU tier auto-detected — all batch sizes and worker counts tune themselves.
 
 ```bash
 ./uts data --pipeline
@@ -62,11 +62,13 @@ The pipeline already builds them automatically. Only run this for custom builds:
 ./uts train --full
 ```
 
+**GPU auto-detection:** The pipeline detects your GPU (T4/L4/L40S/A100/H100) and tunes every stage automatically — download workers, NLLB batch size, COMET batch size, SentencePiece threads, and more. Override with `UTS_GPU_TIER=t4` env var if needed. See [PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md) for full per-tier settings.
+
 **GPU-specific notes:** See [SETUP_COMMANDS.md](../SETUP_COMMANDS.md) for the exact `--batch-size` and config tweaks per GPU tier. The table below is a quick reference:
 
 | GPU | Recommended batch | Approx time (10 epochs) |
 |---|---|---|
-| A100 40GB / H100 | 32 | ~6h / ~4h |
+| A100 80GB / H100 | 32 | ~6h / ~4h |
 | L40s 48GB | 48 | ~5h |
 | L4 24GB | 16 | ~10h |
 | T4 16GB | 8 | ~20h |

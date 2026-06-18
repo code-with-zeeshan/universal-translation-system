@@ -56,6 +56,7 @@ except Exception:
 
 from pipeline.data.utils import estimate_sentence_count
 from utils.common_utils import DirectoryManager
+from utils.gpu_utils import get_gpu_profile, configure_nllb_model
 from config.schemas import RootConfig, load_config
 
 logger = logging.getLogger(__name__)
@@ -1382,11 +1383,23 @@ class SyntheticDataAugmenter:
             if AutoModelForSeq2SeqLM is None:
                 raise ImportError("transformers required")
             self.logger.info("Loading translation model...")
-            self._model = AutoModelForSeq2SeqLM.from_pretrained(
-                self.base_model,
-                torch_dtype=(torch.float16 if hasattr(torch, 'cuda') and torch.cuda.is_available() else getattr(torch, 'float32', None)),
-                device_map=("auto" if hasattr(torch, 'cuda') and torch.cuda.is_available() else None)
-            )
+            gpu = get_gpu_profile()
+            use_cuda = hasattr(torch, 'cuda') and torch.cuda.is_available()
+            if use_cuda:
+                dtype_map = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}
+                torch_dtype = dtype_map.get(gpu.nllb_dtype, torch.float16)
+                use_fa2 = gpu.nllb_flash_attention_2
+                self._model = AutoModelForSeq2SeqLM.from_pretrained(
+                    self.base_model,
+                    torch_dtype=torch_dtype,
+                    device_map="auto",
+                    attn_implementation="flash_attention_2" if use_fa2 else "eager",
+                )
+                self._model = configure_nllb_model(self._model, gpu)
+            else:
+                self._model = AutoModelForSeq2SeqLM.from_pretrained(
+                    self.base_model, torch_dtype=torch.float32
+                )
         return self._model
 
     @property
@@ -1400,17 +1413,15 @@ class SyntheticDataAugmenter:
     @property
     def translator(self):
         if self._translator is None:
-            use_cuda = hasattr(torch, 'cuda') and torch.cuda.is_available()
+            gpu = get_gpu_profile()
+            use_cuda = torch is not None and torch.cuda.is_available()
             if use_cuda:
-                # Only probe if batch_size hasn't been reduced by an OOM recovery.
-                # _probe_pipeline_batch_size uses short probe text which underestimates
-                # real memory usage; skip re-probe after an OOM to avoid re-probe loop.
                 if self.pipeline_batch_size == self._initial_pipeline_batch_size:
                     self._probe_pipeline_batch_size()
                 else:
                     self.logger.info(f"Using OOM-reduced batch_size={self.pipeline_batch_size} (skipping probe)")
             bs = self.pipeline_batch_size if use_cuda else 1
-            self.logger.info(f"Creating NLLB pipeline with batch_size={bs}")
+            self.logger.info(f"Creating NLLB pipeline with batch_size={bs} (profile: {gpu.name})")
             pipe_kwargs = dict(
                 task="translation",
                 model=self.model,
