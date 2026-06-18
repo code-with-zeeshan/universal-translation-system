@@ -6,6 +6,7 @@ writes monolingual corpora, then translates them via NLLB to/from English
 to produce synthetic parallel pairs.
 """
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set
@@ -115,26 +116,46 @@ class WikipediaBacktranslator:
         self,
         langs: Optional[List[str]] = None,
         max_per_lang: int = 500_000,
+        max_concurrent: Optional[int] = None,
     ) -> Dict[str, int]:
-        """Download Wikipedia for each language and write mono_{lang}.txt files."""
+        if max_concurrent is None:
+            max_concurrent = int(os.environ.get("WIKI_DOWNLOAD_WORKERS", "20"))
+        """Download Wikipedia for each language and write mono_{lang}.txt files.
+
+        Downloads run in parallel (max_concurrent at a time) since the work is
+        IO-bound (streaming datasets + text cleaning).
+        """
         if langs is None:
             langs = list(WIKIPEDIA_LANG_CODES.keys())
 
         results: Dict[str, int] = {}
 
-        for lang in langs:
+        def _download_one(lang: str) -> tuple[str, List[str]]:
             sentences = download_wikipedia_corpus(lang, max_sentences=max_per_lang)
-            if not sentences:
-                self.logger.warning(f"No Wikipedia data for {lang}, skipping")
-                results[lang] = 0
-                continue
+            return lang, sentences
 
-            out_path = self.output_dir / f"mono_{lang}.txt"
-            with open(out_path, 'w', encoding='utf-8') as f:
-                for sent in sentences:
-                    f.write(sent + '\n')
-            results[lang] = len(sentences)
-            self.logger.info(f"Wrote {len(sentences):,} sentences to {out_path}")
+        with ThreadPoolExecutor(max_workers=max_concurrent) as pool:
+            futmap = {pool.submit(_download_one, lang): lang for lang in langs}
+            for fut in as_completed(futmap):
+                lang = futmap[fut]
+                try:
+                    _lang, sentences = fut.result()
+                except Exception as e:
+                    self.logger.error(f"Wikipedia download failed for {lang}: {e}")
+                    results[lang] = 0
+                    continue
+
+                if not sentences:
+                    self.logger.warning(f"No Wikipedia data for {lang}, skipping")
+                    results[lang] = 0
+                    continue
+
+                out_path = self.output_dir / f"mono_{lang}.txt"
+                with open(out_path, 'w', encoding='utf-8') as f:
+                    for sent in sentences:
+                        f.write(sent + '\n')
+                results[lang] = len(sentences)
+                self.logger.info(f"Wrote {len(sentences):,} sentences to {out_path}")
 
         return results
 
