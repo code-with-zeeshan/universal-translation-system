@@ -10,32 +10,37 @@ import sys
 from typing import Dict, List, Tuple, Optional
 
 
-# Stage: (key, label, description, default_enabled, time_minutes, notes, category)
+# Stage: (key, label, description, default_enabled, time_minutes, notes, category, recommendation)
 # category: 'cpu' | 'gpu_light' | 'gpu_heavy'
-#
-# Quality stages (augment, knowledge_distillation) use NLLB-1.3B (distilled)
-# to create meaning-preserving parallel data — they handle idioms, metaphors,
-# and cultural equivalents rather than word-for-word swaps.
-STAGES: List[Tuple[str, str, str, bool, int, str, str]] = [
+# recommendation: 'essential' | 'recommended' | 'advanced'
+STAGES: List[Tuple[str, str, str, bool, int, str, str, str]] = [
     ("download_training",         "download_training",         "OPUS-100 + extra sources",
-        True, 60, "", "cpu"),
+        True, 60, "", "cpu", "essential"),
     ("sample_filter",             "sample_filter",             "Deduplicate, length/content filter, quality scoring",
-        True, 10, "", "cpu"),
+        True, 10, "", "cpu", "essential"),
     ("vocabulary",                "vocabulary",                "Build vocabulary packs from monolingual corpora",
-        True, 10, "", "cpu"),
+        True, 10, "", "cpu", "essential"),
     ("create_ready",              "create_ready",              "Merge all sources -> train_final.txt/val_final.txt",
-        True,  5, "", "cpu"),
+        True,  5, "", "cpu", "essential"),
     ("validate",                  "validate",                  "Validate output data and vocabulary files",
-        True,  3, "", "cpu"),
+        True,  3, "", "cpu", "essential"),
 
     ("comet_quality",             "comet_quality",             "Neural semantic quality filter (Unbabel/wmt22-comet-da)",
-        False, 90, "GPU ~1-2h on T4", "gpu_light"),
+        False, 90, "GPU ~1-2h on T4", "gpu_light", "recommended"),
+    ("download_evaluation",       "download_evaluation",       "Download evaluation test sets for benchmarking",
+        False, 15, "", "cpu", "recommended"),
 
     ("augment",                   "augment",                   "Backtranslation + pivots for meaning-preserving synthetic pairs (NLLB-1.3B)",
-        True, 1440, "GPU heavy (NLLB-1.3B)", "gpu_heavy"),
+        True, 1440, "GPU heavy (NLLB-1.3B)", "gpu_heavy", "essential"),
     ("knowledge_distillation",    "knowledge_distillation",    "NLLB-1.3B soft targets preserving semantic nuance over literal swaps",
-        False, 2880, "GPU heavy (NLLB-1.3B)", "gpu_heavy"),
+        False, 2880, "GPU heavy (NLLB-1.3B)", "gpu_heavy", "advanced"),
 ]
+
+RECOMMENDATION_LABELS = {
+    "essential":   ("\033[1;36mESSENTIAL\033[0m",   "\033[36m"),
+    "recommended": ("\033[1;32mRECOMMENDED\033[0m", "\033[32m"),
+    "advanced":    ("\033[1;35mADVANCED\033[0m",    "\033[35m"),
+}
 
 CATEGORY_LABELS = {
     "cpu": "CPU Stages (no GPU needed)",
@@ -59,6 +64,13 @@ def stage_category(key: str) -> str:
 
 def stages_by_category(cat: str) -> List[Tuple]:
     return [s for s in STAGES if s[6] == cat]
+
+
+def stage_recommendation(key: str) -> str:
+    for s in STAGES:
+        if s[0] == key:
+            return s[7]
+    return "essential"
 
 
 def fmt_time(mins: int) -> str:
@@ -119,7 +131,8 @@ def draw_stage_menu(states: Dict[str, bool], cursor: int):
         cat_color = CATEGORY_COLORS.get(cat, "\033[1;37m")
         print(f"  {cat_color}\u2500\u2500 {cat_label} \u2500\u2500{color_reset}")
 
-        for key, label, desc, default, mins, notes, category in cat_stages:
+        for stage in cat_stages:
+            key, label, desc, default, mins, notes, category, rec = stage
             selected = states[key]
             check = "\033[1;32m\u2713\033[0m" if selected else "\033[1;31m\u2717\033[0m"
             prefix = " \033[1;33m\u25b6\033[0m " if flat_idx == cursor else "   "
@@ -127,7 +140,8 @@ def draw_stage_menu(states: Dict[str, bool], cursor: int):
             if selected:
                 total += mins
 
-            line = f"  {prefix} {check} \033[1;37m{flat_idx+1:>2}.\033[0m {label:<28} {color_dim}{fmt_time(mins):>8}{color_reset}  {desc}"
+            rec_label, rec_color = RECOMMENDATION_LABELS.get(rec, ("", ""))
+            line = f"  {prefix} {check} \033[1;37m{flat_idx+1:>2}.\033[0m {label:<28} {rec_label}  {color_dim}{fmt_time(mins):>8}{color_reset}  {desc}"
             if notes:
                 line += f"  {color_dim}({notes}){color_reset}"
             if flat_idx == cursor:
@@ -140,6 +154,11 @@ def draw_stage_menu(states: Dict[str, bool], cursor: int):
         print()
 
     print(f"  \033[1;37mEstimated total time:\033[0m \033[1;33m{fmt_time(total)}\033[0m")
+    print()
+    ess, _ = RECOMMENDATION_LABELS["essential"]
+    rec, _ = RECOMMENDATION_LABELS["recommended"]
+    adv, _ = RECOMMENDATION_LABELS["advanced"]
+    print(f"  Legend: {ess} = must-run  |  {rec} = improves quality  |  {adv} = best quality, expensive")
     print()
 
 
