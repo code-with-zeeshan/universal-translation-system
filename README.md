@@ -6,6 +6,54 @@ A flexible and scalable translation platform supporting 20 languages via an edge
 
 > **New**: Terminal UI dashboard — `uts tui` to monitor pipeline + training in real time.
 
+## Problem & Use Cases
+
+### What Problem Does This Solve?
+
+**Edge translation without compromise.** Traditional approaches force a tradeoff:
+
+| Approach | Problem |
+|---|---|
+| Full model on-device | 500MB+ per language pair — impractical for phones, IoT, browsers |
+| Cloud-only translation | Sends raw text over the network — privacy risk, high latency, bandwidth cost |
+| Per-language-pair models | N×M models to maintain — doesn't scale to 20+ languages |
+
+This system solves all three by **splitting translation in half**:
+- A small **42.7M encoder** runs on-device (phone, browser, IoT), compressing source text into a <1KB embedding — not raw text, so the user's words never leave the device
+- A **108.1M decoder** in the cloud receives the embedding and generates the translation — one model serves all languages
+- New languages added via **LoRA adapters (~7M params)** instead of full retraining (150.8M)
+
+### Who Is This For?
+
+| Audience | What they get |
+|---|---|
+| **Mobile app developers** | Kotlin/Swift/Dart SDKs that encode locally, call cloud decoder |
+| **Web developers** | TypeScript SDK with ONNX Runtime Web + WASM encoder |
+| **Enterprise teams** | Docker Compose / K8s deployment, Prometheus/Grafana, auto-scaling decoder pools |
+| **NLP researchers** | Full data pipeline (OPUS-100 → filter → NLLB augment → train), custom model training |
+| **Product builders** | Add 20-language translation to any app via 5 platform SDKs |
+
+### Use Cases
+
+| Use Case | How It Works |
+|---|---|
+| **On-device mobile translation** | App embeds 42.7M ONNX encoder (NNAPI on Android, CoreML on iOS). Text → embedding (<1KB) → cloud → translation returned |
+| **Real-time web translation** | WASM encoder runs in browser. No server-side text processing. Embedding sent to cloud decoder |
+| **Cross-platform apps** | React Native `useTranslation()` hook or Flutter SDK — same encoder, same cloud backend |
+| **Enterprise translation API** | Deploy decoder pool behind coordinator with Redis discovery, circuit breakers, A/B testing |
+| **Zero-shot language pairs** | Adapter composition (TIES, DARE, Fisher merging) creates translations for pairs never seen in training |
+| **Adding language #21+** | Train LoRA adapters (~7M params) on frozen backbone — no full retraining needed |
+| **Training research models** | Auto-resume pipeline: download OPUS-100 → filter (LaBSE/LASER) → augment (NLLB-1.3B) → train custom encoder+decoder → evaluate (BLEU/COMET) |
+
+### How Is This Different From...?
+
+| Alternative | Difference |
+|---|---|
+| Google Translate / DeepL | Closed API. This is self-hosted, trainable, extensible |
+| NLLB (Meta) | General-purpose 3.3B model. This is a 150.8M custom model for edge deployment |
+| MarianMT / OpenNMT | Toolkit, not a platform. This includes SDKs, coordinator, deployment infra |
+| Hugging Face pipelines | Inference-only. This includes data pipeline, training, evaluation, multi-platform SDKs |
+
 ## Key Innovation
 
 Rather than bundling a huge model per language, the system splits the workflow for maximum efficiency and scalability:
